@@ -32,6 +32,80 @@
                 {{-- Hidden common data --}}
                 <input type="hidden" id="opCapRecordId" value="{{ $fileNumberId }}">
 
+                {{-- ══════════════════════════════════════════════════════ --}}
+                {{-- CARD 0 — PASSPORT PHOTOGRAPH                          --}}
+                {{-- ══════════════════════════════════════════════════════ --}}
+                {{-- The photograph belongs to the FILE, not to the OP or the Transfer of
+                     Title row, so it sits above both cards and saves on its own. It is the
+                     same image the commissioning form captures: filed into the file's EDMS
+                     scan folder and pointed at by oss_applications.passport_photo. --}}
+                @php
+                    $passportUrl = $passport['url'] ?? null;
+                @endphp
+                <div class="bg-white rounded-2xl border border-amber-200 shadow-sm mb-6" data-card-type="passport">
+                    <div class="px-6 pt-5 pb-3 border-b border-amber-100 flex items-center gap-3">
+                        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-100 text-amber-600 flex-shrink-0">
+                            <i data-lucide="user-square" class="h-4 w-4"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-sm font-extrabold text-amber-700 uppercase tracking-wide">Passport Photograph</h2>
+                            <p class="text-[11px] text-slate-400 font-mono">
+                                {{ $passportFileNumber ?: 'No file number on this record' }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="p-6">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50/80 p-5">
+                            <div class="flex flex-col gap-5 sm:flex-row sm:items-start">
+                                <div class="h-40 w-32 flex-shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center">
+                                    <img id="passportPreview" src="{{ $passportUrl ?: '' }}" alt="Passport photograph"
+                                        class="h-full w-full object-cover {{ $passportUrl ? '' : 'hidden' }}">
+                                    {{-- The id sits on the wrapper, not the <i>: lucide swaps the <i> for an <svg>. --}}
+                                    <span id="passportPlaceholder" class="{{ $passportUrl ? 'hidden' : 'flex' }} items-center justify-center">
+                                        <i data-lucide="user-square" class="h-10 w-10 text-slate-300"></i>
+                                    </span>
+                                </div>
+
+                                <div class="flex-1 min-w-0">
+                                    <p id="passportStatus" class="text-sm font-semibold text-slate-700">
+                                        {{ $passportUrl ? 'Passport on record' : 'No passport on record' }}
+                                    </p>
+                                    @if($passportUrl)
+                                        <p class="mt-0.5 text-[11px] text-slate-400">
+                                            Filed from {{ ($passport['source'] ?? '') === 'oss_applications' ? 'the OSS application' : 'the scan folder for this file' }}.
+                                        </p>
+                                    @endif
+
+                                    @if($passportFileNumber)
+                                        <input type="file" id="passportInput" accept="image/jpeg,image/jpg,image/png"
+                                            class="mt-3 w-full max-w-md rounded-lg border border-slate-300 bg-white p-2 text-xs text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-amber-700 hover:file:bg-amber-100">
+                                        <p class="mt-1 text-[11px] text-slate-500">
+                                            JPG or PNG, max 2MB. Uploading replaces the photograph on record; the previous
+                                            scan stays filed as a superseded document.
+                                        </p>
+                                    @else
+                                        <p class="mt-3 text-xs text-rose-600">
+                                            This record carries no file number yet, so a photograph cannot be filed against it.
+                                        </p>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if($passportFileNumber)
+                    <div class="flex items-center justify-end gap-2 border-t border-slate-200 p-4">
+                        <a href="{{ $returnUrl }}" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</a>
+                        <button type="button" id="passportSaveBtn" disabled
+                            class="rounded-lg bg-amber-600 px-5 py-2 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300 inline-flex items-center gap-2">
+                            <i data-lucide="upload" class="h-4 w-4"></i>
+                            Upload Passport
+                        </button>
+                    </div>
+                    @endif
+                </div>
+
                 @php
                     // Categorise PRA rows into OP rows and Transfer-of-Title rows
                     // Prioritize records that actually HAVE an op_serial_number for the OP card display.
@@ -707,6 +781,126 @@
             });
         }
 
+        // ── Passport photograph ──
+        // One slot, two states: the image already filed against the file (rendered by the
+        // blade) and a replacement picked here. The replacement is previewed locally and
+        // only uploaded when the button is pressed, so opening the page never touches the
+        // photo on record.
+        function _initPassportCard() {
+            var input = document.getElementById('passportInput');
+            var btn = document.getElementById('passportSaveBtn');
+            if (!input || !btn) return;   // no file number on this record — nothing to file against
+
+            var img = document.getElementById('passportPreview');
+            var placeholder = document.getElementById('passportPlaceholder');
+            var status = document.getElementById('passportStatus');
+            var onRecordSrc = img ? (img.getAttribute('src') || '') : '';
+
+            function showOnRecord() {
+                if (img) {
+                    if (onRecordSrc) {
+                        img.src = onRecordSrc;
+                        img.classList.remove('hidden');
+                    } else {
+                        img.removeAttribute('src');
+                        img.classList.add('hidden');
+                    }
+                }
+                if (placeholder) placeholder.classList.toggle('hidden', !!onRecordSrc);
+                if (status) status.textContent = onRecordSrc ? 'Passport on record' : 'No passport on record';
+            }
+
+            input.addEventListener('change', function() {
+                var file = this.files && this.files[0];
+                if (!file) {
+                    btn.disabled = true;
+                    showOnRecord();
+                    return;
+                }
+
+                // Checked here as well as server-side so an oversized photo is caught before
+                // the operator waits on an upload that will be rejected.
+                if (file.size > 2 * 1024 * 1024) {
+                    Swal.fire('Passport too large', 'The passport photograph must be 2MB or smaller.', 'error');
+                    this.value = '';
+                    btn.disabled = true;
+                    showOnRecord();
+                    return;
+                }
+
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    if (img) {
+                        img.src = e.target.result;
+                        img.classList.remove('hidden');
+                    }
+                    if (placeholder) placeholder.classList.add('hidden');
+                    if (status) status.textContent = file.name + ' — replaces the current photo on upload';
+                };
+                reader.readAsDataURL(file);
+                btn.disabled = false;
+            });
+
+            btn.addEventListener('click', function() {
+                var file = input.files && input.files[0];
+                if (!file) { Swal.fire('Required', 'Choose a passport photograph first.', 'warning'); return; }
+
+                var body = new FormData();
+                body.append('passport', file);
+
+                btn.disabled = true;
+                btn.innerHTML = '<i data-lucide="loader-2" class="h-4 w-4 animate-spin"></i> Uploading...';
+                if (window.lucide) window.lucide.createIcons();
+
+                fetch('{{ route('lands-one-stop-shop.applications.update-passport', ['id' => $fileNumberId]) }}', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    },
+                    body: body,
+                })
+                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+                .then(function(result) {
+                    if (result.ok && result.data.success) {
+                        // The uploaded image is now the one on record, so a later "clear the
+                        // picker" must fall back to it rather than to the previous photo.
+                        onRecordSrc = result.data.url || onRecordSrc;
+                        input.value = '';
+                        showOnRecord();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Passport Updated',
+                            text: result.data.message || 'Passport photograph filed.',
+                            timer: 2200,
+                            showConfirmButton: false,
+                        });
+                        _resetPassportBtn(btn);
+                        return;
+                    }
+
+                    var msg = result.data.message || 'Failed to upload the passport photograph.';
+                    if (result.data.errors) {
+                        msg += '
+' + Object.values(result.data.errors).flat().join('
+');
+                    }
+                    Swal.fire('Error', msg, 'error');
+                    _resetPassportBtn(btn);
+                })
+                .catch(function(err) {
+                    Swal.fire('Error', 'Network error: ' + err.message, 'error');
+                    _resetPassportBtn(btn);
+                });
+            });
+        }
+
+        function _resetPassportBtn(btn) {
+            btn.disabled = true;   // re-enabled only once a new file is picked
+            btn.innerHTML = '<i data-lucide="upload" class="h-4 w-4"></i> Upload Passport';
+            if (window.lucide) window.lucide.createIcons();
+        }
+
         function _resetBtn(btn, label) {
             btn.disabled = false;
             btn.innerHTML = '<i data-lucide="save" class="h-4 w-4"></i> ' + label;
@@ -729,6 +923,7 @@
                 _initOpCard(card);
             });
             _initTotCards();
+            _initPassportCard();
             if (window.lucide) window.lucide.createIcons();
         });
     </script>

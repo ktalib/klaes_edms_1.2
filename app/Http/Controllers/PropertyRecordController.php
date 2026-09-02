@@ -3252,11 +3252,18 @@ class PropertyRecordController extends Controller
                 $cofoTableColumns = null;
 
                 foreach ($transactions as $transaction) {
-                    $registrationNumber = trim(implode('/', array_filter([
-                        $transaction['serial_no'] ?? '',
-                        $transaction['page_no'] ?? '',
-                        $transaction['volume_no'] ?? ''
-                    ]))) ?: null;
+                    // Only genuinely absent parts are dropped. A bare array_filter() would treat
+                    // "0" as empty and silently turn the 0/0/0 an LGA-issued Occupancy Permit is
+                    // stamped with into NULL — the permit was never entered in the state deeds
+                    // registry, and 0/0/0 is how that is recorded, not a missing value.
+                    $registrationNumber = trim(implode('/', array_filter(
+                        [
+                            $transaction['serial_no'] ?? '',
+                            $transaction['page_no'] ?? '',
+                            $transaction['volume_no'] ?? '',
+                        ],
+                        static fn($part) => trim((string) $part) !== ''
+                    ))) ?: null;
 
                     $recordId = isset($transaction['record_id']) && $transaction['record_id'] !== ''
                         ? (int) $transaction['record_id']

@@ -1,0 +1,294 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\FileIndexing;
+use App\Models\Scanning;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+
+/**
+ * Read and write the applicant's passport photograph for a commissioned file.
+ *
+ * The photograph is captured at commissioning (MlsFileNoController::storeCommissioningPassport)
+ * and lands in TWO places, both of which matter:
+ *
+ *   1. the file's own EDMS scan folder (EDMS/SCAN_UPLOAD/Lands_Registry/{FILE NUMBER}),
+ *      registered as a `scannings` row — without that row the image sits on disk but the
+ *      file never appears in Scan Uploads or Page Typing;
+ *   2. `oss_applications.passport_photo`, which is what the OSS screens read.
+ *
+ * This service exists because the EDIT paths need the same two writes plus a read-back, and
+ * the commissioning copy is a private controller method bound to its own pre-resolved folder
+ * handle. Two screens use it: File Number Generator → Edit, and the OSS File Commissioning
+ * capture-edit page. Commissioning itself is deliberately left on its own copy: it runs
+ * inside a flow that has already resolved the EDMS folder, and rerouting it here would put a
+ * working registry write at risk for no gain.
+ */
+class FilePassportService
+{
+    /** Screen a photograph was filed from => the wording that goes on the scan row. */
+    private const SOURCE_LABELS = [
+        'file_number_edit'       => 'the file number edit form',
+        'oss_commissioning_edit' => 'the OSS File Commissioning edit page',
+    ];
+
+    /**
+     * Locate the passport currently on record for a file number.
+     *
+     * oss_applications is asked first — it is the column the rest of the system reads and
+     * the one a re-upload overwrites, so it is authoritative for "the current photo". The
+     * scan row is the fallback, and covers files commissioned when no OSS row existed.
+     *
+     * @return array{path:string, url:string, source:string}|null  null when the file has no passport
+     */
+    public function resolve(?string $fileNumber): ?array
+    {
+        $fileNumber = trim((string) $fileNumber);
+        if ($fileNumber === '') {
+            return null;
+        }
+
+        try {
+            if (Schema::connection('sqlsrv')->hasColumn('oss_applications', 'passport_photo')) {
+                $query = DB::connection('sqlsrv')->table('oss_applications')
+                    ->where('file_no', $fileNumber)
+                    ->whereNotNull('passport_photo')
+                    ->where('passport_photo', '<>', '');
+
+                if (Schema::connection('sqlsrv')->hasColumn('oss_applications', 'is_deleted')) {
+                    $query->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    });
+                }
+
+                $row = $query->orderByDesc('id')->first(['passport_photo']);
+                if ($row && trim((string) $row->passport_photo) !== '') {
+                    return $this->describe((string) $row->passport_photo, 'oss_applications');
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Could not read passport from oss_applications', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+
+        try {
+            $scan = DB::connection('sqlsrv')->table('scannings')
+                ->join('file_indexings', 'file_indexings.id', '=', 'scannings.file_indexing_id')
+                ->where('file_indexings.file_number', $fileNumber)
+                ->where('scannings.document_type', 'Passport Photograph')
+                ->whereNotNull('scannings.document_path')
+                ->orderByDesc('scannings.id')
+                ->first(['scannings.document_path']);
+
+            if ($scan && trim((string) $scan->document_path) !== '') {
+                return $this->describe((string) $scan->document_path, 'scannings');
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Could not read passport from scannings', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+
+        return null;
+    }
+
+    /**
+     * File a replacement/first passport photograph against an existing file number.
+     *
+     * Mirrors storeCommissioningPassport(): image into the file's EDMS scan folder, a
+     * `scannings` row so EDMS can see it, then oss_applications.passport_photo repointed
+     * at the new path.
+     *
+     * The previous scan row is deliberately left in place. These are registry documents —
+     * superseding one is a new document, not an erasure of the old.
+     *
+     * Best-effort by design: the caller's record update has its own success criteria, and a
+     * storage hiccup here must not turn a saved edit into a failed one.
+     *
+     * $source names the screen the photograph came from. It reaches the folder log, the
+     * scan row's notes and the info line, so a registry document can be traced back to the
+     * form that filed it — more than one screen now uploads through here.
+     *
+     * @return array{stored:bool, path:?string, url:?string, scanning_id:?int, reason:string}
+     */
+    public function store(UploadedFile $file, string $fileNumber, string $source = 'file_number_edit'): array
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return $this->failed('no_file_number');
+        }
+
+        try {
+            $folders = app(EdmsScanUploadFolderService::class);
+            $folder  = $folders->ensureWithFolios($fileNumber, 'Lands Registry', ['source' => $source]);
+
+            $directory = $folder['path'] ?? null;
+            if (!$directory) {
+                $directory = EdmsScanUploadFolderService::BASE_PATH
+                    . '/' . $folders->registrySlug('Lands Registry')
+                    . '/' . $folders->folderName($fileNumber);
+            }
+
+            $extension = strtolower($file->getClientOriginalExtension() ?: 'jpg');
+            $filename  = 'passport_' . now()->format('Ymd_His') . '_' . Str::random(6) . '.' . $extension;
+            $storedPath = $file->storeAs($directory, $filename, 'public');
+
+            if (!$storedPath) {
+                throw new \RuntimeException('Storage returned no path for the passport image.');
+            }
+
+            $scanningId = $this->registerScan($file, $fileNumber, $storedPath, $filename, $source);
+            $this->pointOssApplicationAt($fileNumber, $storedPath);
+
+            Log::info('Passport photograph filed', [
+                'file_number' => $fileNumber,
+                'path'        => $storedPath,
+                'scanning_id' => $scanningId,
+                'source'      => $source,
+            ]);
+
+            $described = $this->describe($storedPath, 'scannings');
+
+            return [
+                'stored'      => true,
+                'path'        => $storedPath,
+                'url'         => $described['url'],
+                'scanning_id' => $scanningId,
+                'reason'      => 'stored',
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('Could not file passport photograph', [
+                'file_number' => $fileNumber,
+                'source'      => $source,
+                'error'       => $e->getMessage(),
+            ]);
+
+            return $this->failed('error');
+        }
+    }
+
+    /**
+     * Register the stored image as a scan document so it shows up in EDMS.
+     * Returns null when the file carries no file_indexings row to hang the scan off
+     * (temporary files are deliberately not indexed) — the image still lives on disk.
+     */
+    private function registerScan(UploadedFile $file, string $fileNumber, string $storedPath, string $filename, string $source): ?int
+    {
+        $indexing = FileIndexing::on('sqlsrv')->where('file_number', $fileNumber)->first();
+
+        if (!$indexing) {
+            Log::info('Passport stored without a scan row - file has no file_indexings record', [
+                'file_number' => $fileNumber,
+                'path'        => $storedPath,
+            ]);
+
+            return null;
+        }
+
+        $displayOrder = (int) Scanning::on('sqlsrv')->where('file_indexing_id', $indexing->id)->count();
+        $definition   = $displayOrder + 1;
+
+        $scanning = Scanning::on('sqlsrv')->create([
+            'file_indexing_id'  => $indexing->id,
+            'document_path'     => $storedPath,
+            'uploaded_by'       => Auth::id(),
+            'status'            => 'pending',
+            'definition'        => $definition,
+            // scannings.definition_code is nvarchar(50); a long file number would
+            // otherwise blow the column and lose the whole scan row.
+            'definition_code'   => mb_substr($definition . '-' . $fileNumber, 0, 50),
+            'original_filename' => $file->getClientOriginalName() ?: $filename,
+            'paper_size'        => 'A4',
+            'document_type'     => 'Passport Photograph',
+            'notes'             => 'Applicant passport updated from ' . (self::SOURCE_LABELS[$source] ?? $source) . '.',
+            'display_order'     => $displayOrder,
+            'file_size'         => $file->getSize(),
+            'registry'          => 'Lands Registry',
+            'is_pdf_converted'  => false,
+        ]);
+
+        try {
+            $indexing->update(['is_updated' => 1]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not flag file_indexings.is_updated after passport upload', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+
+        return (int) $scanning->id;
+    }
+
+    /**
+     * Repoint the file's OSS application at the new image. No OSS row simply means the
+     * photo lives in EDMS only, which is the same outcome commissioning produces.
+     */
+    private function pointOssApplicationAt(string $fileNumber, string $storedPath): void
+    {
+        try {
+            if (!Schema::connection('sqlsrv')->hasColumn('oss_applications', 'passport_photo')) {
+                return;
+            }
+
+            $query = DB::connection('sqlsrv')->table('oss_applications')->where('file_no', $fileNumber);
+
+            if (Schema::connection('sqlsrv')->hasColumn('oss_applications', 'is_deleted')) {
+                $query->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                });
+            }
+
+            $existing = $query->orderByDesc('id')->first(['id']);
+            if (!$existing) {
+                return;
+            }
+
+            $changes = ['passport_photo' => $storedPath];
+            if (Schema::connection('sqlsrv')->hasColumn('oss_applications', 'updated_at')) {
+                $changes['updated_at'] = now();
+            }
+
+            DB::connection('sqlsrv')->table('oss_applications')->where('id', $existing->id)->update($changes);
+        } catch (\Throwable $e) {
+            Log::warning('Could not point oss_applications.passport_photo at the new image', [
+                'file_number' => $fileNumber,
+                'error'       => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Stored paths are relative to the `public` disk, but legacy rows carry a "public/"
+     * prefix. Strip it so both shapes resolve to the same /storage URL (matches
+     * LandsOneStopShop\ApplicationController::ossPassportUrl()).
+     *
+     * @return array{path:string, url:string, source:string}
+     */
+    private function describe(string $path, string $source): array
+    {
+        $clean = trim($path);
+        if (str_starts_with($clean, 'public/')) {
+            $clean = substr($clean, 7);
+        }
+
+        return [
+            'path'   => $path,
+            'url'    => asset('storage/' . ltrim($clean, '/')),
+            'source' => $source,
+        ];
+    }
+
+    /** @return array{stored:bool, path:?string, url:?string, scanning_id:?int, reason:string} */
+    private function failed(string $reason): array
+    {
+        return ['stored' => false, 'path' => null, 'url' => null, 'scanning_id' => null, 'reason' => $reason];
+    }
+}

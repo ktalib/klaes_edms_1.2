@@ -10,9 +10,32 @@ use Illuminate\Http\Request;
 
 class MobileNotificationController extends Controller
 {
+    /**
+     * The mobile dashboard bell is a file-tracking surface, not a general
+     * inbox. Without this scope every module the app knows nothing about
+     * (Online Legal Search approvals, parcel updates, LAAS) surfaced there and
+     * drowned the file movements the field officer actually opens the app for.
+     *
+     * file_search_request stays in: it is the app's own physical file lookup
+     * flow and the dashboard has explicit SCB Monitor handling for it.
+     */
+    protected const MODULES = ['file_tracking', 'file_search_request'];
+
     public function __construct(
         protected UserNotificationService $notificationService
     ) {}
+
+    /**
+     * Restrict a notification query to the file-tracking surface.
+     */
+    protected function scopeToFileTracking($query)
+    {
+        return $query->where(function ($inner) {
+            $inner->whereIn('module', self::MODULES)
+                ->orWhere('type', 'like', 'file_tracking%')
+                ->orWhere('type', 'file_search_request');
+        });
+    }
 
     /**
      * GET /api/mobile/notifications
@@ -22,12 +45,12 @@ class MobileNotificationController extends Controller
     {
         $userId = $request->user()->id;
 
-        $notifications = Notification::forUser($userId)
+        $notifications = $this->scopeToFileTracking(Notification::forUser($userId))
             ->orderBy('created_at', 'desc')
             ->limit(50)
-            ->get(['id', 'title', 'body', 'type', 'is_read', 'read_at', 'created_at']);
+            ->get(['id', 'title', 'body', 'type', 'module', 'is_read', 'read_at', 'created_at']);
 
-        $unreadCount = Notification::forUser($userId)->unread()->count();
+        $unreadCount = $this->scopeToFileTracking(Notification::forUser($userId))->unread()->count();
 
         return response()->json([
             'success'      => true,
@@ -59,7 +82,15 @@ class MobileNotificationController extends Controller
      */
     public function markAllRead(Request $request): JsonResponse
     {
-        $this->notificationService->markAllForUserAsRead($request->user()->id);
+        // Scoped to the same set the bell displays. The shared
+        // markAllForUserAsRead() clears every module, which would silently
+        // dismiss notifications this screen never showed the user.
+        $this->scopeToFileTracking(Notification::forUser($request->user()->id))
+            ->where('is_read', false)
+            ->update([
+                'is_read' => true,
+                'read_at' => now(),
+            ]);
 
         return response()->json(['success' => true, 'message' => 'All notifications marked as read']);
     }

@@ -587,12 +587,22 @@ function buildActionsMenu(row, viewUrl) {
         </button>`
     : '';
 
-  // Conversion files only. A conversion is where an Occupancy Permit is turned into a
-  // proper title, so it is the one class of file that routinely reaches indexing with
-  // the OP holder still named on the chain and the buyer already on the file — which
-  // is exactly what Match OP resolves. Offering it on every indexed file would put a
-  // dealing-writing action in front of thousands of rows that can never need it.
+  // ── Match OP: DISABLED on File Indexing (2026-09-01) ──────────────────────────
+  //
+  // Left out of the menu, not deleted: openMatchOpModal() and its handler below are
+  // intact and the item comes back by restoring `${matchOpButton}` to the menu
+  // template. The `CON-` gate it shipped with turned out to be the wrong population —
+  // of 44,509 conversion files only TWO carry an Occupancy Permit at all, and both are
+  // already accounted for, so the item could never do anything. The Match OP work sits
+  // on RES- (2,546), COM- (132) and IND- (26) files instead.
+  //
+  // Superseded here by the Transaction History TOT-gap check, which is the right shape
+  // for a conversion file because it reads the ownership chain rather than an OP.
+  // See docs/plans/2026-09-01-transaction-history-tot-gap.md.
+  //
+  // eslint-disable-next-line no-unused-vars
   const isConversionFile = /^\s*CON-/i.test(String(row.file_number ?? ''));
+  // eslint-disable-next-line no-unused-vars
   const matchOpButton = (isConversionFile && config.opMatchCheckUrl)
     ? `<button type="button" class="match-op-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-amber-700 hover:bg-amber-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}">
           <i data-lucide="git-merge" class="h-4 w-4 mt-0.5 shrink-0 text-amber-600"></i>
@@ -644,7 +654,6 @@ function buildActionsMenu(row, viewUrl) {
           ${tempFileButton}
           ${mccFileNoButton}
           ${mppFileNoButton}
-          ${matchOpButton}
           ${unlinkRelatedButton}
           ${updatePlaceholderButton}
           ${deleteButton ? '<div class="border-t border-slate-50 my-1.5"></div>' + deleteButton : ''}

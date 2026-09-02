@@ -192,12 +192,27 @@
       <div id="summary-card" class="hidden"></div>
 
       <!-- File Information (file indexed but no transactions) -->
+      {{-- A file with no transactions is still a searchable, payable record: the report
+           renders its synthetic File Commissioning row (LegalSearchService::buildPrintReport
+           only 404s when the file itself does not exist). So this card carries the same
+           Next / payment step as the summary card, with a note setting the expectation. --}}
       <div id="file-info-card" class="hidden">
-        <div class="bg-white rounded-xl shadow-lg border border-gray-200 max-w-2xl">
+        <div class="bg-white rounded-xl shadow-lg border border-gray-200 max-w-2xl overflow-hidden">
           <div class="px-6 py-4 border-b border-gray-100">
             <h3 class="text-lg font-semibold text-gray-800">File Information</h3>
           </div>
           <div id="file-info-body" class="px-6 py-5"></div>
+          <div class="px-6 pb-5">
+            <div class="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+              No registered transaction is recorded against this file. The full Legal Search report will
+              show its File Commissioning entry only, and still requires sign-in and a &#8358;10,000 payment.
+            </div>
+          </div>
+          <div class="bg-gray-50 px-6 py-4 flex justify-end border-t border-gray-200">
+            <button id="file-info-next-btn" class="inline-flex items-center justify-center rounded-md font-medium border-0 bg-blue-600 text-white hover:bg-blue-700 px-6 py-2.5">
+              <i data-lucide="lock" class="w-4 h-4 mr-2"></i> Next
+            </button>
+          </div>
         </div>
       </div>
     </section>
@@ -307,6 +322,10 @@
   quickTab.addEventListener('click', () => activateTab('quick'));
   advTab.addEventListener('click', () => activateTab('adv'));
 
+  // The File Information card is static markup (only its body is re-rendered), so
+  // its Next button is wired once here — wiring it per render would stack listeners.
+  el('file-info-next-btn').addEventListener('click', goToResult);
+
   function runSearch(params) {
     if (!Object.values(params).some(v => (v || '').trim() !== '')) return;
     window.lastSearchParams = params;
@@ -380,7 +399,7 @@
         </div>
         <div class="bg-gray-50 px-6 py-4 flex justify-end border-t border-gray-200">
           <button id="view-result-btn" class="inline-flex items-center justify-center rounded-md font-medium border-0 bg-blue-600 text-white hover:bg-blue-700 px-6 py-2.5">
-            <i data-lucide="lock" class="w-4 h-4 mr-2"></i> View Result
+            <i data-lucide="lock" class="w-4 h-4 mr-2"></i> Next
           </button>
         </div>
       </div>`;

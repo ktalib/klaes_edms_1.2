@@ -1,12 +1,12 @@
 {{--
     Online Legal Search — shared footer.
-    Footer logo: http://app.klaes.ng/assets/logo/las.jpg
+    Footer logo: http://app.klaes.ng/assets/logo/Left_Logo.png
 --}}
 <footer class="bg-gray-900 text-white">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
         <div class="flex flex-col sm:flex-row items-center justify-between gap-6">
             <div class="flex items-center gap-3">
-                <img src="{{ asset('assets/logo/las.jpg') }}" alt="LAS"
+                <img src="{{ asset('assets/logo/Left_Logo.png') }}" alt="LAnd ADmin Enterprise System"
                      class="h-12 w-auto rounded bg-white p-1"
                      onerror="this.style.display='none';">
                 <div class="leading-tight text-left">

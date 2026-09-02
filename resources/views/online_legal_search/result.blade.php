@@ -31,6 +31,30 @@
     .pay-note { font-size: 12px; color: #6b7280; margin-top: 14px; text-align: center; }
     .pay-error { display:none; margin-top: 12px; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca; padding:10px; border-radius:8px; font-size:13px; }
 
+    /* Payment + identification, side by side on desktop and stacked below 900px.
+       Flex rather than grid so the two cards keep their own heights when the
+       identification card grows with previews and validation messages. */
+    .pay-columns { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; justify-content: center; width: 100%; }
+    .pay-columns .pay-wrap { flex: 1 1 460px; max-width: 520px; }
+    @media (max-width: 900px) { .pay-columns { flex-direction: column; align-items: center; } .pay-columns .pay-wrap { width: 520px; } }
+
+    /* Identification card controls */
+    .id-label { display: block; margin-top: 14px; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: #374151; }
+    .id-input { width: 100%; box-sizing: border-box; padding: 11px 12px; font-size: 14px; border: 1px solid #d1d5db; border-radius: 10px; color: #1f2937; background: #fff; font-family: inherit; }
+    .id-input:focus { outline: 2px solid #93c5fd; outline-offset: 1px; }
+    .id-uploads { display: flex; gap: 12px; margin-top: 6px; }
+    .id-uploads .id-upload { flex: 1 1 0; min-width: 0; }
+    .id-preview-wide { height: 150px; }
+    .id-preview { height: 104px; border: 1px dashed #d1d5db; border-radius: 10px; background: #f9fafb; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px; }
+    .id-preview img { width: 100%; height: 100%; object-fit: cover; }
+    .id-preview-empty { font-size: 11px; color: #9ca3af; }
+    .id-file { width: 100%; box-sizing: border-box; font-size: 11px; color: #4b5563; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px; background: #fff; }
+    .id-clear { margin-top: 6px; background: none; border: 0; padding: 0; font-size: 11px; color: #dc2626; cursor: pointer; }
+    .id-status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+    .id-status.ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .id-status.warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .id-status.bad { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+
     /* Report page (from ONLINE-demo.html) */
     .page { background-color: #fff; width: 11in; min-height: 8.5in; padding: 0.2in 0.4in; position: relative; box-sizing: border-box; display: flex; flex-direction: column; overflow: hidden; }
     .watermark { position: absolute; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); white-space: nowrap; font-size: 52px; font-weight: 900; letter-spacing: 2px; color: rgba(0,0,0,.14); text-transform: uppercase; text-align: center; pointer-events: none; z-index: 0; }
@@ -84,6 +108,7 @@
     <a href="{{ route('ols.landing', ['query' => $fileNumber]) }}" class="btn-light">&larr; Back to Search</a>
   </div>
 
+  <div class="pay-columns">
   <div class="pay-wrap">
     <div class="pay-head">
       <h1>Submit Your Legal Search Request</h1>
@@ -103,6 +128,12 @@
       </select>
       <p class="pay-note" style="margin-top:6px;text-align:left;">A search can only be carried out for one of the listed purposes.</p>
 
+      {{-- Phone sits with the email it belongs beside, above it. It is submitted with
+           the identification check, not with the payment. --}}
+      <label for="payPhone" style="display:block;margin-top:16px;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151;">Phone number <span style="color:#dc2626;">*</span></label>
+      <input id="payPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="08031234567" maxlength="30"
+             style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid #d1d5db;border-radius:10px;color:#1f2937;" />
+
       <label for="payEmail" style="display:block;margin-top:16px;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151;">Email address</label>
       <input id="payEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com"
              style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid #d1d5db;border-radius:10px;color:#1f2937;" />
@@ -117,6 +148,9 @@
       <div id="payError" class="pay-error"></div>
       <p class="pay-note">You will be charged once. Your request is then reviewed by the Director / Deputy Director, and the approved report is emailed to you as a PDF.</p>
     </div>
+  </div>
+
+  @include('online_legal_search.partials.identification-card')
   </div>
 
   <script src="https://js.paystack.co/v1/inline.js"></script>
@@ -147,6 +181,17 @@
       }
 
       btn.addEventListener('click', function () {
+        // ID name verification must have passed on the SERVER before the checkout
+        // may open. window.OLS_ID_VERIFIED is set only by a verified response from
+        // ols.verification.store; verifyPayment() re-checks the session-bound row
+        // regardless, so tampering with this flag buys nothing.
+        if (!window.OLS_ID_VERIFIED) {
+          showError('Please complete the Identify your Customer (IYC) card — the check runs automatically once every field is filled and your ID photo is attached.');
+          const card = document.getElementById('idCard');
+          if (card) { card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          return;
+        }
+
         // A search cannot proceed without one of the defined purposes.
         const purposeId = (purposeInput.value || '').trim();
         if (!purposeId) {
@@ -197,6 +242,230 @@
           onClose: function () { btn.disabled = false; btn.textContent = PAY_LABEL; },
         });
         handler.openIframe();
+      });
+    })();
+  </script>
+
+  <script>
+    /*
+     * Applicant identification card.
+     *
+     * The checks here are a convenience only — StoreIdVerificationRequest re-applies
+     * every one of them, and the verification status is computed on the server.
+     * Nothing this script sends can decide the outcome.
+     */
+    (function () {
+      const VERIFY_URL = @json(route('ols.verification.store'));
+      const CSRF       = document.querySelector('meta[name="csrf-token"]').content;
+      const fileNumber = @json($fileNumber);
+      const MAX_BYTES  = {{ (int) config('id_verification.uploads.max_kilobytes', 5120) }} * 1024;
+      const ALLOWED    = ['image/jpeg', 'image/png', 'image/webp'];
+
+      const el = (id) => document.getElementById(id);
+      const typeSelect = el('idType');
+      const otherWrap  = el('idTypeOtherWrap');
+      const frontLabel = el('idFrontLabel');
+      const statusBox  = el('idStatus');
+      const payBtn     = el('payBtn');
+
+      window.OLS_ID_VERIFIED = false;
+
+      function setStatus(kind, message) {
+        statusBox.className = 'id-status ' + kind;
+        statusBox.textContent = message;
+        statusBox.style.display = 'block';
+      }
+
+      // Only the label changes with the ID type - a passport's data page is not
+      // a "front", so the chosen type names its own image.
+      function applyTypeRules() {
+        const opt = typeSelect.options[typeSelect.selectedIndex];
+
+        otherWrap.style.display = typeSelect.value === 'other' ? 'block' : 'none';
+        frontLabel.innerHTML = (opt && opt.dataset.frontLabel ? opt.dataset.frontLabel : 'Photo of your ID')
+          + ' <span style="color:#dc2626;">*</span>';
+      }
+
+      function clearImage(inputId) {
+        const input = el(inputId);
+        const preview = el(inputId + 'Preview');
+        const clearBtn = el(inputId + 'Clear');
+        input.value = '';
+        preview.innerHTML = '<span class="id-preview-empty">No image selected</span>';
+        clearBtn.style.display = 'none';
+        invalidate();
+      }
+
+      // Any edit after a pass invalidates it: the server would have to re-verify the
+      // new details anyway, so the pay button must not stay unlocked.
+      function invalidate() {
+        if (window.OLS_ID_VERIFIED) {
+          window.OLS_ID_VERIFIED = false;
+          statusBox.style.display = 'none';
+        }
+      }
+
+      function wireImage(inputId) {
+        const input = el(inputId);
+        const preview = el(inputId + 'Preview');
+        const clearBtn = el(inputId + 'Clear');
+
+        input.addEventListener('change', function () {
+          invalidate();
+          const file = input.files && input.files[0];
+          if (!file) { clearImage(inputId); return; }
+
+          if (ALLOWED.indexOf(file.type) === -1) {
+            setStatus('bad', 'Please choose a JPEG, PNG or WebP image.');
+            clearImage(inputId);
+            return;
+          }
+          if (file.size > MAX_BYTES) {
+            setStatus('bad', 'That image is larger than 5MB. Please choose a smaller file.');
+            clearImage(inputId);
+            return;
+          }
+
+          const reader = new FileReader();
+          reader.onload = function (e) {
+            preview.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = e.target.result;
+            img.alt = 'Selected identification image';
+            preview.appendChild(img);
+            clearBtn.style.display = 'inline';
+          };
+          reader.readAsDataURL(file);
+
+          // Picking the image is a deliberate act and usually the last one, so the
+          // check runs without waiting out the typing debounce.
+          scheduleVerification();
+        });
+
+        clearBtn.addEventListener('click', function () { clearImage(inputId); });
+      }
+
+      ['idFullName', 'idAddress', 'idTypeOther'].forEach(function (id) {
+        el(id).addEventListener('input', function () { invalidate(); scheduleVerification(); });
+      });
+      typeSelect.addEventListener('change', function () { applyTypeRules(); invalidate(); scheduleVerification(); });
+      wireImage('idFront');
+      applyTypeRules();
+
+      // ---- Automatic verification -------------------------------------------
+      // No button: the check fires by itself once the form is complete, and again
+      // whenever an answer changes. Three guards keep that from being wasteful,
+      // because each run uploads an image and costs the server an OCR pass:
+      //   * a debounce, so typing a name does not fire on every keystroke;
+      //   * a signature of the submitted answers, so nothing is re-sent unchanged;
+      //   * an in-flight flag, so a slow check is never overlapped by another.
+      // The route is rate limited regardless; these keep an honest applicant well
+      // clear of that limit.
+      let debounceTimer = null;
+      let inFlight = false;
+      let lastSignature = null;
+
+      function currentAnswers() {
+        const file = el('idFront').files && el('idFront').files[0];
+
+        return {
+          email:    (el('payEmail').value || '').trim(),
+          phone:    (el('payPhone').value || '').trim(),
+          fullName: (el('idFullName').value || '').trim(),
+          address:  (el('idAddress').value || '').trim(),
+          type:     typeSelect.value,
+          typeOther: (el('idTypeOther').value || '').trim(),
+          file:     file || null,
+        };
+      }
+
+      // Complete enough to be worth sending. Deliberately mirrors the server's
+      // required fields — StoreIdVerificationRequest re-checks all of it.
+      function isComplete(a) {
+        if (!a.file) return false;
+        if (!a.fullName || !a.address || !a.phone) return false;
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) return false;
+        if (!a.type) return false;
+        if (a.type === 'other' && !a.typeOther) return false;
+
+        return true;
+      }
+
+      // Identifies the exact submission, image included, so re-sending an
+      // unchanged form is skipped.
+      function signatureOf(a) {
+        return [
+          a.email, a.phone, a.fullName, a.address, a.type, a.typeOther,
+          a.file ? a.file.name + ':' + a.file.size + ':' + a.file.lastModified : '',
+        ].join('|');
+      }
+
+      function scheduleVerification() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(runVerification, 900);
+      }
+
+      function runVerification() {
+        if (inFlight) return;
+
+        const answers = currentAnswers();
+
+        if (!isComplete(answers)) {
+          // Nothing to say yet — the applicant is still filling the form, and
+          // nagging about fields they have not reached would be noise.
+          statusBox.style.display = 'none';
+          return;
+        }
+
+        const signature = signatureOf(answers);
+        if (signature === lastSignature) return;
+
+        const body = new FormData();
+        body.append('file_number', fileNumber);
+        body.append('email', answers.email);
+        body.append('applicant_full_name', answers.fullName);
+        body.append('applicant_phone', answers.phone);
+        body.append('applicant_address', answers.address);
+        body.append('identification_type', answers.type);
+        if (answers.type === 'other') { body.append('identification_type_other', answers.typeOther); }
+        body.append('id_front', answers.file);
+
+        inFlight = true;
+        setStatus('warn', 'Checking your identification…');
+
+        fetch(VERIFY_URL, { method: 'POST', headers: { 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' }, body: body })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+          .then(function (res) {
+            inFlight = false;
+
+            if (res.status === 422 && res.j && res.j.errors) {
+              // A rejected submission is not remembered, so correcting the field
+              // re-runs the check rather than being skipped as "unchanged".
+              const first = Object.keys(res.j.errors)[0];
+              setStatus('bad', (res.j.errors[first] && res.j.errors[first][0]) || 'Please check the details you entered.');
+              return;
+            }
+            if (res.status === 429) {
+              setStatus('warn', 'Too many checks in a row. Please wait a minute — this will retry when you change something.');
+              return;
+            }
+            if (!res.ok || !res.j) { setStatus('bad', 'We could not complete the check. Please try again.'); return; }
+
+            lastSignature = signature;
+            window.OLS_ID_VERIFIED = res.j.status === 'verified';
+            setStatus(res.j.status === 'verified' ? 'ok' : (res.j.status === 'review' ? 'warn' : 'bad'), res.j.message);
+
+            if (window.OLS_ID_VERIFIED) { payBtn.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+          })
+          .catch(function () {
+            inFlight = false;
+            setStatus('bad', 'A network error occurred while checking your identification. It will retry when you change an answer.');
+          });
+      }
+
+      // Every input that forms part of the submission schedules a fresh check.
+      ['payEmail', 'payPhone'].forEach(function (id) {
+        el(id).addEventListener('input', function () { invalidate(); scheduleVerification(); });
       });
     })();
   </script>

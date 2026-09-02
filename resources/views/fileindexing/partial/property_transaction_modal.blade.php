@@ -247,7 +247,11 @@
                     includeFourthParty: false,
                     fourthParty: '',
                     duplicateInfo: null,
-                    forceSave: false
+                    forceSave: false,
+                    // Declared up front so Alpine tracks them from the first render — a
+                    // block only becomes 'required' when the ownership-gap check adds it.
+                    totRequired: false,
+                    totLegLabel: ''
                 });
             },
 
@@ -316,6 +320,63 @@
 
             isOPTransaction(transactionType) {
                 return normalizePropertyTransactionType(transactionType) === 'Occupancy Permit (OP)';
+            },
+
+            // The 44 Kano Local Governments, in the exact wording saved as party_1.
+            // Rendered from App\Services\KanoLgaDirectory so this list, the PRA form and the
+            // create-indexing OP section can never drift apart.
+            // Echoed through Blade's ESCAPING echo, not its raw JSON directive: this sits
+            // inside the x-data attribute, so the quotes in the JSON must arrive as HTML
+            // entities and be decoded by the browser before Alpine evaluates the object.
+            // Raw quotes close the attribute at the first array element and spill the rest
+            // of this object onto the page as visible text.
+            kanoLgaAuthorities: {{ json_encode(app(\App\Services\KanoLgaDirectory::class)->fullNames()) }},
+
+            // An Occupancy Permit granted by a Local Government rather than by the State.
+            // Some conversion and direct-allocation files carry these, and an LGA does not
+            // register its permits in the State deeds registry — so they have no serial,
+            // page, volume, date or time to enter.
+            isLgaOpType(transaction) {
+                if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
+                // Tolerant of the historic 'OP ' prefix the other two options carry.
+                return String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+            },
+
+            // Registration particulars are fixed and uneditable for Right of Occupancy and
+            // for an LGA-issued OP alike. Both stamp 0/0/0 and leave date/time blank.
+            regParticularsLocked(transaction) {
+                if (!transaction) return false;
+                return this.isROFOTransaction(transaction.transactionType) || this.isLgaOpType(transaction);
+            },
+
+            // Applies (or undoes) the LGA rules when the OP Type changes.
+            handleOpTypeChange(transaction) {
+                if (this.isLgaOpType(transaction)) {
+                    // Registration number 0/0/0, no date, no time — the state registry never saw it.
+                    transaction.serialNo = '0';
+                    transaction.pageNo = '0';
+                    transaction.volumeNo = '0';
+                    transaction.regDate = '';
+                    transaction.regTime = '';
+                    // The grantor is no longer the State; make the officer pick which LGA.
+                    if (!this.kanoLgaAuthorities.includes(transaction.firstParty)) {
+                        transaction.firstParty = '';
+                    }
+                    return;
+                }
+
+                // Switched away from LGA: clear the 0/0/0 placeholder so the real particulars
+                // can be typed, and hand party 1 back to whatever the transaction type dictates.
+                if (transaction.serialNo === '0' && transaction.pageNo === '0' && transaction.volumeNo === '0') {
+                    transaction.serialNo = '';
+                    transaction.pageNo = '';
+                    transaction.volumeNo = '';
+                }
+                if (this.kanoLgaAuthorities.includes(transaction.firstParty)) {
+                    transaction.firstParty = this.isGovernmentTransaction(transaction.transactionType)
+                        ? 'KANO STATE GOVERNMENT'
+                        : '';
+                }
             },
 
             // Detects Certificate of Occupancy transactions (and its ST/SLTR variants),
@@ -551,6 +612,10 @@
                         })[status] || status,
                         instrument: instrument || 'Instrument',
                         parties: [p1, p2, t.thirdParty].filter(Boolean).join(' \u2192 ') || '\u2014',
+                        // Kept unjoined as well: the ownership-gap check walks party_1 and
+                        // party_2 individually, and cannot un-join the display string.
+                        p1: p1,
+                        p2: p2,
                         regNo: (regNo && regNo !== '//') ? regNo : '',
                         date: t.transactionDate || t.regDate || '',
                         sortTs: this.fhSortTimestamp(t.transactionDate || t.regDate || ''),
@@ -602,6 +667,8 @@
                         statusLabel: derived ? 'Derived' : 'On file',
                         instrument: instrument || 'Instrument',
                         parties: [p1, p2, clean(row.party_3)].filter(Boolean).join(' \u2192 ') || '\u2014',
+                        p1: p1,
+                        p2: p2,
                         regNo: (clean(row.reg_no) && row.reg_no !== '0/0/0') ? row.reg_no : '',
                         date: clean(row.transaction_date) || clean(row.reg_date) || '',
                         sortTs: this.fhSortTimestamp(clean(row.transaction_date) || clean(row.reg_date) || ''),
@@ -886,9 +953,11 @@
                     isGov: isGov
                 });
 
-                if (isGov) {
+                // An LGA-issued OP is a government transaction whose grantor is NOT the State,
+                // so it keeps whichever Local Government was picked instead of being reset.
+                if (isGov && !this.isLgaOpType(transaction)) {
                     transaction.firstParty = 'KANO STATE GOVERNMENT';
-                } else {
+                } else if (!isGov) {
                     if (transaction.firstParty === 'KANO STATE GOVERNMENT') {
                         transaction.firstParty = '';
                     }
@@ -905,6 +974,16 @@
 
                 if (!this.isOPTransaction(transaction.transactionType)) {
                     transaction.opSerialNumber = '';
+                    // opType is cleared by the caller; undo the LGA registration stamp here so a
+                    // deed does not inherit 0/0/0 from a permit the row used to be.
+                    if (transaction.serialNo === '0' && transaction.pageNo === '0' && transaction.volumeNo === '0') {
+                        transaction.serialNo = '';
+                        transaction.pageNo = '';
+                        transaction.volumeNo = '';
+                    }
+                    if (this.kanoLgaAuthorities.includes(transaction.firstParty)) {
+                        transaction.firstParty = '';
+                    }
                 }
 
                 if (!this.isCofOTransaction(transaction.transactionType)) {
@@ -922,7 +1001,274 @@
             },
 
             // Submit form
+            /* ═══════════════════════════════════════════════════════════════════════
+             * Missing Transfer of Title detection  (advisory, conversion files only)
+             *
+             * The chain says the title moved from one person to another, but no Transfer
+             * of Title records the move. Every LINK is examined, not just the last owner
+             * against the applicant — a break at the top of a chain
+             * (Owner 1 → ??? → Owner 2 → Owner 3 → Owner 4) is invisible to a check that
+             * only looks at the end of it, and those are the ones that survive for years.
+             *
+             * ADVISORY BY DESIGN. It reveals the gaps, pre-fills the transfers, and then
+             * lets the officer save anyway. On legacy conversion files the chain is
+             * incomplete because the PAPER is incomplete, and some gaps cannot be closed
+             * from the file at all; blocking would stop indexing on data nobody present
+             * can fix. See docs/plans/2026-09-01-transaction-history-tot-gap.md.
+             * ═══════════════════════════════════════════════════════════════════════ */
+
+            /** Set once the sections have been revealed, so a second Submit saves. */
+            totGapAcknowledged: false,
+            totGapLegs: [],
+
+            /** Conversion files only — the one gate this whole feature sits behind. */
+            totIsConversionFile() {
+                const fileNo = String(
+                    this.fileIndexingData.file_number || this.fileIndexingData.temp_file_no || ''
+                ).trim();
+                return /^\s*CON-/i.test(fileNo);
+            },
+
+            /**
+             * Does this instrument move ownership?
+             *
+             * Mirrors TitleHolderResolver::movesOwnership() — the rule Legal Search, the
+             * holder lines and Match OP all use. A mortgage, caveat, lease or
+             * recertification does NOT move a title, so it opens no leg.
+             */
+            totMovesOwnership(instrument) {
+                const t = String(instrument || '').toLowerCase();
+                if (!t) return false;
+
+                const never = ['mortgage', 'surrender', 'release', 'caveat', 'search',
+                    'recertification', 'change of purpose', 'sub-lease', 'sublease',
+                    'power of attorney', 'lease'];
+                if (never.some((n) => t.indexOf(n) !== -1)) return false;
+
+                const moves = ['assignment', 'transfer of title', 'conveyance', 'gift',
+                    'vesting', 'sale'];
+                return moves.some((m) => t.indexOf(m) !== -1);
+            },
+
+            /** A grant opens a chain; it never continues one. */
+            totIsGrant(instrument) {
+                const t = String(instrument || '').toLowerCase();
+                return t.indexOf('occupancy permit') !== -1
+                    || t.indexOf('right of occupancy') !== -1
+                    || t.indexOf('certificate of occupancy') !== -1
+                    || t.indexOf('statutory') !== -1;
+            },
+
+            totIsGovernment(name) {
+                const n = String(name || '').toLowerCase();
+                return n.indexOf('government') !== -1
+                    || n.indexOf('ministry') !== -1
+                    || n.indexOf('governor') !== -1
+                    || n.indexOf('kano state') !== -1;
+            },
+
+            /** Honorifics off, words sorted — so 'ALH MUSA IDRIS' keys as 'IDRISMUSA'. */
+            totPersonKey(value) {
+                return String(value || '')
+                    .toUpperCase()
+                    .replace(/\b(ALH|ALHAJI|ALHAJA|HAJIYA|HAJIA|MAL|MALAM|MALLAM|MR|MRS|MISS|MS|DR|ENGR|ARC|BARR|PROF|CHIEF|SIR|LATE|HON|MOHD|MUHD)\b\.?/g, ' ')
+                    .replace(/[^A-Z0-9\s]+/g, ' ')
+                    .trim()
+                    .split(/\s+/)
+                    .sort()
+                    .join('');
+            },
+
+            /**
+             * The same person spelt two ways? (MOHD/MUHD, OZATAMGBO/OZOTAMGBO.)
+             *
+             * 36 files estate-wide are in that state. Treating them as a leg would ask the
+             * officer to record a transfer from a man to himself, so any close match
+             * withholds the warning — that is a name correction, not a dealing.
+             */
+            totSamePerson(a, b) {
+                const x = this.totPersonKey(a);
+                const y = this.totPersonKey(b);
+                if (!x || !y) return false;
+                if (x === y) return true;
+
+                // Digits are identifiers, not spellings. 'PLOT 1 LTD' and 'PLOT 2 LTD' are
+                // one character apart and score 0.9 on the check below, which would silently
+                // swallow the leg between two genuinely different parties. A difference in
+                // the digits settles it before any fuzzy comparison runs.
+                const digits = (v) => (String(v).match(/\d+/g) || []).join('.');
+                if (digits(x) !== digits(y)) return false;
+
+                const long = x.length >= y.length ? x : y;
+                const short = x.length >= y.length ? y : x;
+                if (!long.length) return false;
+
+                // Levenshtein
+                let prev = Array.from({ length: short.length + 1 }, (_, i) => i);
+                for (let i = 1; i <= long.length; i++) {
+                    const row = [i];
+                    for (let j = 1; j <= short.length; j++) {
+                        row[j] = Math.min(
+                            prev[j] + 1,
+                            row[j - 1] + 1,
+                            prev[j - 1] + (long[i - 1] === short[j - 1] ? 0 : 1)
+                        );
+                    }
+                    prev = row;
+                }
+
+                return 1 - (prev[short.length] / long.length) >= 0.80;
+            },
+
+            /**
+             * Ownership legs with no Transfer of Title behind them.
+             *
+             * Walks the card's own chronological, de-duplicated row list — on-file history
+             * AND everything typed into the card — and compares where each dealing LEFT the
+             * title with where the next one PICKED IT UP.
+             */
+            totMissingLegs() {
+                if (!this.totIsConversionFile()) return [];
+
+                const rows = this.fhSummaryRows().filter((r) => {
+                    // Synthetic context (File Commissioning, Temporary File) is not a dealing.
+                    if (r.derived) return false;
+                    return String(r.p1 || '').trim() !== '' || String(r.p2 || '').trim() !== '';
+                });
+
+                if (rows.length < 2) return [];
+
+                // Every transfer already on the chain, by party pair, so a leg that is
+                // already recorded is never asked for again.
+                const recorded = new Set();
+                rows.forEach((r) => {
+                    if (!this.totMovesOwnership(r.instrument)) return;
+                    recorded.add(this.totPersonKey(r.p1) + '>' + this.totPersonKey(r.p2));
+                });
+
+                const legs = [];
+                const seen = new Set();
+
+                for (let i = 0; i < rows.length - 1; i++) {
+                    const holder = String(rows[i].p2 || '').trim();     // where it was left
+                    const next = rows[i + 1];
+                    const taker = String(next.p1 || '').trim();          // where it resumes
+
+                    if (!holder || !taker) continue;
+
+                    // A grant starts a chain: nobody transferred TO the government.
+                    if (this.totIsGrant(next.instrument)) continue;
+                    if (this.totIsGovernment(taker)) continue;
+
+                    // Same party either side — the chain is continuous here.
+                    if (this.totSamePerson(holder, taker)) continue;
+
+                    const key = this.totPersonKey(holder) + '>' + this.totPersonKey(taker);
+                    if (recorded.has(key) || seen.has(key)) continue;
+                    seen.add(key);
+
+                    legs.push({
+                        from: holder,
+                        to: taker,
+                        after: rows[i].instrument,
+                        before: next.instrument,
+                    });
+                }
+
+                return legs;
+            },
+
+            /**
+             * The instrument these sections are captured as: 'Transfer of Title', plain.
+             *
+             * NOT 'Transfer Of Title (OP)'. That name means the transfer off an Occupancy
+             * Permit, and this check does not read an OP at all — it reads the ownership
+             * chain, which is the whole reason it works on conversion files. Labelling a
+             * conversion's transfer as an OP transfer would misfile it against an
+             * instrument the file does not have.
+             *
+             * InstrumentTypes only holds the (OP) spelling, so the plain name is added to
+             * the dropdown through the component's own registerTransactionType() — a value
+             * that matches no option renders the select blank, on a section whose entire
+             * purpose is to be pre-filled.
+             */
+            totTransferOption() {
+                const options = (this.transactionTypeOptions || []).concat(this.additionalTransactionTypes || []);
+
+                // An existing non-OP spelling wins, so this follows the list if one is added.
+                const plain = options.find((o) => {
+                    const t = String(o).toLowerCase();
+                    return t.indexOf('transfer of title') !== -1 && t.indexOf('(op)') === -1;
+                });
+
+                return plain || 'Transfer of Title';
+            },
+
+            /** One red, pre-filled Transfer of Title block per missing leg. */
+            totAddSections(legs) {
+                legs.forEach((leg) => {
+                    this.addTransaction();
+                    const block = this.transactions[this.transactions.length - 1];
+
+                    block.transactionType = this.totTransferOption();
+                    block.firstParty = leg.from;
+                    block.secondParty = leg.to;
+                    // What the card renders red against, and what clears when filled in.
+                    block.totRequired = true;
+                    block.totLegLabel = leg.from + ' → ' + leg.to;
+
+                    this.registerTransactionType(block.transactionType);
+                });
+            },
+
+            /** Still outstanding? Used to clear the banner as the officer fills them in. */
+            totOutstandingCount() {
+                return (this.transactions || []).filter((t) =>
+                    t.totRequired && !String(t.transactionDate || '').trim()
+                ).length;
+            },
+
             submitTransactions() {
+                // Advisory gap check. The FIRST Submit on a conversion file with unrecorded
+                // ownership legs reveals them and does not save; a second Submit saves
+                // whatever is in the card. So the finding is unmissable and never a dead end.
+                if (!this.totGapAcknowledged && this.totIsConversionFile()) {
+                    const legs = this.totMissingLegs();
+
+                    if (legs.length) {
+                        this.totGapLegs = legs;
+                        this.totGapAcknowledged = true;
+                        this.totAddSections(legs);
+
+                        if (typeof Swal !== 'undefined') {
+                            Swal.fire({
+                                icon: 'warning',
+                                title: legs.length === 1
+                                    ? 'One ToT is not recorded'
+                                    : legs.length + ' ToTs are not recorded',
+                                {{-- Single-quoted HTML attributes throughout: this whole
+                                     component lives inside an x-data=&quot;...&quot; attribute,
+                                     so one double quote here ends the attribute and dumps the
+                                     rest of the component into the page as text. --}}
+                                html: `<p style='font-size:13px;color:#475569;'>The history shows the title moving, `
+                                    + `but no Transfer of Title records the move:</p>`
+                                    + `<div style='margin-top:8px;text-align:left;font-size:12px;border:1px solid #fecaca;`
+                                    + `background:#fef2f2;border-radius:8px;padding:8px;'>`
+                                    + legs.map((l) => `<div style='padding:2px 0;'><b>`
+                                        + (l.from || '?') + `</b> &rarr; <b>` + (l.to || '?') + `</b></div>`).join('')
+                                    + `</div>`
+                                    + `<p style='font-size:12px;color:#64748b;margin-top:10px;'>`
+                                    + `A Transfer of Title section has been added for each, in red, with the names filled in. `
+                                    + `Complete them, or press Submit again to save without them.</p>`,
+                                confirmButtonText: 'Capture Conversion ToT',
+                                confirmButtonColor: '#dc2626',
+                            });
+                        }
+
+                        return;
+                    }
+                }
+
                 console.log('Submitting transactions:', this.transactions);
                 console.log('File indexing data:', this.fileIndexingData);
 
@@ -975,7 +1321,7 @@
                         Swal.fire({
                             icon: 'error',
                             title: 'Validation Error',
-                            text: 'OP Type is required for Occupancy Permit (OP) transactions. Please select either \'OP Direct Allocation\' or \'OP Resettlement\'.',
+                            text: 'OP Type is required for Occupancy Permit (OP) transactions. Please select Resettlement, Direct Allocation or LGA.',
                             confirmButtonText: 'OK'
                         });
                     } else {
@@ -984,8 +1330,25 @@
                     return;
                 }
 
+                // An LGA-issued OP is exempt: the Local Government registers nothing in the
+                // state deeds registry, so it has no serial or volume number to supply.
+                const missingLgaGrantor = this.transactions.some(t =>
+                    this.isLgaOpType(t) && !String(t.firstParty || '').trim()
+                );
+
+                if (missingLgaGrantor) {
+                    const msg = 'Select the Local Government that issued the Occupancy Permit.';
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({ icon: 'error', title: 'Validation Error', text: msg, confirmButtonText: 'OK' });
+                    } else {
+                        alert(msg);
+                    }
+                    return;
+                }
+
                 const missingOpRegNo = this.transactions.some(t =>
-                    this.isOPTransaction(t.transactionType) && (!String(t.serialNo || '').trim() || !String(t.volumeNo || '').trim())
+                    this.isOPTransaction(t.transactionType) && !this.isLgaOpType(t)
+                    && (!String(t.serialNo || '').trim() || !String(t.volumeNo || '').trim())
                 );
 
                 if (missingOpRegNo) {
@@ -1150,11 +1513,65 @@
                     <div id="ptm-cofo-dup-card" class="hidden mb-4"></div>
 
                     <!-- Transactions Container -->
+                    {{-- Ownership-gap summary. Advisory: it says what was found and that the
+                         save is still available, so nobody reads it as a wall. --}}
+                    <template x-if="totGapLegs.length">
+                        <div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3">
+                            <div class="flex items-start gap-2.5">
+                                <svg class="w-4 h-4 mt-0.5 shrink-0 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.2 16a2 2 0 001.73 3z" />
+                                </svg>
+                                <div class="min-w-0">
+                                    <p class="text-xs font-bold text-red-900">
+                                        <span x-text="totGapLegs.length"></span>
+                                        <span x-text="totGapLegs.length === 1 ? 'ToT is' : 'ToTs are'"></span>
+                                        not recorded on this file
+                                    </p>
+                                    <div class="mt-1.5 flex flex-wrap gap-1.5">
+                                        <template x-for="(leg, li) in totGapLegs" :key="li">
+                                            <span class="inline-flex items-center rounded border border-red-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-red-800">
+                                                <span x-text="leg.from"></span>
+                                                <span class="mx-1 text-red-300">&rarr;</span>
+                                                <span x-text="leg.to"></span>
+                                            </span>
+                                        </template>
+                                    </div>
+                                    <p class="mt-2 text-[11px] text-red-800">
+                                        A Transfer of Title section has been added for each, below, with the names filled in.
+                                        Complete them — or press <b>Submit</b> again to save without them.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+
                     <template x-for="(transaction, index) in transactions" :key="transaction.id">
-                        <div class="border border-gray-300 rounded-lg p-4 mb-4 bg-white shadow-sm fh-txn-block"
+                        <div class="rounded-lg p-4 mb-4 shadow-sm fh-txn-block"
+                             :class="transaction.totRequired
+                                ? 'border-2 border-red-400 border-l-4 border-l-red-600 bg-red-50/60'
+                                : 'border border-gray-300 bg-white'"
                              :id="'fh-txn-' + transaction.id">
+
+                            {{-- Raised by the ownership-gap check: the chain moved the title
+                                 between these two people and nothing recorded the move. Advisory
+                                 — the officer may complete it or submit without it. --}}
+                            <template x-if="transaction.totRequired">
+                                <div class="mb-3 flex flex-wrap items-center gap-2">
+                                    <span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide bg-red-600 text-white">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M12 9v2m0 4h.01M4.93 19h14.14a2 2 0 001.73-3L13.73 4a2 2 0 00-3.46 0L3.2 16a2 2 0 001.73 3z" />
+                                        </svg>
+                                        Transfer of Title missing
+                                    </span>
+                                    <span class="text-[11px] font-semibold text-red-800" x-text="transaction.totLegLabel"></span>
+                                </div>
+                            </template>
+
                             <div class="flex justify-between items-center mb-3">
-                                <h3 class="text-lg font-semibold text-gray-700 flex items-center gap-2">
+                                <h3 class="text-lg font-semibold flex items-center gap-2"
+                                    :class="transaction.totRequired ? 'text-red-900' : 'text-gray-700'">
                                     Transaction <span x-text="index + 1"></span>
                                     <span x-show="transaction.recordId"
                                         class="text-xs font-medium px-2 py-0.5 rounded-full border"
@@ -1221,10 +1638,21 @@
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Transaction Type
                                             <span class="text-red-500">*</span></label>
+                                        {{-- Locked on a section the gap check added: the instrument
+                                             is the finding, not a choice. Changing it to something
+                                             else would leave the red label and the pre-filled parties
+                                             describing a transfer while the row records a different
+                                             dealing entirely. The block can still be deleted.
+                                             The submitted payload is built from `transactions`, not
+                                             from the DOM, so a disabled select still saves. --}}
                                         <select x-model="transaction.transactionType"
+                                            :disabled="transaction.totRequired"
                                             @change="handleTransactionTypeChange(transaction); if (!isOPTransaction(transaction.transactionType)) transaction.opType = ''; if (!isCofOTransaction(transaction.transactionType)) transaction.cofoType = ''"
                                             :name="'transactions[' + index + '][transaction_type]'"
-                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                            class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                            :class="transaction.totRequired
+                                                ? 'border-red-300 bg-red-50 text-red-900 font-semibold cursor-not-allowed'
+                                                : 'border-gray-300 bg-white hover:border-gray-400'">
                                             <option value="">Select type</option>
                                             <template x-for="option in transactionTypeOptions"
                                                 :key="'default-' + option">
@@ -1277,36 +1705,48 @@
                                 </div>
 
                                 <!-- OP Type (shown only for Occupancy Permit) -->
+                                {{-- Values keep their historic "OP " prefix so a stored row still
+                                     re-selects on load; only the labels read as the three types.
+                                     "LGA" is a permit issued by a Local Government rather than by
+                                     the State, which changes both party 1 and the registration
+                                     particulars below — see handleOpTypeChange(). --}}
                                 <div x-show="isOPTransaction(transaction.transactionType)" x-cloak>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">
                                         OP Type <span class="text-red-500">*</span>
                                     </label>
                                     <select x-model="transaction.opType"
+                                        @change="handleOpTypeChange(transaction)"
                                         :name="'transactions[' + index + '][op_type]'"
                                         :required="isOPTransaction(transaction.transactionType)"
                                         :class="isOPTransaction(transaction.transactionType) && !transaction.opType ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'"
                                         class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
                                         <option value="">Select OP type</option>
-                                        <option value="OP Direct Allocation">OP Direct Allocation</option>
-                                        <option value="OP Resettlement">OP Resettlement</option>
+                                        <option value="OP Resettlement">Resettlement</option>
+                                        <option value="OP Direct Allocation">Direct Allocation</option>
+                                        <option value="LGA">LGA</option>
                                     </select>
+                                    <p x-show="isLgaOpType(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
+                                        Issued by a Local Government: registration number is fixed at 0/0/0 and
+                                        the registration date and time are left blank.
+                                    </p>
                                 </div>
 
                                 <!-- Registration Number -->
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Registration
                                         Number
-                                        <span x-show="isOPTransaction(transaction.transactionType)" class="text-red-500 text-xs font-normal ml-1">(Serial No. &amp; Volume No. required for OP)</span>
+                                        <span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500 text-xs font-normal ml-1">(Serial No. &amp; Volume No. required for OP)</span>
+                                        <span x-show="isLgaOpType(transaction)" x-cloak class="text-amber-700 text-xs font-normal ml-1">(not applicable for an LGA-issued OP)</span>
                                     </label>
                                     <div class="grid grid-cols-5 gap-2">
                                         <div>
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Serial
-                                                No.<span x-show="isOPTransaction(transaction.transactionType)" class="text-red-500"> *</span></label>
+                                                No.<span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500"> *</span></label>
                                             <input type="text" x-model="transaction.serialNo"
                                                 @input="transaction.serialNo = transaction.serialNo.replace(/[^0-9]/g, '').replace(/^0+(\d)/, '$1'); syncPageNo(transaction)"
                                                 :name="'transactions[' + index + '][serial_no]'"
-                                                :class="isOPTransaction(transaction.transactionType) && !transaction.serialNo ? 'border-red-400 ring-1 ring-red-300' : (isROFOTransaction(transaction.transactionType) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
-                                                :readonly="isROFOTransaction(transaction.transactionType)"
+                                                :class="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction) && !transaction.serialNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
+                                                :readonly="regParticularsLocked(transaction)"
                                                 class="w-full px-2 py-1.5 text-xs border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
                                                 placeholder="e.g. 1">
                                         </div>
@@ -1320,12 +1760,12 @@
                                         </div>
                                         <div>
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Volume
-                                                No.<span x-show="isOPTransaction(transaction.transactionType)" class="text-red-500"> *</span></label>
+                                                No.<span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500"> *</span></label>
                                             <input type="text" x-model="transaction.volumeNo"
                                                 @input="transaction.volumeNo = transaction.volumeNo.replace(/[^0-9]/g, '').replace(/^0+(\d)/, '$1')"
                                                 :name="'transactions[' + index + '][volume_no]'"
-                                                :class="isOPTransaction(transaction.transactionType) && !transaction.volumeNo ? 'border-red-400 ring-1 ring-red-300' : (isROFOTransaction(transaction.transactionType) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
-                                                :readonly="isROFOTransaction(transaction.transactionType)"
+                                                :class="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction) && !transaction.volumeNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
+                                                :readonly="regParticularsLocked(transaction)"
                                                 class="w-full px-2 py-1.5 text-xs border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
                                                 placeholder="e.g. 2">
                                         </div>
@@ -1333,16 +1773,16 @@
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Reg Time</label>
                                             <input type="time" x-model="transaction.regTime"
                                                 :name="'transactions[' + index + '][reg_time]'"
-                                                :disabled="isROFOTransaction(transaction.transactionType)"
-                                                :class="isROFOTransaction(transaction.transactionType) ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''"
+                                                :disabled="regParticularsLocked(transaction)"
+                                                :class="regParticularsLocked(transaction) ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''"
                                                 class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
                                         </div>
                                         <div>
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Reg Date</label>
                                             <input type="date" x-model="transaction.regDate"
                                                 :name="'transactions[' + index + '][reg_date]'"
-                                                :disabled="isROFOTransaction(transaction.transactionType)"
-                                                :class="isROFOTransaction(transaction.transactionType) ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''"
+                                                :disabled="regParticularsLocked(transaction)"
+                                                :class="regParticularsLocked(transaction) ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''"
                                                 class="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
                                         </div>
                                     </div>
@@ -1420,11 +1860,33 @@
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1"
                                             x-text="getPartyLabels(transaction.transactionType).first"></label>
-                                        <input type="text" x-model="transaction.firstParty"
-                                            :name="'transactions[' + index + '][first_party]'"
-                                            :class="isGovernmentTransaction(transaction.transactionType) ? 'w-full px-3 py-2 text-sm border border-gray-200 rounded-md shadow-sm bg-gray-50 text-gray-600 cursor-not-allowed' : 'w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors'"
-                                            :readonly="isGovernmentTransaction(transaction.transactionType)"
-                                            :placeholder="isGovernmentTransaction(transaction.transactionType) ? 'KANO STATE GOVERNMENT' : 'Enter name'">
+                                        {{-- Party 1 is normally free text, and locked to KANO STATE
+                                             GOVERNMENT on a government grant. An LGA-issued OP is the
+                                             third case: the grantor is one of the 44 Local Governments,
+                                             so the field becomes a picker and the chosen full name is
+                                             what gets saved as party_1. --}}
+                                        <template x-if="isLgaOpType(transaction)">
+                                            <select x-model="transaction.firstParty"
+                                                :name="'transactions[' + index + '][first_party]'"
+                                                class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white"
+                                                :class="!transaction.firstParty ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'">
+                                                <option value="">Select Local Government</option>
+                                                <template x-for="name in kanoLgaAuthorities" :key="name">
+                                                    <option :value="name" x-text="name"></option>
+                                                </template>
+                                                {{-- Keeps a hand-typed grantor from an older row selectable. --}}
+                                                <template x-if="transaction.firstParty && !kanoLgaAuthorities.includes(transaction.firstParty)">
+                                                    <option :value="transaction.firstParty" x-text="transaction.firstParty"></option>
+                                                </template>
+                                            </select>
+                                        </template>
+                                        <template x-if="!isLgaOpType(transaction)">
+                                            <input type="text" x-model="transaction.firstParty"
+                                                :name="'transactions[' + index + '][first_party]'"
+                                                :class="isGovernmentTransaction(transaction.transactionType) ? 'w-full px-3 py-2 text-sm border border-gray-200 rounded-md shadow-sm bg-gray-50 text-gray-600 cursor-not-allowed' : 'w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors'"
+                                                :readonly="isGovernmentTransaction(transaction.transactionType)"
+                                                :placeholder="isGovernmentTransaction(transaction.transactionType) ? 'KANO STATE GOVERNMENT' : 'Enter name'">
+                                        </template>
                                     </div>
                                     <div>
                                         <label class="block text-sm font-medium text-gray-700 mb-1"
@@ -1904,6 +2366,11 @@
                                         ''
                                     );
 
+                                    // Matches isLgaOpType(), but on the raw record: the payload below
+                                    // is what isLgaOpType() will later read, so it cannot ask itself.
+                                    const isStoredLgaOpType = String(record.op_type || record.opType || '')
+                                        .trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+
                                     const transactionPayload = {
                                         id: index + 1,
                                         recordId: record.id || record.record_id || null,
@@ -1922,8 +2389,11 @@
                                         serialNo: record.serialNo || record.serial_no || '',
                                         pageNo: record.pageNo || record.page_no || '',
                                         volumeNo: record.volumeNo || record.volume_no || '',
-                                        regDate: formattedRegDate || new Date().toISOString().split('T')[0],
-                                        regTime: formattedRegTime || '09:00',
+                                        // Today's date / 09:00 are conveniences for a normal instrument.
+                                        // An LGA-issued OP is deliberately dateless, so a blank stays blank
+                                        // rather than being silently stamped with today on reopen.
+                                        regDate: formattedRegDate || (isStoredLgaOpType ? '' : new Date().toISOString().split('T')[0]),
+                                        regTime: formattedRegTime || (isStoredLgaOpType ? '' : '09:00'),
                                         landUse: record.landUse || record.land_use || fileIndexingData.land_use_type || '',
                                         period: record.period || '',
                                         periodUnit: record.periodUnit || record.period_unit || 'Years',
@@ -2510,7 +2980,6 @@
 
     // Initialize close button handlers when DOM is ready
     document.addEventListener('DOMContentLoaded', function () {
-        const propertyTransactionDialog = document.getElementById('property-transaction-dialog');
         const closePropertyTransactionBtn = document.getElementById('close-property-transaction-form');
         const cancelPropertyTransactionBtn = document.getElementById('cancel-property-transaction');
 
@@ -2527,14 +2996,16 @@
             });
         }
 
-        // Close on overlay click
-        if (propertyTransactionDialog) {
-            propertyTransactionDialog.addEventListener('click', function (e) {
-                if (e.target === propertyTransactionDialog) {
-                    closePropertyTransactionModal();
-                }
-            });
-        }
+        // Overlay click deliberately does NOT close this dialog.
+        //
+        // The card holds every transaction being captured for the file — often several,
+        // each with parties, dates and registration particulars typed by hand, plus any
+        // Transfer of Title sections the ownership-gap check has added. Closing discards
+        // all of it with no confirmation and no undo, and the backdrop is a large target
+        // sitting directly behind a tall scrolling form: a mis-aimed click, or a click
+        // landing through a SweetAlert as it dismisses, wipes the lot.
+        //
+        // It closes on the X and on Cancel — both deliberate acts on a named control.
 
 
 

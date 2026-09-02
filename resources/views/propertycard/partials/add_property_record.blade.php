@@ -169,6 +169,15 @@
                                 <input type="text" class="form-input text-sm" data-model="firstParty"
                                     data-name-key="firstParty" data-government-placeholder="KANO STATE GOVERNMENT"
                                     data-default-placeholder="Enter first party name" required>
+                                {{-- Shown in place of the text input when OP Type is "LGA": the grantor
+                                     is then one of the 44 Local Governments, not the State. Kept as a
+                                     sibling rather than swapping the input's type so every existing
+                                     data-model="firstParty" binding keeps working; the controller
+                                     mirrors this select's value into the same state key. --}}
+                                <select class="form-select text-sm hidden" data-role="op-lga-grantor"
+                                    aria-label="Local Government that issued the Occupancy Permit">
+                                    @include('partials.kano_lga_options', ['selected' => null])
+                                </select>
                             </div>
                             <div class="space-y-1 hidden" data-role="party-third-wrapper">
                                 <label class="text-sm font-medium" data-role="party-label-third">

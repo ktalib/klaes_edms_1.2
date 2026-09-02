@@ -479,6 +479,7 @@ class FileNumberController extends Controller
                     mls.source                                AS derived_source,
                     mls.source_instrument_capture_id          AS derived_source_instrument_capture_id,
                     COALESCE(fn.lga,         mls.lga)         AS derived_lga,
+                    COALESCE(fn.district,    mls.district)    AS derived_district,
                     COALESCE(mls.created_by, fn.created_by)   AS derived_created_by,
                     pur.name                                  AS purpose_name,
                     pra.id                                    AS derived_source_pra_id,
@@ -493,7 +494,7 @@ class FileNumberController extends Controller
                 OUTER APPLY (
                     SELECT TOP 1
                         m.batch_no, m.land_use, m.customer_type, m.commissioning_date, m.created_at,
-                        m.source, m.source_instrument_capture_id, m.lga, m.created_by, m.purpose_id
+                        m.source, m.source_instrument_capture_id, m.lga, m.district, m.created_by, m.purpose_id
                     FROM mls_file_no m
                     WHERE m.full_file_number = fn.mlsfNo
                     ORDER BY m.id DESC
@@ -610,6 +611,7 @@ class FileNumberController extends Controller
                     'tp_no' => trim($row->tp_no ?? '') ?: 'N/A',
                     'location' => trim($row->location ?? '') ?: 'N/A',
                     'lga' => trim($row->derived_lga ?? '') ?: 'N/A',
+                    'district' => trim($row->derived_district ?? '') ?: 'N/A',
                     'tracking_id' => trim($row->tracking_id ?? '') ?: 'N/A',
                     'type' => trim($row->type ?? '') ?: 'N/A',
                     'created_by' => trim($row->derived_created_by ?? '') ?: 'System',
@@ -638,7 +640,7 @@ class FileNumberController extends Controller
                 $tempInList = implode(',', $tempIds);
                 $tempRows = DB::connection('sqlsrv')->select(
                     "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
-                            m.plot_no, m.tp_no, m.location, m.lga, m.tracking_id,
+                            m.plot_no, m.tp_no, m.location, m.lga, m.district, m.tracking_id,
                             m.created_by, m.commissioning_date, m.created_at, m.source,
                             m.batch_no, p.name AS purpose_name,
                             geo.latitude, geo.longitude
@@ -687,6 +689,7 @@ class FileNumberController extends Controller
                         'tp_no'                       => trim($row->tp_no ?? '') ?: 'N/A',
                         'location'                    => trim($row->location ?? '') ?: 'N/A',
                         'lga'                         => trim($row->lga ?? '') ?: 'N/A',
+                        'district'                    => trim($row->district ?? '') ?: 'N/A',
                         'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
                         'type'                        => 'Temporary',
                         'created_by'                  => trim($row->created_by ?? '') ?: 'System',
@@ -787,7 +790,7 @@ class FileNumberController extends Controller
 
         $rows = DB::connection('sqlsrv')->select(
             "SELECT pe.id, pe.original_file_no, pe.file_name, pe.land_use, pe.customer_type,
-                    pe.plot_no, pe.tp_no, pe.location, pe.lga, pe.tracking_id,
+                    pe.plot_no, pe.tp_no, pe.location, pe.lga, pe.district, pe.tracking_id,
                     pe.created_by, pe.created_at, p.name AS purpose_name,
                     geo.latitude, geo.longitude
              FROM plot_extensions pe
@@ -825,6 +828,7 @@ class FileNumberController extends Controller
                 'tp_no'                       => trim($row->tp_no ?? '') ?: 'N/A',
                 'location'                    => trim($row->location ?? '') ?: 'N/A',
                 'lga'                         => trim($row->lga ?? '') ?: 'N/A',
+                'district'                    => trim($row->district ?? '') ?: 'N/A',
                 'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
                 'type'                        => 'Plot Extension',
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
@@ -1529,6 +1533,10 @@ class FileNumberController extends Controller
                     // Plot extensions keep no related/old file number of their own.
                     'related_fileno' => null,
                     'old_fileno'     => null,
+                    // The photograph belongs to the original file, which is what a plot
+                    // extension is an extension of.
+                    'passport_url'   => app(\App\Services\FilePassportService::class)
+                        ->resolve($pe->original_file_no ?? null)['url'] ?? null,
                 ]);
             }
 
@@ -1578,6 +1586,12 @@ class FileNumberController extends Controller
                 ], 404);
             }
 
+            // The applicant's passport, if one was ever filed (at commissioning or from a
+            // previous edit). Null simply means this file has no photograph on record —
+            // the edit form then shows an empty slot rather than an error.
+            $record->passport_url = app(\App\Services\FilePassportService::class)
+                ->resolve($record->mlsfNo ?? $record->kangisFileNo ?? null)['url'] ?? null;
+
             // If no explicit location was stored, assemble one from the mother
             // application's property parts so the edit form still shows something.
             if (empty(trim((string) ($record->location ?? '')))) {
@@ -1622,7 +1636,11 @@ class FileNumberController extends Controller
             'rep_phone_no' => 'nullable|string|max:50',
             'rep_address' => 'nullable|string|max:255',
             'related_fileno' => 'nullable|string|max:255',
-            'is_old_fileno' => 'nullable|boolean'
+            'is_old_fileno' => 'nullable|boolean',
+            // Replacement passport photograph. Optional on edit — an edit that does not
+            // touch the photo leaves whatever is already filed untouched. Same limits as
+            // the commissioning form so a photo accepted there is accepted here.
+            'passport' => 'nullable|image|mimes:jpeg,jpg,png|max:2048'
         ]);
 
         if ($validator->fails()) {
@@ -1700,9 +1718,12 @@ class FileNumberController extends Controller
                     }
                 }
 
+                $passportUpload = $this->storePassportIfSent($request, $pe->original_file_no ?? null);
+
                 return response()->json([
                     'success' => true,
-                    'message' => 'Plot extension updated successfully'
+                    'message' => 'Plot extension updated successfully',
+                    'passport_url' => $passportUpload['url'] ?? null,
                 ]);
             }
 
@@ -1911,9 +1932,17 @@ class FileNumberController extends Controller
                 }
             }
 
+            // Filed against the file's own number, whichever of the three it carries —
+            // the passport belongs to the file, not to this row's edit.
+            $passportUpload = $this->storePassportIfSent(
+                $request,
+                $record->mlsfNo ?? $record->kangisFileNo ?? $record->NewKANGISFileNo ?? null
+            );
+
             return response()->json([
                 'success' => true,
-                'message' => 'Record updated successfully'
+                'message' => 'Record updated successfully',
+                'passport_url' => $passportUpload['url'] ?? null,
             ]);
 
         } catch (\Exception $e) {
@@ -1922,6 +1951,24 @@ class FileNumberController extends Controller
                 'message' => 'Error updating record: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * File a passport photograph submitted with an edit, if one was submitted.
+     *
+     * Returns null when the form carried no image — the overwhelmingly common case, since
+     * most edits change a name or a plot number and must leave the existing photo alone.
+     *
+     * @return array{stored:bool, path:?string, url:?string, scanning_id:?int, reason:string}|null
+     */
+    private function storePassportIfSent(Request $request, ?string $fileNumber): ?array
+    {
+        if (!$request->hasFile('passport') || trim((string) $fileNumber) === '') {
+            return null;
+        }
+
+        return app(\App\Services\FilePassportService::class)
+            ->store($request->file('passport'), (string) $fileNumber);
     }
 
     /**

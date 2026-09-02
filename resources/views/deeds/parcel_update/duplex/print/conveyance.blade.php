@@ -9,11 +9,13 @@
     stages in execution order rather than hard-coded to one workflow.
 --}}
 @php
-    /** The registry writes CON-AG-2021-171; the letter reads CON/AG/2021/171. */
-    $slash = fn ($no) => str_replace('-', '/', (string) $no);
-
+    // File numbers print exactly as the registry holds them — COM-RC-1982-420, not
+    // COM/RC/1982/420. The letter used to re-punctuate them into the ministry's older
+    // house style, which read as a different number from the one on every screen and
+    // on the memo that accompanies this letter (client, 2026-09-02). The dashes are
+    // also load-bearing: the "-RC-" token marks a recertified land file.
     $sources = array_values(array_filter((array) ($duplex->source_file_nos ?? [])));
-    $title   = $slash($sources[0] ?? '');
+    $title   = trim((string) ($sources[0] ?? ''));
 
     $landUseName = [
         'RES' => 'residential', 'COM' => 'commercial', 'IND' => 'industrial',
@@ -120,7 +122,7 @@
                 continue;
             }
 
-            $parts[] = str_replace('-', '/', $file)
+            $parts[] = $file
                 . ($from !== '' ? ' from ' . $words($from) : '')
                 . ' to ' . $to;
         }
@@ -153,15 +155,6 @@
 
     $applied = $duplex->created_at ? $duplex->created_at->format('jS F, Y') : '';
     $issued  = ($duplex->conveyance_generated_at ?: now())->format('jS F, Y');
-
-    /**
-     * The letter prints on the ministry's letterhead artwork.
-     *
-     * ?plain=1 prints exactly the same letter without it — for a comparison, and
-     * for the case where it is being run onto pre-printed letterhead paper, where
-     * printing the artwork again would double it.
-     */
-    $letterhead = ! request()->boolean('plain');
 @endphp
 
 <!doctype html>
@@ -170,9 +163,7 @@
     <meta charset="utf-8">
     <title>Conveyance — {{ $duplex->duplex_id }}</title>
     <style>
-        /* No page margin: the letterhead artwork has to print edge to edge. The
-           text insets that used to be the @page margin are .a4-page padding now. */
-        @page { size: A4; margin: 0; }
+        @page { size: A4; margin: 25mm 22mm; }
 
         body {
             font-family: "Times New Roman", Times, serif;
@@ -180,48 +171,14 @@
             line-height: 1.55;
             color: #000;
             margin: 0;
-            padding: 0;
-        }
-
-        /*
-         * The sheet. On the ministry's letterhead the reply box's bottom rule sits
-         * 62mm down the page (measured off the scan: 4798x6735px = 210x297mm), so
-         * the letter opens at 66mm — below it, not across it. Left and right keep
-         * the 22mm measure the @page margin used to give, and the bottom padding
-         * reserves the strip the fixed footer occupies.
-         */
-        .a4-page {
-            width: 210mm;
-            min-height: 297mm;
-            margin: 0 auto;
-            padding: 66mm 22mm 96px;
-            background-color: #fff;
-        }
-@if ($letterhead)
-        /*
-         * Sized to the exact A4 rectangle, NOT 100% 100%: a letter that runs long
-         * grows the sheet past 297mm, and a stretched background would drag the
-         * ministry's ref box down the page with it. no-repeat, so a second page
-         * comes out as a plain continuation sheet.
-         */
-        .a4-page {
-            background-image: url('{{ asset('assets/letterhead/bg.png') }}');
-            background-size: 210mm 297mm;
-            background-repeat: no-repeat;
-            background-position: left top;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-        }
-@endif
-
-        @media screen {
-            body { background: #525659; padding: 18px 0; }
-            .a4-page { box-shadow: 0 0 10px rgba(0, 0, 0, .5); }
-        }
-
-        @media print {
-            body { background: #fff; }
-            .a4-page { box-shadow: none; margin: 0; }
+            /* Blank band the letter opens below — on the ministry's pre-printed
+               letterhead paper this is the artwork's own space, so the title
+               number starts under it rather than across it. First page only,
+               which is where the letterhead is. Same band as the memo's
+               .header-block (duplex/print/recommendation.blade.php). */
+            padding-top: 90px;
+            /* Reserve the strip the fixed footer occupies. */
+            padding-bottom: 96px;
         }
 
         .title-no   { text-align: center; font-weight: bold; margin-bottom: 26px; }
@@ -258,9 +215,6 @@
             left: 0;
             right: 0;
             bottom: 0;
-            /* The @page margin that used to inset it is gone, so it carries the
-               sheet's own 22mm measure and lifts itself off the paper edge. */
-            padding: 0 22mm 10mm;
         }
 
         .footer-logo {
@@ -299,8 +253,6 @@
     <button onclick="window.print()">Print this conveyance</button>
 </div>
 
-<div class="a4-page">
-
 <div class="title-no">{{ $title ?: '—' }}</div>
 
 <div class="date">{{ $issued }}</div>
@@ -338,8 +290,6 @@
     <div>Senior Land Officer</div>
     <div>For: Honourable Commission.</div>
 </div>
-
-</div>{{-- /.a4-page --}}
 
 <div class="page-footer">
     <div class="footer-logo">

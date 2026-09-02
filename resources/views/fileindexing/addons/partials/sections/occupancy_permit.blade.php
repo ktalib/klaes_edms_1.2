@@ -41,12 +41,21 @@
             <div class="form-group">
                 <label for="occupancy-permit-op-type" class="block text-sm font-medium text-gray-700 mb-2">Occupancy Permit (OP) Type</label>
                 @php $occupancyPermitOpTypeValue = isset($record) ? ($record->occupancy_permit_op_type ?? '') : ''; @endphp
+                {{-- "LGA" = a permit issued by a Local Government rather than by the State.
+                     Picking it turns the Grantor field into a 44-LGA picker and fixes the
+                     registration particulars at 0/0/0 with no deeds date or time — see
+                     applyOccupancyPermitLgaRules() in public/js/fileindexing/create-indexing-dialog.js. --}}
                 <select id="occupancy-permit-op-type" name="occupancy_permit_op_type"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm">
                     <option value="">Select OP Type</option>
                     <option value="Resettlement" {{ $occupancyPermitOpTypeValue === 'Resettlement' ? 'selected' : '' }}>Resettlement</option>
                     <option value="Direct Allocation" {{ $occupancyPermitOpTypeValue === 'Direct Allocation' ? 'selected' : '' }}>Direct Allocation</option>
+                    <option value="LGA" {{ $occupancyPermitOpTypeValue === 'LGA' ? 'selected' : '' }}>LGA</option>
                 </select>
+                <p id="occupancy-permit-lga-note" class="mt-1 text-[11px] text-amber-700 hidden">
+                    Issued by a Local Government: registration number is fixed at 0/0/0 and the
+                    deeds date and time are left blank.
+                </p>
             </div>
             <div class="form-group">
                 <label for="occupancy-permit-op-serial-number" class="block text-sm font-medium text-gray-700 mb-2">OP Serial Number</label>
@@ -91,10 +100,22 @@
             </div>
             <div class="form-group">
                 <label for="occupancy-permit-grantor" class="block text-sm font-medium text-gray-700 mb-2">Grantor</label>
+                @php $occupancyPermitGrantorValue = isset($record) ? ($record->occupancy_permit_grantor ?? 'KANO STATE GOVERNMENT') : 'KANO STATE GOVERNMENT'; @endphp
                 <input type="text" id="occupancy-permit-grantor" name="occupancy_permit_grantor"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm bg-gray-100"
-                    value="{{ isset($record) ? ($record->occupancy_permit_grantor ?? 'KANO STATE GOVERNMENT') : 'KANO STATE GOVERNMENT' }}"
+                    value="{{ $occupancyPermitGrantorValue }}"
                     readonly>
+                {{-- Replaces the read-only input above when OP Type is "LGA". It carries no name
+                     attribute: the JS mirrors the chosen authority into the input, which stays the
+                     single field the form posts as occupancy_permit_grantor. --}}
+                <select id="occupancy-permit-lga-grantor"
+                    class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm hidden"
+                    aria-label="Local Government that issued the Occupancy Permit">
+                    {{-- fullName() returns null for anything that is not one of the 44 (e.g. the
+                         default "KANO STATE GOVERNMENT"), so the picker opens unselected rather
+                         than offering the State as a Local Government. --}}
+                    @include('partials.kano_lga_options', ['selected' => app(\App\Services\KanoLgaDirectory::class)->fullName($occupancyPermitGrantorValue)])
+                </select>
             </div>
             <div class="form-group">
                 <label for="occupancy-permit-grantee" class="block text-sm font-medium text-gray-700 mb-2">Grantee</label>

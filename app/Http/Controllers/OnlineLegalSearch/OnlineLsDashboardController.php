@@ -4,6 +4,7 @@ namespace App\Http\Controllers\OnlineLegalSearch;
 
 use App\Http\Controllers\Controller;
 use App\Models\LegalSearchOnlinePayment;
+use App\Models\LegalSearchOnlineVerification;
 use App\Models\LegalSearchOnlineRequest;
 use App\Models\OnlineLsSearchPurpose;
 use App\Services\LegalSearchApprovalService;
@@ -320,11 +321,28 @@ class OnlineLsDashboardController extends Controller
             ], 422);
         }
 
+        // ID NAME verification gate. The checkout is opened by Paystack Inline in
+        // the browser, so this is where the server gets its say: a payment is only
+        // recorded for an applicant whose identification this session verified for
+        // this same file number. A `review` or `failed` result has no verified row
+        // and therefore never reaches a payment transaction.
+        //
+        // Session-bound deliberately — the token is not accepted from the request,
+        // so one applicant cannot present another applicant's verification.
+        $verification = $this->verifiedIdentification($fileNumber);
+
+        if (!$verification) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Please complete the applicant identification check before paying.',
+            ], 422);
+        }
+
         // Idempotent check — re-verifying a paid reference returns the request
         // that was already opened for it rather than opening a second one.
         $existing = LegalSearchOnlinePayment::where('reference', $reference)->first();
         if ($existing && $existing->isPaid()) {
-            $searchRequest = $this->openApprovalRequest($existing, $request, $purpose);
+            $searchRequest = $this->openApprovalRequest($existing, $request, $purpose, $verification);
 
             return response()->json([
                 'success'      => true,
@@ -365,6 +383,13 @@ class OnlineLsDashboardController extends Controller
             ]
         );
 
+        // Attach the verification to the payment it unlocked. One applicant, one
+        // row: the identification is not re-recorded alongside the payment.
+        if ($verification && $verification->payment_id !== $payment->id) {
+            $verification->payment_id = $payment->id;
+            $verification->save();
+        }
+
         // Assign a back-office tracking id (USER-0001) once, derived from the
         // payment's own id so it is unique and sequential.
         if (empty($payment->tracking_id)) {
@@ -374,7 +399,21 @@ class OnlineLsDashboardController extends Controller
 
         // Open the approval request and alert the Director / Deputy Director.
         // The report is released to the requester by email only once approved.
-        $searchRequest = $this->openApprovalRequest($payment, $request, $purpose);
+        $searchRequest = $this->openApprovalRequest($payment, $request, $purpose, $verification);
+
+        // Best-effort back-link so a reviewer opening the request can reach the
+        // identification behind it. Never allowed to fail the payment response.
+        if ($verification && $searchRequest && $verification->request_id !== $searchRequest->id) {
+            try {
+                $verification->request_id = $searchRequest->id;
+                $verification->save();
+            } catch (\Throwable $e) {
+                Log::warning('Could not link verification to approval request', [
+                    'payment_id' => $payment->id,
+                    'error'      => $e->getMessage(),
+                ]);
+            }
+        }
 
         return response()->json([
             'success'     => true,
@@ -382,6 +421,29 @@ class OnlineLsDashboardController extends Controller
             'tracking_id' => $payment->tracking_id,
             'request_no'  => $searchRequest?->request_no,
         ]);
+    }
+
+    /**
+     * The identification this browser session had verified for a file number.
+     *
+     * Deliberately reads the token from the SESSION and never from the request:
+     * a token accepted from the browser would let anyone paste another
+     * applicant's verification into their own payment. Returns null unless the
+     * stored result is `verified` — `review` and `failed` rows exist but do not
+     * open the checkout.
+     */
+    protected function verifiedIdentification(string $fileNumber): ?LegalSearchOnlineVerification
+    {
+        $token = session('ols_verification_token');
+
+        if (!$token || trim($fileNumber) === '') {
+            return null;
+        }
+
+        return LegalSearchOnlineVerification::where('session_token', $token)
+            ->where('file_number', $fileNumber)
+            ->where('id_verification_status', LegalSearchOnlineVerification::STATUS_VERIFIED)
+            ->first();
     }
 
     /**
@@ -393,7 +455,8 @@ class OnlineLsDashboardController extends Controller
     protected function openApprovalRequest(
         LegalSearchOnlinePayment $payment,
         Request $request,
-        ?OnlineLsSearchPurpose $purpose = null
+        ?OnlineLsSearchPurpose $purpose = null,
+        ?LegalSearchOnlineVerification $verification = null
     ): ?LegalSearchOnlineRequest {
         try {
             return $this->approvalService->openRequest($payment, [
@@ -401,6 +464,11 @@ class OnlineLsDashboardController extends Controller
                 'purpose_id' => $purpose?->id,
                 // Snapshot the name so a later rename does not rewrite history.
                 'purpose'    => $purpose?->name,
+                // The requester's identity comes from the verified identification,
+                // so the request carries the name that was actually checked rather
+                // than a second, unverified copy typed elsewhere.
+                'name'       => $verification?->applicant_full_name,
+                'phone'      => $verification?->applicant_phone,
             ]);
         } catch (\Throwable $e) {
             Log::error('OnlineLsDashboardController: failed to open approval request', [

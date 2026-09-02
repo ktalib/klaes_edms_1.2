@@ -49,6 +49,16 @@ class DemoIndexingDataService
         'Dantata', 'Rabiu', 'Bello', 'Yakasai', 'Kurmi', 'Gabari', 'Jibril',
     ];
 
+    /**
+     * Mortgagees for the demo chain. A bank on the receiving end of a Deed of Mortgage
+     * is the case that must NOT be read as an ownership move — a red section appearing
+     * for one of these means the ownership rule has broken.
+     */
+    private const BANKS = [
+        'First Bank of Nigeria Plc', 'Zenith Bank Plc', 'Access Bank Plc',
+        'Guaranty Trust Bank Plc', 'Union Bank of Nigeria Plc', 'Jaiz Bank Plc',
+    ];
+
     /** Industrial land use means most holders are companies, not individuals. */
     private const COMPANY_STEMS = [
         'Arewa', 'Kano North', 'Dala', 'Sahel', 'Tiga', 'Challawa', 'Bompai',
@@ -114,6 +124,10 @@ class DemoIndexingDataService
                 return null;
             }
 
+            // Fabricated once and reused: the transaction chain has to end at the same
+            // holder the form is being indexed under, or the demo contradicts itself.
+            $details = $this->fabricateDetails($grouping);
+
             return [
                 // Real — straight off the grouping row.
                 'source' => [
@@ -125,7 +139,12 @@ class DemoIndexingDataService
                     'year' => $grouping->year ?? null,
                 ],
                 // Invented — everything a human would have typed.
-                'form' => $this->fabricateDetails($grouping),
+                'form' => $details,
+                // Invented — a transaction chain for the Property Transaction card,
+                // built to leave ONE deliberate ownership gap so the missing-Transfer-of-
+                // Title check has something to find. Coherent with 'form': it ends at the
+                // same holder the file is being indexed under.
+                'transactions' => $this->fabricateTransactions($details),
             ];
         } catch (\Throwable $e) {
             Log::warning('DemoIndexingDataService::sample - failed', [
@@ -147,6 +166,18 @@ class DemoIndexingDataService
      */
     private function pickUnindexedGrouping(array $exclude)
     {
+        // A conversion file first, when one is free.
+        //
+        // The missing-Transfer-of-Title check in the Property Transaction card runs on
+        // CON- files ONLY, so a demo record on any other prefix fills the form and then
+        // silently exercises none of it. Falls straight through to the configured land
+        // use when no unindexed conversion file is left, which is the ordinary case —
+        // all but a handful of the estate's 44,509 CON- files are already indexed.
+        $conversion = $this->pickUnindexedByPrefix('CON-', $exclude);
+        if ($conversion) {
+            return $conversion;
+        }
+
         $registry = (string) config('fileindexing.demo_fill.registry', 'Lands Registry');
         $landUse = (string) config('fileindexing.demo_fill.land_use', 'INDUSTRIAL');
 
@@ -184,10 +215,132 @@ class DemoIndexingDataService
     }
 
     /**
+     * An unindexed grouping row whose file number starts with $prefix.
+     *
+     * Land use is NOT filtered here: conversion files are scarce, and insisting on
+     * INDUSTRIAL as well would reject the few that exist. The prefix is the thing that
+     * matters — it decides which checks the demo record can exercise.
+     */
+    private function pickUnindexedByPrefix(string $prefix, array $exclude)
+    {
+        $bindings = [$prefix . '%'];
+        $excludeSql = '';
+
+        $exclude = array_slice(array_values(array_filter($exclude)), 0, 50);
+        if (!empty($exclude)) {
+            $excludeSql = ' AND g.awaiting_fileno NOT IN (' . implode(',', array_fill(0, count($exclude), '?')) . ')';
+            $bindings = array_merge($bindings, $exclude);
+        }
+
+        $sql = "SELECT TOP 1 g.id, g.awaiting_fileno, g.tracking_id, g.registry,
+                       g.landuse, g.[year] AS [year]
+                  FROM grouping g
+                 WHERE g.awaiting_fileno LIKE ?
+                   AND g.deleted_at IS NULL
+                   AND ISNULL(g.tracking_id, '') <> ''
+                   AND NOT EXISTS (
+                         SELECT 1 FROM file_indexings fi
+                          WHERE fi.file_number = g.awaiting_fileno
+                       )
+                       {$excludeSql}
+                 ORDER BY NEWID()";
+
+        try {
+            $rows = DB::connection('sqlsrv')->select($sql, $bindings);
+        } catch (\Throwable $e) {
+            Log::warning('DemoIndexingDataService::pickUnindexedByPrefix - failed', [
+                'prefix' => $prefix,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        return $rows[0] ?? null;
+    }
+
+    /**
      * The invented half: everything the operator would otherwise type.
      *
      * @return array<string,mixed>
      */
+    /**
+     * A transaction chain for the Property Transaction card, with ONE ownership gap.
+     *
+     * Shaped so the missing-Transfer-of-Title check has exactly one thing to find, and
+     * so the two things that must NOT be flagged are both present to prove it:
+     *
+     *   1  Right of Occupancy   Government    -> original holder     the grant
+     *   2  Deed of Assignment   a stranger    -> the indexed holder  <- the gap is here
+     *   3  Deed of Mortgage     indexed holder-> a bank              must open NO leg
+     *
+     * The chain LEAVES the title with the original holder and RESUMES from someone the
+     * file has never named, so the leg "original holder -> stranger" is unaccounted for.
+     * The mortgage continues cleanly from the same party and is not an ownership move,
+     * so a second red section appearing would mean the rule is wrong.
+     *
+     * Dates ascend, because the card sorts chronologically and a chain out of order
+     * would test the sort rather than the rule.
+     */
+    private function fabricateTransactions(array $details): array
+    {
+        $holder = (string) ($details['file_title'] ?? 'DEMO HOLDER LIMITED');
+        $granted = (string) ($details['original_holder'] ?? 'ORIGINAL HOLDER');
+        $stranger = $this->pick(self::GIVEN_NAMES) . ' ' . $this->pick(self::FAMILY_NAMES);
+        $landUse = (string) ($details['land_use_type'] ?? 'INDUSTRIAL');
+
+        // Kept apart from the granted holder: if the two fabricated names collided, the
+        // check would read them as one person and find no gap at all.
+        if ($this->personKey($stranger) === $this->personKey($granted)) {
+            $stranger = 'Bashir ' . $this->pick(self::FAMILY_NAMES) . ' Kabara';
+        }
+
+        $year = (int) ($details['grant_year'] ?? random_int(2004, 2012));
+
+        return [
+            [
+                'transactionType' => 'Right of Occupancy',
+                'firstParty' => 'Kano State Government',
+                'secondParty' => strtoupper($granted),
+                'transactionDate' => sprintf('%04d-%02d-%02d', $year, random_int(1, 12), random_int(1, 28)),
+                'serialNo' => (string) random_int(10, 99),
+                'pageNo' => (string) random_int(10, 99),
+                'volumeNo' => (string) random_int(1, 40),
+                'landUse' => $landUse,
+            ],
+            [
+                'transactionType' => 'Deed of Assignment',
+                'firstParty' => strtoupper($stranger),
+                'secondParty' => strtoupper($holder),
+                'transactionDate' => sprintf('%04d-%02d-%02d', $year + random_int(3, 6), random_int(1, 12), random_int(1, 28)),
+                'serialNo' => (string) random_int(100, 999),
+                'pageNo' => (string) random_int(100, 999),
+                'volumeNo' => (string) random_int(41, 90),
+                'landUse' => $landUse,
+            ],
+            [
+                'transactionType' => 'Deed of Mortgage',
+                'firstParty' => strtoupper($holder),
+                'secondParty' => $this->pick(self::BANKS),
+                'transactionDate' => sprintf('%04d-%02d-%02d', $year + random_int(8, 12), random_int(1, 12), random_int(1, 28)),
+                'serialNo' => (string) random_int(1000, 4000),
+                'pageNo' => (string) random_int(1000, 4000),
+                'volumeNo' => (string) random_int(91, 140),
+                'landUse' => $landUse,
+            ],
+        ];
+    }
+
+    /** Same normalisation the gap check uses, so "same person" means the same thing. */
+    private function personKey(string $value): string
+    {
+        $key = strtoupper(preg_replace('/[^A-Z0-9\s]+/i', ' ', $value));
+        $parts = array_filter(explode(' ', $key));
+        sort($parts);
+
+        return implode('', $parts);
+    }
+
     private function fabricateDetails($grouping): array
     {
         $company = $this->pick(self::COMPANY_STEMS) . ' ' . $this->pick(self::COMPANY_TAILS);

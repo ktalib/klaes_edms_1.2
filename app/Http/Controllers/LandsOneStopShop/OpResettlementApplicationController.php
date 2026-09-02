@@ -4,6 +4,7 @@ namespace App\Http\Controllers\LandsOneStopShop;
 
 use App\Http\Controllers\Controller;
 use App\Models\StreetName;
+use App\Services\FilePassportService;
 use App\Services\Pra\PraRecordService;
 use Carbon\Carbon;
 use Illuminate\Contracts\View\View;
@@ -4259,6 +4260,12 @@ class OpResettlementApplicationController extends Controller
             $returnUrl = route('lands-one-stop-shop.applications.index') . '?source=lands-one-stop-shop&type=change-of-name';
             $fileNumberId = 'ic-' . $icDirectId;
 
+            // The applicant's photograph is filed against the FILE, not against any one
+            // PRA/instrument row, so it is resolved once for the whole page and shown in
+            // its own card. Null simply means no photo has ever been filed for this file.
+            $passportFileNumber = $mlsfNo;
+            $passport = app(FilePassportService::class)->resolve($passportFileNumber);
+
             // Load all PRA rows for this property so each card can be shown
             $allPraRows = collect();
             $icPropId = $icRow->prop_id ?? null;
@@ -4287,6 +4294,8 @@ class OpResettlementApplicationController extends Controller
                 'fileNumberId',
                 'districtIsCustom',
                 'allPraRows',
+                'passportFileNumber',
+                'passport',
             ));
         }
 
@@ -4370,6 +4379,12 @@ class OpResettlementApplicationController extends Controller
             $returnUrl = route('lands-one-stop-shop.applications.index') . '?source=lands-one-stop-shop&type=change-of-name';
             $fileNumberId = 'pra-' . $praId;
 
+            // The applicant's photograph is filed against the FILE, not against any one
+            // PRA/instrument row, so it is resolved once for the whole page and shown in
+            // its own card. Null simply means no photo has ever been filed for this file.
+            $passportFileNumber = $mlsfNo;
+            $passport = app(FilePassportService::class)->resolve($passportFileNumber);
+
             // Load all PRA rows for this property so each card can be shown
             $allPraRows = collect();
             if (!empty($pra->prop_id)) {
@@ -4397,6 +4412,8 @@ class OpResettlementApplicationController extends Controller
                 'fileNumberId',
                 'districtIsCustom',
                 'allPraRows',
+                'passportFileNumber',
+                'passport',
             ));
         }
 
@@ -4557,6 +4574,12 @@ class OpResettlementApplicationController extends Controller
         $returnUrl = route('lands-one-stop-shop.applications.index') . '?source=lands-one-stop-shop&type=change-of-name';
         $fileNumberId = $id;
 
+        // The applicant's photograph is filed against the FILE, not against any one
+        // PRA/instrument row, so it is resolved once for the whole page and shown in
+        // its own card. Null simply means no photo has ever been filed for this file.
+        $passportFileNumber = $base->mlsfNo;
+        $passport = app(FilePassportService::class)->resolve($passportFileNumber);
+
         // Load all PRA rows for this property so each card can be shown
         $allPraRows = collect();
         $resolvedPropId = $opPra->prop_id ?? ($latestPra->prop_id ?? null);
@@ -4588,7 +4611,81 @@ class OpResettlementApplicationController extends Controller
             'fileNumberId',
             'districtIsCustom',
             'allPraRows',
+            'passportFileNumber',
+            'passport',
         ));
+    }
+
+    /**
+     * The file number this edit page belongs to.
+     *
+     * The page is reachable under three id shapes (fileNumber.id, pra-{id}, ic-{id}) because
+     * not every OP record has a fileNumber row. All three resolve to the same thing for the
+     * passport: the file the photograph is filed against.
+     */
+    private function resolveRecordFileNumber(string $id): ?string
+    {
+        if (str_starts_with($id, 'pra-')) {
+            $row = DB::connection('sqlsrv')->table('pra')->where('id', (int) substr($id, 4))->first();
+
+            return $row ? (($row->mlsFNo ?: ($row->fileno ?? null)) ?: null) : null;
+        }
+
+        if (str_starts_with($id, 'ic-')) {
+            $row = DB::connection('sqlsrv')->table('instrument_capture')->where('id', (int) substr($id, 3))->first();
+
+            return $row ? (($row->mlsFNo ?: ($row->temp_fileno ?? null)) ?: null) : null;
+        }
+
+        $row = DB::connection('sqlsrv')->table('fileNumber')->where('id', (int) $id)->first();
+
+        return $row ? (($row->mlsfNo ?? null) ?: null) : null;
+    }
+
+    /**
+     * File a passport photograph for the record open on the capture-edit page.
+     *
+     * Separate from updateDetails() on purpose: that endpoint takes a JSON body per card,
+     * while an image has to ride as multipart. The photograph also belongs to the file as a
+     * whole rather than to the OP or the Transfer of Title row, so it saves on its own.
+     *
+     * POST /lands-one-stop-shop/applications/op-resettlement/{id}/passport
+     */
+    public function updatePassport(Request $request, string $id): JsonResponse
+    {
+        $request->validate([
+            // Same limits as the commissioning form, so a photo accepted there is accepted here.
+            'passport' => 'required|image|mimes:jpeg,jpg,png|max:2048',
+        ]);
+
+        $fileNumber = $this->resolveRecordFileNumber($id);
+
+        if (!$fileNumber) {
+            return response()->json([
+                'success' => false,
+                'message' => 'This record has no file number yet, so there is nothing to file the photograph against.',
+            ], 422);
+        }
+
+        $result = app(FilePassportService::class)->store($request->file('passport'), $fileNumber, 'oss_commissioning_edit');
+
+        if (!$result['stored']) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The passport photograph could not be saved. Please try again, or upload it from Scan Upload.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['scanning_id']
+                ? 'Passport photograph filed and listed under Scan Upload / Page Typing.'
+                : 'Passport photograph filed. This file carries no indexing record, so it is not listed under Scan Upload.',
+            'file_number' => $fileNumber,
+            'path' => $result['path'],
+            'url' => $result['url'],
+            'scanning_id' => $result['scanning_id'],
+        ]);
     }
 
     /**

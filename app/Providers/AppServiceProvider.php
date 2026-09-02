@@ -25,6 +25,15 @@ class AppServiceProvider extends ServiceProvider
         // it) instead of once per row by every caller — the location resolver and
         // the tracker decoration both ask it about the same file numbers.
         $this->app->singleton(\App\Services\FileCommissioningTrackingService::class);
+
+        // OCR provider for Online Legal Search ID name verification. Bound to the
+        // interface so the engine can be swapped from configuration — and so
+        // feature tests can substitute a fake without a local Tesseract install.
+        $this->app->bind(\App\Services\Ocr\OcrReader::class, function () {
+            return match (config('id_verification.ocr.driver', 'tesseract')) {
+                default => new \App\Services\Ocr\TesseractOcrReader(),
+            };
+        });
     }
 
     /**

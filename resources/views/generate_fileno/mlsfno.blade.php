@@ -266,14 +266,15 @@
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">District</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">LGA</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Location</th>
-                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Latitude</th>
-                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Longitude</th>
-                                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Map</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Commissioned By</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Time Commissioned</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Date Commissioned</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Longitude</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Latitude</th>
+                                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Map</th>
                                                 <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Actions</th>
                                             </tr>
                                         </thead>
@@ -2178,11 +2179,42 @@
                         </div>
 
                         <!-- Edit Form -->
-                        <form id="editForm" onsubmit="submitEditForm(event)">
+                        {{-- enctype is explicit for the passport upload; submitEditForm() posts a
+                             FormData built from this form, so the file rides along as multipart. --}}
+                        <form id="editForm" enctype="multipart/form-data" onsubmit="submitEditForm(event)">
                             @csrf
                             @method('PUT')
                             <input type="hidden" id="editId" name="id">
                             <input type="hidden" id="editEntity" name="entity">
+
+                            <!-- Passport photograph. Captured at commissioning and filed into the
+                                 file's EDMS scan folder; shown here so an edit can see what is on
+                                 record and replace it. Leaving the picker empty keeps the existing
+                                 photo — an edit must never silently drop it. -->
+                            <div class="mb-4">
+                                <label for="editPassport" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="user-square" class="w-4 h-4 inline mr-1 text-blue-500"></i>
+                                    Passport
+                                </label>
+                                <div class="flex items-center gap-3 p-2 border border-gray-200 rounded-md bg-gray-50/60">
+                                    <div class="w-24 h-28 flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-white overflow-hidden flex items-center justify-center">
+                                        <img id="editPassportPreview" src="" alt="Passport" class="w-full h-full object-cover hidden">
+                                        {{-- The id sits on the wrapper, not the <i>: lucide replaces
+                                             the <i> with an <svg> when it renders icons. --}}
+                                        <span id="editPassportPlaceholder" class="flex items-center justify-center">
+                                            <i data-lucide="user-square" class="w-7 h-7 text-gray-300"></i>
+                                        </span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p id="editPassportStatus" class="text-xs text-gray-700">No passport on record</p>
+                                        <input type="file" id="editPassport" name="passport"
+                                               accept="image/jpeg,image/jpg,image/png"
+                                               onchange="onEditPassportChange(this)"
+                                               class="mt-1.5 w-full text-xs text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 border border-gray-300 rounded-md p-1.5">
+                                        <p class="text-[11px] text-gray-500 mt-0.5">JPG or PNG, max 2MB. Leave empty to keep the current photo.</p>
+                                    </div>
+                                </div>
+                            </div>
 
                             <!-- MLSF Number (Read-only) -->
                             <div class="mb-4">
@@ -2230,6 +2262,17 @@
                                 </p>
                             </div>
 
+                            <!-- File Name (Editable) -->
+                            <div class="mb-4">
+                                <label for="editFileName" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="file-text" class="w-4 h-4 inline mr-1"></i>
+                                    File Name
+                                </label>
+                                <input type="text" id="editFileName" name="file_name" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter file name" required>
+                            </div>
+
                              <!-- Customer Type -->
                               <div class="mb-4">
                                  <label class="block text-sm font-medium text-gray-700 mb-2">Customer Type</label>
@@ -2254,89 +2297,6 @@
                                   </select>
                               </div>
 
-                            <!-- File Name (Editable) -->
-                            <div class="mb-4">
-                                <label for="editFileName" class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i data-lucide="file-text" class="w-4 h-4 inline mr-1"></i>
-                                    File Name
-                                </label>
-                                <input type="text" id="editFileName" name="file_name" 
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                       placeholder="Enter file name" required>
-                            </div>
-
-                            <!-- Plot Number -->
-                            <div class="mb-4">
-                                <label for="editPlotNo" class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i data-lucide="map-pin" class="w-4 h-4 inline mr-1"></i>
-                                    Plot Number
-                                </label>
-                                <input type="text" id="editPlotNo" name="plot_no" 
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                       placeholder="Enter plot number">
-                            </div>
-
-                            <!-- TP Number -->
-                            <div class="mb-4">
-                                <label for="editTpNo" class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
-                                    TP Number
-                                </label>
-                                <input type="text" id="editTpNo" name="tp_no" 
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                       placeholder="Enter TP number">
-                            </div>
-
-                            <!-- Location -->
-                            <div class="mb-4">
-                                <label for="editLocation" class="block text-sm font-medium text-gray-700 mb-2">
-                                    <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>
-                                    Location
-                                </label>
-                                <input type="text" id="editLocation" name="location" 
-                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                       placeholder="Enter location" >
-                            </div>
-
-                            <!-- Location Details Grid (LGA & District) 
-  --> 
-                            <div class="grid grid-cols-2 gap-4 mb-4">
-                                <!-- LGA Dropdown -->
-                                <div>
-
-                            
-                                    <label for="editLga" class="block text-sm font-medium text-gray-700 mb-2">
-                                        LGA
-                                    </label>
-                                    <select id="editLga" name="lga" 
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
-                                        <option value="">Select LGA</option>
-                                        @foreach($lgas as $lga)
-                                            <option value="{{ $lga->name }}">{{ $lga->name }}</option>
-                                        @endforeach
-                                    </select>
-                                </div>
-
-                                <!-- District Dropdown -->
-                                <div id="editDistrictWrap" class="relative">
-                                    <label for="editDistrict" class="block text-sm font-medium text-gray-700 mb-2">
-                                        District
-                                    </label>
-                                    <select id="editDistrict" onchange="onEditDistrictChange(this.value)"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
-                                        <option value="">Select District</option>
-                                        @foreach($districts as $district)
-                                            <option value="{{ $district->name }}">{{ $district->name }}</option>
-                                        @endforeach
-                                    </select>
-                                    <input type="text" id="editDistrictOther" style="display:none;"
-                                           oninput="onEditDistrictOtherInput(this.value)"
-                                           placeholder="Please specify district..."
-                                           class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
-                                    <input type="hidden" id="editDistrictValue" name="district">
-                                </div>
-                            </div>
-
                             <!-- Phone Number of Applicant -->
                             <div class="mb-4">
                                 <label for="editPhoneNo" class="block text-sm font-medium text-gray-700 mb-2">
@@ -2357,6 +2317,79 @@
                                 <input type="text" id="editAddress" name="address" 
                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
                                        placeholder="Enter Applicant Address">
+                            </div>
+
+                            <!-- TP Number & Plot Number: one row, the pair an operator reads together. -->
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <!-- TP Number -->
+                                <div>
+                                    <label for="editTpNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
+                                        TP Number
+                                    </label>
+                                    <input type="text" id="editTpNo" name="tp_no"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                           placeholder="Enter TP number">
+                                </div>
+
+                                <!-- Plot Number -->
+                                <div>
+                                    <label for="editPlotNo" class="block text-sm font-medium text-gray-700 mb-2">
+                                        <i data-lucide="map-pin" class="w-4 h-4 inline mr-1"></i>
+                                        Plot Number
+                                    </label>
+                                    <input type="text" id="editPlotNo" name="plot_no"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                           placeholder="Enter plot number">
+                                </div>
+                            </div>
+
+                            <!-- Location Details Grid (District & LGA). District leads so the pair
+                                 reads District > LGA, and Location closes the form below them. -->
+                            <div class="grid grid-cols-2 gap-4 mb-4">
+                                <!-- District Dropdown -->
+                                <div id="editDistrictWrap" class="relative">
+                                    <label for="editDistrict" class="block text-sm font-medium text-gray-700 mb-2">
+                                        District
+                                    </label>
+                                    <select id="editDistrict" onchange="onEditDistrictChange(this.value)"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                        <option value="">Select District</option>
+                                        @foreach($districts as $district)
+                                            <option value="{{ $district->name }}">{{ $district->name }}</option>
+                                        @endforeach
+                                    </select>
+                                    <input type="text" id="editDistrictOther" style="display:none;"
+                                           oninput="onEditDistrictOtherInput(this.value)"
+                                           placeholder="Please specify district..."
+                                           class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                    <input type="hidden" id="editDistrictValue" name="district">
+                                </div>
+
+                                <!-- LGA Dropdown -->
+                                <div>
+                                    <label for="editLga" class="block text-sm font-medium text-gray-700 mb-2">
+                                        LGA
+                                    </label>
+                                    <select id="editLga" name="lga"
+                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+                                        <option value="">Select LGA</option>
+                                        @foreach($lgas as $lga)
+                                            <option value="{{ $lga->name }}">{{ $lga->name }}</option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Location -->
+                            <div class="mb-4">
+                                <label for="editLocation" class="block text-sm font-medium text-gray-700 mb-2">
+                                    <i data-lucide="map" class="w-4 h-4 inline mr-1"></i>
+                                    Location
+                                </label>
+                                <input type="text" id="editLocation" name="location"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                       placeholder="Enter location" >
                             </div>
 
                             <!-- Details of local Rep (section) -->

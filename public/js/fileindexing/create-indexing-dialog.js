@@ -1109,6 +1109,23 @@
                 const el = document.getElementById(id);
                 if (el && value) el.value = value;
             });
+
+            // A record saved as an LGA permit must reopen with the picker shown and the
+            // registration particulars locked, not as a normal editable OP.
+            const opLgaGrantorEdit = document.getElementById('occupancy-permit-lga-grantor');
+            if (opLgaGrantorEdit && record.occupancy_permit_grantor) {
+                const stored = String(record.occupancy_permit_grantor);
+                if (!Array.from(opLgaGrantorEdit.options).some((o) => o.value === stored)) {
+                    const option = document.createElement('option');
+                    option.value = stored;
+                    option.textContent = stored;
+                    opLgaGrantorEdit.appendChild(option);
+                }
+                opLgaGrantorEdit.value = stored;
+            }
+            if (typeof window.applyOccupancyPermitLgaRules === 'function') {
+                window.applyOccupancyPermitLgaRules();
+            }
         }
 
         loadReferenceData()
@@ -5062,6 +5079,102 @@
             }
         }
 
+        // ── Occupancy Permit issued by a Local Government ─────────────────────────────
+        // Some conversion and direct-allocation files hold permits granted by an LGA rather
+        // than by the Kano State Government. An LGA registers nothing in the state deeds
+        // registry, so such a permit has no serial, page, volume, deeds date or deeds time —
+        // only which Local Government granted it. Selecting OP Type "LGA" therefore swaps the
+        // read-only KANO STATE GOVERNMENT grantor for a picker of the 44 authorities and fixes
+        // the registration particulars at 0/0/0 with the dates left blank.
+        const opTypeSelect = document.getElementById('occupancy-permit-op-type');
+        const opLgaGrantorSelect = document.getElementById('occupancy-permit-lga-grantor');
+        const opGrantorInput = document.getElementById('occupancy-permit-grantor');
+        const opLgaNote = document.getElementById('occupancy-permit-lga-note');
+
+        function isOccupancyPermitLgaType() {
+            // Tolerant of the "OP " prefix the sibling screens put on their stored values.
+            return String(opTypeSelect?.value || '').trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+        }
+
+        function applyOccupancyPermitLgaRules() {
+            const isLga = isOccupancyPermitLgaType();
+            const regFieldIds = [
+                'occupancy-permit-serial-no',
+                'occupancy-permit-page-no',
+                'occupancy-permit-vol-no',
+            ];
+            const dateFieldIds = [
+                'occupancy-permit-deeds-date',
+                'occupancy-permit-deeds-time',
+            ];
+
+            if (opLgaNote) opLgaNote.classList.toggle('hidden', !isLga);
+            if (opLgaGrantorSelect) {
+                opLgaGrantorSelect.classList.toggle('hidden', !isLga);
+                opLgaGrantorSelect.required = isLga;
+            }
+            if (opGrantorInput) {
+                opGrantorInput.classList.toggle('hidden', isLga);
+            }
+
+            regFieldIds.concat(dateFieldIds).forEach((id) => {
+                const field = document.getElementById(id);
+                if (!field) return;
+                // Page No is mirrored from Serial No, so it is read-only either way.
+                if (id !== 'occupancy-permit-page-no') {
+                    field.readOnly = isLga;
+                }
+                field.required = false;
+                field.classList.toggle('bg-gray-100', isLga);
+                field.classList.toggle('cursor-not-allowed', isLga);
+            });
+
+            if (isLga) {
+                regFieldIds.forEach((id) => {
+                    const field = document.getElementById(id);
+                    if (field) field.value = '0';
+                });
+                dateFieldIds.forEach((id) => {
+                    const field = document.getElementById(id);
+                    if (field) field.value = '';
+                });
+                // The State is not one of the 44 — leave the picker unselected so the officer
+                // has to name the Local Government, and mirror whatever is chosen into the
+                // input, which is the field this form actually posts.
+                if (opGrantorInput && opLgaGrantorSelect) {
+                    const chosen = opLgaGrantorSelect.value || '';
+                    opGrantorInput.value = chosen;
+                }
+                return;
+            }
+
+            // Switched away from LGA: drop the 0/0/0 stamp and hand the grantor back to the State.
+            const stamped = regFieldIds.every((id) => (document.getElementById(id)?.value || '') === '0');
+            if (stamped) {
+                regFieldIds.forEach((id) => {
+                    const field = document.getElementById(id);
+                    if (field) field.value = '';
+                });
+            }
+            if (opGrantorInput && opLgaGrantorSelect
+                && Array.from(opLgaGrantorSelect.options).some((o) => o.value && o.value === opGrantorInput.value)) {
+                opGrantorInput.value = 'KANO STATE GOVERNMENT';
+            }
+        }
+
+        if (opTypeSelect) {
+            opTypeSelect.addEventListener('change', applyOccupancyPermitLgaRules);
+        }
+        if (opLgaGrantorSelect) {
+            opLgaGrantorSelect.addEventListener('change', function () {
+                if (opGrantorInput) opGrantorInput.value = this.value || '';
+            });
+        }
+        // Reachable from the record-load and clear paths, which sit outside this closure.
+        window.applyOccupancyPermitLgaRules = applyOccupancyPermitLgaRules;
+        // Runs once so a record loaded with OP Type "LGA" opens in the right shape.
+        applyOccupancyPermitLgaRules();
+
         // Occupancy Permit Page No always mirrors Serial No (Page No is read-only).
         const occupancyPermitSerialNoInput = document.getElementById('occupancy-permit-serial-no');
         const occupancyPermitPageNoInput = document.getElementById('occupancy-permit-page-no');
@@ -5654,6 +5767,16 @@
         const opGrantor = document.getElementById('occupancy-permit-grantor');
         if (opGrantor) {
             opGrantor.value = 'KANO STATE GOVERNMENT';
+        }
+
+        // Put the LGA picker back out of the way and unlock the registration particulars,
+        // which clearing the OP Type alone would otherwise leave greyed out.
+        const opLgaGrantorReset = document.getElementById('occupancy-permit-lga-grantor');
+        if (opLgaGrantorReset) {
+            opLgaGrantorReset.value = '';
+        }
+        if (typeof window.applyOccupancyPermitLgaRules === 'function') {
+            window.applyOccupancyPermitLgaRules();
         }
 
         // Instrument type is locked to Occupancy Permit

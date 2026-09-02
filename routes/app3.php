@@ -293,6 +293,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/applications/op-resettlement/op-lgas', [OpResettlementApplicationController::class, 'opLgas'])->name('applications.op-lgas');
         Route::post('/applications/op-resettlement/op-update-tot', [OpResettlementApplicationController::class, 'opUpdateTot'])->name('applications.op-update-tot');
         Route::get('/applications/op-resettlement/{id}/capture-edit', [OpResettlementApplicationController::class, 'captureEdit'])->name('applications.capture-edit')->where('id', '[0-9]+|pra-[0-9]+|ic-[0-9]+');
+        Route::post('/applications/op-resettlement/{id}/passport', [OpResettlementApplicationController::class, 'updatePassport'])->name('applications.update-passport')->where('id', '[0-9]+|pra-[0-9]+|ic-[0-9]+');
         Route::get('/applications/match-op/preview', [OpResettlementApplicationController::class, 'matchOpPreview'])->name('applications.match-op-preview');
         Route::post('/applications/match-op', [OpResettlementApplicationController::class, 'matchOp'])->name('applications.match-op');
         Route::delete('/applications/delete-master/{id}', [OpResettlementApplicationController::class, 'deleteMaster'])->name('applications.delete-master');

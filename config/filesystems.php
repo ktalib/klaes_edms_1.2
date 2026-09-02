@@ -46,6 +46,19 @@ return [
             'throw' => false,
         ],
 
+        /*
+         | Private documents. Rooted OUTSIDE storage/app/public, so nothing here
+         | is reachable through the /storage symlink — the only way to read a file
+         | on this disk is an authorized controller that streams it.
+         | Used by Online Legal Search identification uploads.
+         */
+        'ols_private' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private'),
+            'visibility' => 'private',
+            'throw' => false,
+        ],
+
         's3' => [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),

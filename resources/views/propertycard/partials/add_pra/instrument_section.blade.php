@@ -57,11 +57,20 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 hidden" data-role="op-fields-wrapper">
                 <div>
                     <label for="op_type" class="text-xs">OP Type</label>
+                    {{-- "LGA" = a permit issued by a Local Government rather than by the State.
+                         Picking it turns the Grantor field into a 44-LGA picker and fixes the
+                         registration particulars at 0/0/0 with no date or time — see
+                         applyLgaOpTypeRules() in public/js/pra/form-controller.js. --}}
                     <select id="op_type" name="op_type" class="form-select text-xs py-1" data-model="opType">
                         <option value="">Select OP type</option>
                         <option value="Resettlement">Resettlement</option>
                         <option value="Direct Allocation">Direct Allocation</option>
+                        <option value="LGA">LGA</option>
                     </select>
+                    <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="op-lga-note">
+                        Issued by a Local Government: registration number is fixed at 0/0/0 and the
+                        deeds date and time are left blank.
+                    </p>
                 </div>
                 <div>
                     <label for="op_serial_number" class="text-xs">OP Serial Number</label>

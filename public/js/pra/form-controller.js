@@ -260,6 +260,9 @@
             });
             this.opFieldsWrapper = container.querySelector('[data-role="op-fields-wrapper"]');
             this.cofoFieldsWrapper = container.querySelector('[data-role="cofo-fields-wrapper"]');
+            // Grantor picker + hint shown only for an OP issued by a Local Government.
+            this.opLgaGrantorSelect = container.querySelector('[data-role="op-lga-grantor"]');
+            this.opLgaNote = container.querySelector('[data-role="op-lga-note"]');
             this.state = {
                 formMode: 'property',
                 transactionType: '',
@@ -409,6 +412,7 @@
 
         init() {
             this.bindModelElements();
+            this.bindOpLgaGrantor();
             if (!this.state.formMode) {
                 this.state.formMode = 'property';
             }
@@ -466,6 +470,133 @@
                     const nextValue = this.extractElementValue(element, modelKey);
                     this.setState(modelKey, nextValue, { source: 'element' });
                 });
+            });
+        }
+
+        /**
+         * An Occupancy Permit issued by a Local Government rather than by the State.
+         * Some conversion and direct-allocation files carry these; an LGA registers nothing
+         * in the state deeds registry, so such a permit has no serial, page, volume, date or
+         * time — only which Local Government granted it.
+         */
+        isLgaOpType() {
+            // Tolerant of the "OP " prefix the sibling screens put on their stored values.
+            return normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+        }
+
+        /** The 44 authority names, read off the picker so this file holds no second copy. */
+        kanoLgaAuthorities() {
+            if (!this.opLgaGrantorSelect) {
+                return [];
+            }
+            return Array.from(this.opLgaGrantorSelect.options)
+                .map((option) => option.value)
+                .filter((value) => value !== '');
+        }
+
+        bindOpLgaGrantor() {
+            if (!this.opLgaGrantorSelect) {
+                return;
+            }
+            // The picker is a stand-in for the first-party input, so it writes the same state key.
+            this.opLgaGrantorSelect.addEventListener('change', () => {
+                this.setState('firstParty', this.opLgaGrantorSelect.value, { source: 'element' });
+            });
+        }
+
+        /**
+         * Swap the grantor control and fix (or release) the registration particulars to match
+         * the current OP Type. Safe to call on every relevant change — it is idempotent.
+         */
+        applyLgaOpTypeRules() {
+            const isLga = this.isLgaOpType();
+            const authorities = this.kanoLgaAuthorities();
+
+            if (this.opLgaNote) {
+                this.opLgaNote.classList.toggle('hidden', !isLga);
+            }
+            if (this.opLgaGrantorSelect) {
+                this.opLgaGrantorSelect.classList.toggle('hidden', !isLga);
+                // Which Local Government issued it is the one particular an LGA permit must give.
+                this.opLgaGrantorSelect.required = isLga;
+            }
+            if (this.partyInputFirst) {
+                this.partyInputFirst.classList.toggle('hidden', isLga);
+                // A hidden input must not hold the form back on its own `required`.
+                this.partyInputFirst.required = !isLga;
+            }
+
+            const regFields = ['serialNo', 'pageNo', 'volumeNo'];
+            const dateFields = ['deedsDate', 'deedsTime'];
+
+            if (isLga) {
+                // Registration number 0/0/0, no date, no time — nothing was ever registered.
+                regFields.forEach((key) => {
+                    this.setState(key, '0', { silent: true });
+                    this.syncModelElement(key, '0');
+                });
+                dateFields.forEach((key) => {
+                    this.setState(key, '', { silent: true });
+                    this.syncModelElement(key, '');
+                });
+                this.updateRegPreview();
+
+                // Carry the picker and the state to the same value, in either direction, so a
+                // record loaded with an LGA grantor re-selects and a fresh one starts empty.
+                if (this.opLgaGrantorSelect) {
+                    const current = normalizeText(this.state.firstParty);
+                    if (current && !authorities.includes(current)) {
+                        // A hand-typed grantor from an older row: the blade keeps it as an
+                        // extra option only for the value it was rendered with, so add it here.
+                        if (!Array.from(this.opLgaGrantorSelect.options).some((o) => o.value === current)) {
+                            const option = document.createElement('option');
+                            option.value = current;
+                            option.textContent = current;
+                            this.opLgaGrantorSelect.appendChild(option);
+                        }
+                    }
+                    if (current === 'KANO STATE GOVERNMENT') {
+                        // The State is not one of the 44 — make the officer choose.
+                        this.setState('firstParty', '');
+                        this.opLgaGrantorSelect.value = '';
+                    } else {
+                        this.opLgaGrantorSelect.value = current;
+                    }
+                }
+                this.setRegParticularsLocked(true);
+                return;
+            }
+
+            // Not (or no longer) an LGA permit: release the fields and drop the 0/0/0 stamp.
+            this.setRegParticularsLocked(false);
+            const stamped = regFields.every((key) => normalizeText(this.state[key]) === '0');
+            if (stamped) {
+                regFields.forEach((key) => {
+                    this.setState(key, '', { silent: true });
+                    this.syncModelElement(key, '');
+                });
+                this.updateRegPreview();
+            }
+            if (authorities.includes(normalizeText(this.state.firstParty))) {
+                const isGovernment = GOVERNMENT_TRANSACTION_TYPES.includes(this.state.transactionType);
+                this.setState('firstParty', isGovernment ? 'KANO STATE GOVERNMENT' : '');
+            }
+        }
+
+        /** Grey out and unlock the registration particulars together. */
+        setRegParticularsLocked(locked) {
+            ['serialNo', 'pageNo', 'volumeNo', 'deedsDate', 'deedsTime'].forEach((key) => {
+                const element = this.modelElements.get(key);
+                if (!element) {
+                    return;
+                }
+                // pageNo is always mirrored from serialNo, so it stays read-only regardless.
+                if (key !== 'pageNo') {
+                    element.readOnly = locked;
+                }
+                element.required = false;
+                element.classList.toggle('bg-gray-100', locked);
+                element.classList.toggle('cursor-not-allowed', locked);
             });
         }
 
@@ -582,6 +713,10 @@
                     this.syncModelElement(key, value);
                     this.updateTripartiteControls();
                     break;
+                case 'opType':
+                    this.syncModelElement(key, value);
+                    this.applyLgaOpTypeRules();
+                    break;
                 case 'serialNo':
                 case 'pageNo':
                 case 'volumeNo':
@@ -609,7 +744,6 @@
                 case 'regTime':
                 case 'deedsDate':
                 case 'deedsTime':
-                case 'opType':
                 case 'opSerialNumber':
                 case 'period':
                 case 'periodUnit':
@@ -965,12 +1099,14 @@
 
             const isGovernment = GOVERNMENT_TRANSACTION_TYPES.includes(transactionType);
             if (this.partyInputFirst) {
-                if (isGovernment) {
+                // An LGA-issued OP is a government transaction whose grantor is NOT the State,
+                // so it keeps the Local Government already picked instead of being overwritten.
+                if (isGovernment && !this.isLgaOpType()) {
                     this.partyInputFirst.value = 'KANO STATE GOVERNMENT';
                     this.partyInputFirst.readOnly = true;
                     this.partyInputFirst.classList.add('bg-gray-100', 'text-gray-800');
                     this.setState('firstParty', 'KANO STATE GOVERNMENT');
-                } else {
+                } else if (!isGovernment) {
                     if (this.partyInputFirst.readOnly) {
                         this.setState('firstParty', '');
                     }
@@ -989,6 +1125,10 @@
                 this.setState('opSerialNumber', '', { silent: true });
                 this.syncModelElement('opSerialNumber', '');
             }
+
+            // Runs for both branches: applies the LGA rules when the row is an LGA permit and
+            // undoes the 0/0/0 stamp when the type has just moved away from one.
+            this.applyLgaOpTypeRules();
 
             if (this.cofoFieldsWrapper) {
                 this.cofoFieldsWrapper.classList.toggle('hidden', !isCofOTransaction);

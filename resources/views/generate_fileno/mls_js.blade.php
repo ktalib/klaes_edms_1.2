@@ -1262,6 +1262,15 @@
                     }
                 },
                 {
+                    data: 'district',
+                    name: 'district',
+                    title: 'District',
+                    defaultContent: 'N/A',
+                    render: function (data, type, row) {
+                        return data ? data.toUpperCase() : 'N/A';
+                    }
+                },
+                {
                     data: 'lga',
                     name: 'lga',
                     title: 'LGA',
@@ -1277,59 +1286,6 @@
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
                         return data ? data.toUpperCase() : 'N/A';
-                    }
-                },
-                // Latitude / Longitude come from file_indexings — the map pin this page
-                // saves on Generate lands there, not on fileNumber or mls_file_no. Most
-                // legacy files were never pinned, so N/A is the normal reading.
-                {
-                    data: 'latitude',
-                    name: 'latitude',
-                    title: 'Latitude',
-                    defaultContent: 'N/A',
-                    searchable: false,
-                    render: function (data, type, row) {
-                        if (!data || data === 'N/A') {
-                            return '<span class="text-gray-400">N/A</span>';
-                        }
-                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
-                    }
-                },
-                {
-                    data: 'longitude',
-                    name: 'longitude',
-                    title: 'Longitude',
-                    defaultContent: 'N/A',
-                    searchable: false,
-                    render: function (data, type, row) {
-                        if (!data || data === 'N/A') {
-                            return '<span class="text-gray-400">N/A</span>';
-                        }
-                        // Plain value — the Map column owns opening the location.
-                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
-                    }
-                },
-                {
-                    data: null,
-                    name: 'map',
-                    title: 'Map',
-                    orderable: false,
-                    searchable: false,
-                    className: 'text-center',
-                    render: function (data, type, row) {
-                        const lat = row.latitude && row.latitude !== 'N/A' ? row.latitude : '';
-                        const lon = row.longitude && row.longitude !== 'N/A' ? row.longitude : '';
-                        if (!lat || !lon) {
-                            return '<span class="text-gray-300" title="No coordinates pinned on this file">&mdash;</span>';
-                        }
-                        const label = String(row.mlsfNo || row.primaryFileNo || '').replace(/"/g, '&quot;');
-                        const title = String(row.FileName || '').replace(/"/g, '&quot;');
-                        return `<button type="button"
-                                    onclick="openMlsfMapModal('${lat}', '${lon}', '${label}', '${title}')"
-                                    class="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100">
-                                    <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
-                                    <span>View Map</span>
-                                </button>`;
                     }
                 },
                 {
@@ -1387,6 +1343,59 @@
                             });
                         }
                         return data || 'N/A';
+                    }
+                },
+                // Longitude / Latitude come from file_indexings — the map pin this page
+                // saves on Generate lands there, not on fileNumber or mls_file_no. Most
+                // legacy files were never pinned, so N/A is the normal reading.
+                {
+                    data: 'longitude',
+                    name: 'longitude',
+                    title: 'Longitude',
+                    defaultContent: 'N/A',
+                    searchable: false,
+                    render: function (data, type, row) {
+                        if (!data || data === 'N/A') {
+                            return '<span class="text-gray-400">N/A</span>';
+                        }
+                        // Plain value — the Map column owns opening the location.
+                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
+                    }
+                },
+                {
+                    data: 'latitude',
+                    name: 'latitude',
+                    title: 'Latitude',
+                    defaultContent: 'N/A',
+                    searchable: false,
+                    render: function (data, type, row) {
+                        if (!data || data === 'N/A') {
+                            return '<span class="text-gray-400">N/A</span>';
+                        }
+                        return `<span class="font-mono text-xs text-gray-700">${data}</span>`;
+                    }
+                },
+                {
+                    data: null,
+                    name: 'map',
+                    title: 'Map',
+                    orderable: false,
+                    searchable: false,
+                    className: 'text-center',
+                    render: function (data, type, row) {
+                        const lat = row.latitude && row.latitude !== 'N/A' ? row.latitude : '';
+                        const lon = row.longitude && row.longitude !== 'N/A' ? row.longitude : '';
+                        if (!lat || !lon) {
+                            return '<span class="text-gray-300" title="No coordinates pinned on this file">&mdash;</span>';
+                        }
+                        const label = String(row.mlsfNo || row.primaryFileNo || '').replace(/"/g, '&quot;');
+                        const title = String(row.FileName || '').replace(/"/g, '&quot;');
+                        return `<button type="button"
+                                    onclick="openMlsfMapModal('${lat}', '${lon}', '${label}', '${title}')"
+                                    class="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700 transition hover:bg-indigo-100">
+                                    <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+                                    <span>View Map</span>
+                                </button>`;
                     }
                 },
                 {
@@ -1447,7 +1456,17 @@
                     }
                 }
             ]; if (window.MLSF_IS_ADMIN) cols.unshift(mlsfCheckboxColumn); return cols; })(),
-            order: [[window.MLSF_IS_ADMIN ? 15 : 14, 'desc']],
+            // Default sort: newest commissioning first. Resolved from the header text
+            // rather than a fixed index — DataTables 1.10 cannot order by column name, and
+            // a hard-coded index silently sorts the wrong column the moment the table is
+            // reordered (which is exactly what happened when the coordinate columns moved).
+            // The fallback indexes match the current layout, with/without the admin
+            // checkbox column that the thead renders conditionally.
+            order: [[(function () {
+                const headers = Array.from(document.querySelectorAll('#mlsfTable thead th'));
+                const idx = headers.findIndex(th => th.textContent.trim() === 'Time Commissioned');
+                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 13 : 12);
+            })(), 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
             responsive: true,
@@ -3839,6 +3858,10 @@
                     document.getElementById('editAddress').value = data.address || '';
                 }
 
+                // Passport already on record (show() resolves it from oss_applications,
+                // falling back to the file's EDMS scan row). No photo leaves the empty slot.
+                setEditPassportPreview(data.passport_url || '', data.passport_url ? 'Passport on record' : 'No passport on record');
+
                 // Related / Old file number share one input. An existing old_fileno wins
                 // and ticks the checkbox, which relabels the field.
                 const relatedInput = document.getElementById('editRelatedFileNo');
@@ -3884,6 +3907,66 @@
                     confirmButtonColor: '#ef4444'
                 });
             });
+    }
+
+    // ---- Edit modal passport ---------------------------------------------------
+    // One slot, two states: the photograph already filed against the file (fetched with
+    // the record) and a replacement picked here (previewed locally, uploaded on save).
+
+    function setEditPassportPreview(url, statusText) {
+        const img = document.getElementById('editPassportPreview');
+        const placeholder = document.getElementById('editPassportPlaceholder');
+        const status = document.getElementById('editPassportStatus');
+        const input = document.getElementById('editPassport');
+
+        // Clearing the picker matters: one modal serves every row, so a file left selected
+        // from a previous edit would otherwise be uploaded against the wrong file number.
+        if (input) input.value = '';
+
+        if (img) {
+            if (url) {
+                img.src = url;
+                img.classList.remove('hidden');
+            } else {
+                img.removeAttribute('src');
+                img.classList.add('hidden');
+            }
+        }
+        if (placeholder) placeholder.classList.toggle('hidden', !!url);
+        if (status) status.textContent = statusText || (url ? 'Passport on record' : 'No passport on record');
+    }
+
+    function onEditPassportChange(input) {
+        const file = input && input.files ? input.files[0] : null;
+        if (!file) return;
+
+        const img = document.getElementById('editPassportPreview');
+        const placeholder = document.getElementById('editPassportPlaceholder');
+        const status = document.getElementById('editPassportStatus');
+
+        // Checked here as well as server-side, so an oversized photo is caught before the
+        // operator fills in the rest of the form and submits.
+        if (file.size > 2 * 1024 * 1024) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Passport too large',
+                text: 'The passport photograph must be 2MB or smaller.',
+                confirmButtonColor: '#ef4444'
+            });
+            input.value = '';
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (img) {
+                img.src = e.target.result;
+                img.classList.remove('hidden');
+            }
+            if (placeholder) placeholder.classList.add('hidden');
+            if (status) status.textContent = file.name + ' — replaces the current photo on save';
+        };
+        reader.readAsDataURL(file);
     }
 
     // related_fileno is stored as a JSON array on fileNumber, but older rows hold a

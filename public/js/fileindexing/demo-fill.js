@@ -220,6 +220,10 @@
             const fileNumber = payload.source.file_number;
             usedFileNumbers.push(fileNumber);
 
+            // Held until the Property Transaction dialog is opened — it does not exist
+            // on the page yet, and its Alpine component is created with it.
+            stashTransactions(payload.transactions);
+
             // 1. Human particulars first, so they are already in place when the
             //    grouping lookup below repaints the archive fields.
             fillAlpine(payload.form);
@@ -256,6 +260,11 @@
                     html: '<div style="text-align:left;font-size:13px;">'
                         + '<div><b>File number</b> ' + fileNumber + ' <i>(real, not yet indexed)</i></div>'
                         + '<div><b>Tracking ID</b> ' + (payload.source.tracking_id || '—') + '</div>'
+                        + (Array.isArray(payload.transactions) && payload.transactions.length
+                            ? '<div style="margin-top:6px;"><b>' + payload.transactions.length
+                              + ' transactions</b> are waiting — they fill in when you open '
+                              + '<i>Add Property Transaction Details</i>.</div>'
+                            : '')
                         + '<div style="margin-top:6px;color:#92400e;">'
                         + 'Holder, address and identifiers are invented sample data.</div>'
                         + '</div>',
@@ -273,12 +282,114 @@
         }
     }
 
+    /* ------------------------------------------------------------------------
+     * The Property Transaction card
+     *
+     * That card is a separate Alpine component in a dialog that does not exist yet
+     * when "Fill demo data" is pressed, so the chain is STASHED here and applied the
+     * first time the dialog opens. Filling it by hand is three transactions x eight
+     * fields, which is most of the cost of testing the ownership-gap check.
+     * ---------------------------------------------------------------------- */
+
+    /** The chain waiting to be written into the card, or null once it has been. */
+    let pendingTransactions = null;
+
+    function applyPendingTransactions() {
+        if (!pendingTransactions || typeof Alpine === 'undefined') return false;
+
+        const host = document.querySelector('#property-transaction-dialog [x-data]');
+        if (!host) return false;
+
+        let card;
+        try {
+            card = Alpine.$data(host);
+        } catch (error) {
+            return false;
+        }
+
+        if (!card || typeof card.addTransaction !== 'function') return false;
+
+        const chain = pendingTransactions;
+        pendingTransactions = null;
+
+        // Replace whatever blank blocks the card opened with, then add one per row.
+        card.transactions = [];
+        chain.forEach(function (row) {
+            card.addTransaction();
+            const block = card.transactions[card.transactions.length - 1];
+
+            Object.keys(row).forEach(function (key) {
+                if (row[key] !== undefined && row[key] !== null) block[key] = row[key];
+            });
+
+            // The dropdown is built from InstrumentTypes; a value that is not in the
+            // list renders as a blank select, so register it the way a real pick does.
+            if (typeof card.registerTransactionType === 'function') {
+                card.registerTransactionType(block.transactionType);
+            }
+        });
+
+        return true;
+    }
+
+    /**
+     * Wrap the dialog's own open function, once it exists.
+     *
+     * Wrapping rather than polling the DOM: the card is populated by
+     * openPropertyTransactionModal(), so the only safe moment to write into it is
+     * after that has run and Alpine has settled.
+     */
+    function hookTransactionModal() {
+        if (typeof window.openPropertyTransactionModal !== 'function'
+            || window.openPropertyTransactionModal.__demoWrapped) {
+            return typeof window.openPropertyTransactionModal === 'function';
+        }
+
+        const original = window.openPropertyTransactionModal;
+
+        const wrapped = function () {
+            const result = original.apply(this, arguments);
+
+            if (pendingTransactions) {
+                // The dialog sets its own state on a timeout; land after it, and retry a
+                // few times rather than assuming a single delay is always enough.
+                let attempts = 0;
+                const timer = setInterval(function () {
+                    attempts++;
+                    if (applyPendingTransactions() || attempts > 12) clearInterval(timer);
+                }, 250);
+            }
+
+            return result;
+        };
+
+        wrapped.__demoWrapped = true;
+        window.openPropertyTransactionModal = wrapped;
+
+        return true;
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         const button = byId('demo-fill-btn');
         if (!button) return;
+
+        // The modal partial may define its opener after this file runs, so keep
+        // looking for a short while rather than giving up on the first miss.
+        if (!hookTransactionModal()) {
+            let tries = 0;
+            const timer = setInterval(function () {
+                tries++;
+                if (hookTransactionModal() || tries > 40) clearInterval(timer);
+            }, 250);
+        }
 
         button.addEventListener('click', function () {
             fillDemoData(button);
         });
     });
+
+    /** Called by fillDemoData() once the payload is in. */
+    function stashTransactions(rows) {
+        pendingTransactions = Array.isArray(rows) && rows.length ? rows : null;
+    }
 })();
