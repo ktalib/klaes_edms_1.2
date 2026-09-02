@@ -265,8 +265,12 @@
             this.opLgaNote = container.querySelector('[data-role="op-lga-note"]');
             // OP Category (Old OP / New OP) and its note, shown only for the two
             // State-granted OP types.
-            this.opCategoryGroup = container.querySelector('[data-role="op-category-group"]');
-            this.opOldOpNote = container.querySelector('[data-role="op-old-op-note"]');
+            // The shared Type / Category pair, whose options come from the catalogue.
+            this.instrumentTypeGroup = container.querySelector('[data-role="instrument-type-group"]');
+            this.instrumentCategoryGroup = container.querySelector('[data-role="instrument-category-group"]');
+            this.instrumentTypeSelect = container.querySelector('#instrument_type_value');
+            this.instrumentCategorySelect = container.querySelector('#instrument_category');
+            this.instrumentOldNote = container.querySelector('[data-role="instrument-old-note"]');
             this.state = {
                 formMode: 'property',
                 transactionType: '',
@@ -311,7 +315,11 @@
                 deedsDate: '',
                 deedsTime: '',
                 opType: '',
-                opCategory: '',
+                // The one visible Type answer; copied into opType / cofoType /
+                // instrumentSubtype by applyInstrumentCatalogRules().
+                typeValue: '',
+                instrumentSubtype: '',
+                instrumentCategory: '',
                 opSerialNumber: '',
                 cofoType: '',
                 tempFileNumber: '',
@@ -368,7 +376,9 @@
                 'deedsDate',
                 'deedsTime',
                 'opType',
-                'opCategory',
+                'typeValue',
+                'instrumentSubtype',
+                'instrumentCategory',
                 'opSerialNumber',
                 'cofoType',
                 'tempFileNumber',
@@ -485,13 +495,33 @@
          * in the state deeds registry, so such a permit has no serial, page, volume, date or
          * time — only which Local Government granted it.
          */
+        /**
+         * ANY instrument whose chosen Type is LGA was issued by a Local Government, so
+         * party 1 is which Local Government - a Plot Allocation Letter, a Certificate of
+         * Occupancy and a Right of Occupancy just as much as an Occupancy Permit.
+         *
+         * Recognised by the catalogue LABEL, not the stored value: the instruments spell
+         * it differently ('LGA', 'LGA CofO'), and an LGA option added to the catalogue
+         * tomorrow is picked up here without a second edit.
+         */
+        isLgaType() {
+            const value = normalizeText(this.state.typeValue);
+            if (!value) return false;
+
+            const types = (this.catalogEntry() || {}).types || [];
+
+            return types.some(
+                (o) => o.value === value && String(o.label).trim().toUpperCase() === 'LGA'
+            );
+        }
+
+        /**
+         * The narrower case: an Occupancy Permit granted by a Local Government. The 0/0/0
+         * registration stamp is the PERMIT's rule, not a rule about being LGA-issued, so
+         * it stays keyed to this rather than to isLgaType().
+         */
         isLgaOpType() {
-            // Tolerant of the "OP " prefix the sibling screens put on their stored values.
-            // Both LGA kinds answer yes: an LGA OP and the allocation letter an LGA issues
-            // in place of one. Neither is registered in the State deeds registry, so neither
-            // has registration particulars, a date or a time.
-            const normalized = normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '');
-            return normalized === 'LGA' || normalized === 'LGA ALLOCATION LETTER';
+            return this.typeColumn() === 'opType' && this.isLgaType();
         }
 
         /** The 44 authority names, read off the picker so this file holds no second copy. */
@@ -519,21 +549,47 @@
          * the current OP Type. Safe to call on every relevant change — it is idempotent.
          */
         applyLgaOpTypeRules() {
+            // The grantor picker follows the BROAD rule: anything LGA-issued gets it.
+            const isLgaIssued = this.isLgaType();
+            // The 0/0/0 stamp follows the narrow one: only a permit is stamped.
             const isLga = this.isLgaOpType();
             const authorities = this.kanoLgaAuthorities();
 
             if (this.opLgaNote) {
+                // The note names the 0/0/0 rule, so it belongs to the permit case only.
                 this.opLgaNote.classList.toggle('hidden', !isLga);
             }
             if (this.opLgaGrantorSelect) {
-                this.opLgaGrantorSelect.classList.toggle('hidden', !isLga);
-                // Which Local Government issued it is the one particular an LGA permit must give.
-                this.opLgaGrantorSelect.required = isLga;
+                this.opLgaGrantorSelect.classList.toggle('hidden', !isLgaIssued);
+                // Which Local Government issued it is the one particular such an instrument
+                // must give, whatever kind of instrument it happens to be.
+                this.opLgaGrantorSelect.required = isLgaIssued;
             }
             if (this.partyInputFirst) {
-                this.partyInputFirst.classList.toggle('hidden', isLga);
+                this.partyInputFirst.classList.toggle('hidden', isLgaIssued);
                 // A hidden input must not hold the form back on its own `required`.
-                this.partyInputFirst.required = !isLga;
+                this.partyInputFirst.required = !isLgaIssued;
+            }
+
+            // Party 1 is the council on EVERY LGA-issued instrument, so this runs on the
+            // broad rule even when the permit-only branch below does not.
+            if (isLgaIssued && this.opLgaGrantorSelect) {
+                const chosen = normalizeText(this.state.firstParty);
+                if (chosen && !authorities.includes(chosen)
+                    && !Array.from(this.opLgaGrantorSelect.options).some((o) => o.value === chosen)) {
+                    // A hand-typed grantor from an older row stays selectable.
+                    const option = document.createElement('option');
+                    option.value = chosen;
+                    option.textContent = chosen;
+                    this.opLgaGrantorSelect.appendChild(option);
+                }
+                if (chosen === 'KANO STATE GOVERNMENT') {
+                    // The State is not one of the 44 - make the officer choose.
+                    this.setState('firstParty', '');
+                    this.opLgaGrantorSelect.value = '';
+                } else {
+                    this.opLgaGrantorSelect.value = chosen;
+                }
             }
 
             const regFields = ['serialNo', 'pageNo', 'volumeNo'];
@@ -551,28 +607,6 @@
                 });
                 this.updateRegPreview();
 
-                // Carry the picker and the state to the same value, in either direction, so a
-                // record loaded with an LGA grantor re-selects and a fresh one starts empty.
-                if (this.opLgaGrantorSelect) {
-                    const current = normalizeText(this.state.firstParty);
-                    if (current && !authorities.includes(current)) {
-                        // A hand-typed grantor from an older row: the blade keeps it as an
-                        // extra option only for the value it was rendered with, so add it here.
-                        if (!Array.from(this.opLgaGrantorSelect.options).some((o) => o.value === current)) {
-                            const option = document.createElement('option');
-                            option.value = current;
-                            option.textContent = current;
-                            this.opLgaGrantorSelect.appendChild(option);
-                        }
-                    }
-                    if (current === 'KANO STATE GOVERNMENT') {
-                        // The State is not one of the 44 — make the officer choose.
-                        this.setState('firstParty', '');
-                        this.opLgaGrantorSelect.value = '';
-                    } else {
-                        this.opLgaGrantorSelect.value = current;
-                    }
-                }
                 this.setRegParticularsLocked(true);
                 return;
             }
@@ -587,51 +621,137 @@
                 });
                 this.updateRegPreview();
             }
-            if (authorities.includes(normalizeText(this.state.firstParty))) {
+            if (!isLgaIssued && authorities.includes(normalizeText(this.state.firstParty))) {
                 const isGovernment = GOVERNMENT_TRANSACTION_TYPES.includes(this.state.transactionType);
                 this.setState('firstParty', isGovernment ? 'KANO STATE GOVERNMENT' : '');
             }
         }
 
         /**
-         * OP Category asks which generation of State permit the paper is, so it is put
-         * only for Resettlement and Direct Allocation. A Local Government issues no
-         * generation of State permit, so the two LGA types are outside the question.
+         * The Type and Category a captured instrument can carry, as emitted once by
+         * App\Services\InstrumentTypeCatalog into a <script type="application/json">
+         * beside the fields. Read lazily and cached, so this file holds no second copy
+         * of that table and cannot drift from the PHP one.
          */
-        showsOpCategory() {
-            const normalized = normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '');
-            return normalized === 'RESETTLEMENT' || normalized === 'DIRECT ALLOCATION';
+        instrumentCatalog() {
+            if (this._instrumentCatalog) return this._instrumentCatalog;
+
+            const node = this.container.querySelector('[data-role="instrument-catalog"]');
+            try {
+                this._instrumentCatalog = node ? JSON.parse(node.textContent || '[]') : [];
+            } catch (err) {
+                console.warn('Instrument catalogue did not parse', err);
+                this._instrumentCatalog = [];
+            }
+
+            return this._instrumentCatalog;
         }
 
-        isOldOpCategory() {
-            if (!this.showsOpCategory()) return false;
-            return normalizeText(this.state.opCategory).toUpperCase() === 'OLD OP';
+        /** Matched the way the PHP side matches: normalised, key as a substring. */
+        catalogEntry() {
+            const needle = normalizeText(this.state.transactionType)
+                .replace(/\s+/g, ' ').toLowerCase();
+            if (!needle) return null;
+
+            return this.instrumentCatalog().find((e) => needle.indexOf(e.key) !== -1) || null;
+        }
+
+        /** Which column the one Type field is stored in for the current instrument. */
+        typeColumn() {
+            const type = normalizeText(this.state.transactionType).toLowerCase();
+            if (type.includes('occupancy permit')) return 'opType';
+            if (type.includes('certificate of occupancy')) return 'cofoType';
+            return 'instrumentSubtype';
+        }
+
+        /** Category 'Old' on a permit: the particulars predate the registry practice. */
+        isOldCategory() {
+            if (this.typeColumn() !== 'opType') return false;
+            return normalizeText(this.state.instrumentCategory).toUpperCase() === 'OLD';
+        }
+
+        /** Fill a select from catalogue options, keeping the current value if still valid. */
+        fillCatalogSelect(select, options, placeholder, current) {
+            if (!select) return '';
+
+            const keep = options.some((o) => o.value === current) ? current : '';
+
+            select.innerHTML = '';
+            const blank = document.createElement('option');
+            blank.value = '';
+            blank.textContent = placeholder;
+            select.appendChild(blank);
+
+            options.forEach((o) => {
+                const el = document.createElement('option');
+                el.value = o.value;
+                el.textContent = o.label;
+                select.appendChild(el);
+            });
+
+            // A stored value the catalogue no longer lists stays selectable, so loading an
+            // old record cannot silently blank it.
+            if (current && keep === '') {
+                const legacy = document.createElement('option');
+                legacy.value = current;
+                legacy.textContent = current + ' (legacy)';
+                select.appendChild(legacy);
+            }
+
+            select.value = current || '';
+            return select.value;
         }
 
         /**
-         * Show or hide OP Category, and clear the answer when the question no longer
-         * applies — a hidden 'Old OP' would otherwise be posted with the form and go on
-         * exempting the registration particulars from a field nobody can see.
-         *
-         * The particulars are already optional on this form (setRegParticularsLocked()
-         * sets required=false either way), so Old OP has nothing to relax here; the note
-         * states the rule. It bites on the transaction card, which blocks a save on a
-         * missing Serial/Vol No.
+         * Swap the Type and Category options to the current instrument's, hide either
+         * field when that instrument has none, and copy the Type answer into the column
+         * it is actually stored in so the OP and CofO rules keep working off the field
+         * they have always read.
          */
-        applyOpCategoryRules() {
-            const shows = this.showsOpCategory();
+        applyInstrumentCatalogRules() {
+            const entry = this.catalogEntry();
+            const types = (entry && entry.types) || [];
+            const categories = (entry && entry.categories) || [];
 
-            if (this.opCategoryGroup) {
-                this.opCategoryGroup.classList.toggle('hidden', !shows);
+            if (this.instrumentTypeGroup) {
+                this.instrumentTypeGroup.classList.toggle('hidden', types.length === 0);
             }
-            if (!shows && normalizeText(this.state.opCategory) !== '') {
-                this.state.opCategory = '';
-                this.syncModelElement('opCategory', '');
+            if (this.instrumentCategoryGroup) {
+                this.instrumentCategoryGroup.classList.toggle('hidden', categories.length === 0);
             }
-            if (this.opOldOpNote) {
-                this.opOldOpNote.classList.toggle('hidden', !this.isOldOpCategory());
+
+            const typeValue = this.fillCatalogSelect(
+                this.instrumentTypeSelect, types, 'Select type', normalizeText(this.state.typeValue)
+            );
+            const categoryValue = this.fillCatalogSelect(
+                this.instrumentCategorySelect, categories, 'Select category',
+                normalizeText(this.state.instrumentCategory)
+            );
+
+            if (normalizeText(this.state.typeValue) !== typeValue) {
+                this.state.typeValue = typeValue;
+            }
+            if (normalizeText(this.state.instrumentCategory) !== categoryValue) {
+                this.state.instrumentCategory = categoryValue;
+            }
+
+            // The Type answer goes to the column this instrument stores it in, and the
+            // other two are emptied so a stale one cannot ride along on the save.
+            const column = this.typeColumn();
+            ['opType', 'cofoType', 'instrumentSubtype'].forEach((key) => {
+                const want = key === column ? typeValue : '';
+                if (normalizeText(this.state[key]) !== want) {
+                    this.state[key] = want;
+                    this.syncModelElement(key, want);
+                }
+            });
+
+            if (this.instrumentOldNote) {
+                this.instrumentOldNote.classList.toggle('hidden', !this.isOldCategory());
             }
         }
+
+
 
         /** Grey out and unlock the registration particulars together. */
         setRegParticularsLocked(locked) {
@@ -766,11 +886,13 @@
                 case 'opType':
                     this.syncModelElement(key, value);
                     this.applyLgaOpTypeRules();
-                    this.applyOpCategoryRules();
                     break;
-                case 'opCategory':
+                case 'typeValue':
+                case 'instrumentCategory':
                     this.syncModelElement(key, value);
-                    this.applyOpCategoryRules();
+                    this.applyInstrumentCatalogRules();
+                    // The permit rules read opType, which the line above has just set.
+                    this.applyLgaOpTypeRules();
                     break;
                 case 'serialNo':
                 case 'pageNo':
@@ -1177,16 +1299,16 @@
             if (!isOpTransaction) {
                 this.setState('opType', '', { silent: true });
                 this.syncModelElement('opType', '');
-                this.setState('opCategory', '', { silent: true });
-                this.syncModelElement('opCategory', '');
+                this.setState('typeValue', '', { silent: true });
+                this.syncModelElement('typeValue', '');
                 this.setState('opSerialNumber', '', { silent: true });
                 this.syncModelElement('opSerialNumber', '');
             }
 
             // Runs for both branches: applies the LGA rules when the row is an LGA permit and
             // undoes the 0/0/0 stamp when the type has just moved away from one.
+            this.applyInstrumentCatalogRules();
             this.applyLgaOpTypeRules();
-            this.applyOpCategoryRules();
 
             if (this.cofoFieldsWrapper) {
                 this.cofoFieldsWrapper.classList.toggle('hidden', !isCofOTransaction);
@@ -2049,7 +2171,8 @@
                 'deeds_date': 'deedsDate',
                 'deeds_time': 'deedsTime',
                 'op_type': 'opType',
-                'op_category': 'opCategory',
+                'instrument_subtype': 'instrumentSubtype',
+                'instrument_category': 'instrumentCategory',
                 'op_serial_number': 'opSerialNumber',
                 'cofo_type': 'cofoType',
                 'transaction_date': 'transactionDate',

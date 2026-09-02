@@ -54,42 +54,44 @@
                 </div>
             </div>
 
+            {{-- Type and Category: one field each, whatever the instrument. Their options
+                 come from App\Services\InstrumentTypeCatalog and are swapped client-side by
+                 applyInstrumentCatalogRules() in public/js/pra/form-controller.js, which
+                 also hides a field the instrument has no answers for. The catalogue is
+                 emitted once, as data, so this markup holds no second copy of the table. --}}
+            <script type="application/json" data-role="instrument-catalog">@json(\App\Services\InstrumentTypeCatalog::forJs())</script>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+                <div class="hidden" data-role="instrument-type-group">
+                    <label for="instrument_type_value" class="text-xs">Type</label>
+                    <select id="instrument_type_value" name="type_value"
+                        class="form-select text-xs py-1" data-model="typeValue">
+                        <option value="">Select type</option>
+                    </select>
+                </div>
+                <div class="hidden" data-role="instrument-category-group">
+                    <label for="instrument_category" class="text-xs">Category</label>
+                    <select id="instrument_category" name="instrument_category"
+                        class="form-select text-xs py-1" data-model="instrumentCategory">
+                        <option value="">Select category</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="instrument-old-note">
+                        Old: the registration particulars (Serial No., Page No. and Vol No.) are optional.
+                    </p>
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 hidden" data-role="op-fields-wrapper">
                 <div>
-                    <label for="op_type" class="text-xs">OP Type</label>
-                    {{-- The two LGA entries are issued by a Local Government rather than by the
-                         State: an LGA OP, and the allocation letter an LGA issues in place of one.
-                         Picking either turns the Grantor field into a 44-LGA picker and fixes the
+                    {{-- The permit's Type is the shared Type field above; this hidden input is
+                         what actually posts op_type, kept in step by the controller. Picking
+                         LGA there turns the Grantor field into a 44-LGA picker and fixes the
                          registration particulars at 0/0/0 with no date or time — see
                          applyLgaOpTypeRules() in public/js/pra/form-controller.js. --}}
-                    <select id="op_type" name="op_type" class="form-select text-xs py-1" data-model="opType">
-                        <option value="">Select OP type</option>
-                        <option value="Resettlement">Resettlement</option>
-                        <option value="Direct Allocation">Direct Allocation</option>
-                        <option value="LGA">LGA OP</option>
-                        <option value="LGA Allocation Letter">LGA Allocation Letter</option>
-                    </select>
+                    <input type="hidden" id="op_type" name="op_type" data-model="opType" value="">
                     <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="op-lga-note">
                         Issued by a Local Government: registration number is fixed at 0/0/0 and the
                         deeds date and time are left blank.
-                    </p>
-                </div>
-                <div class="hidden" data-role="op-category-group">
-                    <label for="op_category" class="text-xs">OP Category</label>
-                    {{-- Which generation of permit the paper is. Shown only for Resettlement
-                         and Direct Allocation: a Local Government issues no generation of
-                         State permit, so the question does not apply to the two LGA types.
-                         Left blank it behaves as a New OP does, which is what every permit
-                         captured before this field is — see applyOpCategoryRules() in
-                         public/js/pra/form-controller.js. --}}
-                    <select id="op_category" name="op_category" class="form-select text-xs py-1" data-model="opCategory">
-                        <option value="">Select OP category</option>
-                        <option value="Old OP">Old OP</option>
-                        <option value="New OP">New OP</option>
-                    </select>
-                    <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="op-old-op-note">
-                        Old OP: the registration particulars (Serial No., Page No. and Vol No.)
-                        are optional.
                     </p>
                 </div>
                 <div>
@@ -101,14 +103,12 @@
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-3 mt-3 hidden" data-role="cofo-fields-wrapper">
-                <div>
-                    <label for="cofo_type" class="text-xs">CofO Type</label>
-                    <select id="cofo_type" name="cofo_type" class="form-select text-xs py-1" data-model="cofoType">
-                        @include('partials.cofo_type_options', ['selected' => old('cofo_type')])
-                    </select>
-                </div>
-            </div>
+            {{-- A Certificate of Occupancy's Type is the shared Type field above, whose
+                 options for this instrument are Land / Old KANGIS / New KANGIS (and SLTR /
+                 ST for those variants). This hidden input is only what posts cofo_type,
+                 kept in step by applyInstrumentCatalogRules(). --}}
+            <input type="hidden" id="cofo_type" name="cofo_type" data-model="cofoType" value="{{ old('cofo_type') }}">
+            <input type="hidden" id="instrument_subtype" name="instrument_subtype" data-model="instrumentSubtype" value="">
 
             <div class="mt-2 p-3 bg-blue-50 border-2 border-blue-200 rounded-lg shadow-sm hidden"
                 data-role="reg-preview">

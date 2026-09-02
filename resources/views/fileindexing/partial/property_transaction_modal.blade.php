@@ -69,7 +69,11 @@
                 opType: '',
                 // Old OP / New OP. Asked only for Resettlement and Direct Allocation,
                 // and blank means the question was never put — see showOpCategory().
-                opCategory: '',
+                // The one visible Type answer. Copied into opType / cofoType by
+                // handleTypeChange(), which is where each instrument's own column is fed.
+                typeValue: '',
+                // The one visible Category answer, whatever the instrument.
+                instrumentCategory: '',
                 opSerialNumber: '',
                 cofoType: '',
                 serialNo: '',
@@ -204,6 +208,12 @@
                 'OCCUPANCY PERMIT': { first: 'Grantor', second: 'Grantee' }
             },
 
+            // The Type and Category each instrument can carry, straight from
+            // App\Services\InstrumentTypeCatalog -- the one copy of that table.
+            // Echoed through Blade's JSON directive, which escapes for an HTML
+            // attribute -- and this x-data is one.
+            instrumentCatalog: @js(\App\Services\InstrumentTypeCatalog::forJs()),
+
             transactionTypeOptions: @js($transactionTypeOptions),
             additionalTransactionTypes: [],
 
@@ -236,7 +246,8 @@
                     transactionType: '',
                     status: 'Normal',
                     transactionDate: '',
-                    opCategory: '',
+                    typeValue: '',
+                    instrumentCategory: '',
                     opSerialNumber: '',
                     cofoType: '',
                     serialNo: '',
@@ -342,47 +353,124 @@
             // of this object onto the page as visible text.
             kanoLgaAuthorities: {{ json_encode(app(\App\Services\KanoLgaDirectory::class)->fullNames()) }},
 
-            // Issued by a Local Government rather than by the State: an LGA OP, or the
-            // allocation letter an LGA issues in place of one. Some conversion and
-            // direct-allocation files carry these, and an LGA registers nothing in the
-            // State deeds registry — so NEITHER has a serial, page, volume, date or time
-            // to enter. Both therefore answer yes here and take the same rules.
-            LGA_OP_TYPES: ['LGA', 'LGA ALLOCATION LETTER'],
+            // ANY instrument whose chosen Type is LGA was issued by a Local Government, so
+            // party 1 is which Local Government -- a Plot Allocation Letter, a Certificate
+            // of Occupancy and a Right of Occupancy just as much as an Occupancy Permit.
+            //
+            // Recognised by the catalogue LABEL, not the stored value: the four instruments
+            // spell it differently ('LGA', 'LGA CofO'), and a new LGA option added to the
+            // catalogue tomorrow is picked up here without a second edit.
+            isLgaType(transaction) {
+                const value = String(transaction && transaction.typeValue || '');
+                if (!value) return false;
 
+                return this.typeOptionsFor(transaction).some(
+                    (o) => o.value === value && String(o.label).trim().toUpperCase() === 'LGA'
+                );
+            },
+
+            // The narrower case: an Occupancy Permit granted by a Local Government. An LGA
+            // registers nothing in the State deeds registry, so THIS one also has no serial,
+            // page, volume, date or time to enter -- rules that belong to the permit, not to
+            // every LGA-issued instrument, which is why they stay keyed to this and not to
+            // isLgaType().
             isLgaOpType(transaction) {
                 if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
-                // Tolerant of the historic 'OP ' prefix the other two options carry.
-                const normalized = String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '');
-                return this.LGA_OP_TYPES.includes(normalized);
+                return this.isLgaType(transaction);
             },
 
-            // OP Category (Old OP / New OP) is a question about a State-granted permit
-            // only: it asks which generation of paper this is. The two LGA kinds are
-            // outside it entirely, because a Local Government issues no generation of
-            // State permit at all — so the field is shown for Resettlement and Direct
-            // Allocation and for nothing else.
-            OP_CATEGORY_TYPES: ['RESETTLEMENT', 'DIRECT ALLOCATION'],
+            // The catalogue entry for whatever instrument this block holds, matched the
+            // way the PHP side matches: normalised, and the KEY as a substring -- which is
+            // how 'ST Certificate of Occupancy' resolves to the CofO entry, and
+            // 'OCCUPANCY PERMIT' to the permit one.
+            catalogEntryFor(transaction) {
+                const needle = String(transaction && transaction.transactionType || '')
+                    .trim().replace(/\s+/g, ' ').toLowerCase();
+                if (!needle) return null;
+                return (this.instrumentCatalog || []).find((e) => needle.indexOf(e.key) !== -1) || null;
+            },
 
-            showOpCategory(transaction) {
+            typeOptionsFor(transaction) {
+                return (this.catalogEntryFor(transaction) || {}).types || [];
+            },
+
+            categoryOptionsFor(transaction) {
+                return (this.catalogEntryFor(transaction) || {}).categories || [];
+            },
+
+            // False for a stored value the catalogue no longer lists, so the select can go
+            // on offering it as '(legacy)' rather than silently blanking an old record.
+            isCatalogType(transaction) {
+                const value = String(transaction && transaction.typeValue || '');
+                return this.typeOptionsFor(transaction).some((o) => o.value === value);
+            },
+
+            // Category 'Old' on an Occupancy Permit: the paper predates the practice that
+            // produced a serial, page and volume, so its particulars are optional.
+            isOldCategory(transaction) {
                 if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
-                // Tolerant of the historic 'OP ' prefix the stored values carry.
-                const normalized = String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '');
-                return this.OP_CATEGORY_TYPES.includes(normalized);
+                return String(transaction.instrumentCategory || '').trim().toUpperCase() === 'OLD';
             },
 
-            isOldOpCategory(transaction) {
-                if (!transaction || !this.showOpCategory(transaction)) return false;
-                return String(transaction.opCategory || '').trim().toUpperCase() === 'OLD OP';
+            // Which column the one visible Type field is stored in. Each instrument keeps
+            // the column it has always used, so no existing value has to move.
+            typeColumnFor(transaction) {
+                if (!transaction) return 'instrument_subtype';
+                if (this.isOPTransaction(transaction.transactionType)) return 'op_type';
+                if (this.isCofOTransaction(transaction.transactionType)) return 'cofo_type';
+                return 'instrument_subtype';
             },
+
+            // Copy the answer into that column, then let the OP rules run off opType
+            // exactly as they did when OP Type was its own control.
+            handleTypeChange(transaction) {
+                const column = this.typeColumnFor(transaction);
+
+                transaction.opType = column === 'op_type' ? transaction.typeValue : '';
+                transaction.cofoType = column === 'cofo_type' ? transaction.typeValue : '';
+
+                if (column === 'op_type') {
+                    // handleOpTypeChange() does the party-1 rules AND the permit's own
+                    // 0/0/0 registration stamp, which no other instrument gets.
+                    this.handleOpTypeChange(transaction);
+                    return;
+                }
+
+                this.applyLgaGrantorRules(transaction);
+            },
+
+            // Party 1 follows the LGA picker on every instrument that shows one. Kept
+            // apart from handleOpTypeChange() because the 0/0/0 stamp beside it there is
+            // the permit's rule, not a rule about being LGA-issued.
+            applyLgaGrantorRules(transaction) {
+                const current = String(transaction.firstParty || '').trim();
+
+                if (this.isLgaType(transaction)) {
+                    // The State is not one of the 44 -- make the officer name the council.
+                    if (!this.kanoLgaAuthorities.includes(current)) {
+                        transaction.firstParty = '';
+                    }
+                    return;
+                }
+
+                // No longer LGA-issued: hand party 1 back to whatever the instrument says.
+                if (this.kanoLgaAuthorities.includes(current)) {
+                    transaction.firstParty = this.isGovernmentTransaction(transaction.transactionType)
+                        ? 'KANO STATE GOVERNMENT'
+                        : '';
+                }
+            },
+
 
             // Serial No. and Volume No. are required on an Occupancy Permit -- EXCEPT on
-            // the two kinds that were never entered in the State deeds registry to begin
-            // with. An LGA permit never reached it, and an Old OP predates the practice
-            // that produced a serial, page and volume. A blank OP Category still counts as
-            // required, so the ~4,500 permits captured before the field keep their rule.
+            // the two kinds that never reached the State deeds registry. An LGA permit
+            // never went in, and an 'Old' one predates the practice that produced a
+            // serial, page and volume. A BLANK Category still counts as required, so the
+            // permits captured before the field existed keep the rule they were saved
+            // under.
             opRegNoRequired(transaction) {
                 if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
-                return !this.isLgaOpType(transaction) && !this.isOldOpCategory(transaction);
+                return !this.isLgaOpType(transaction) && !this.isOldCategory(transaction);
             },
 
             // Registration particulars are fixed and uneditable for Right of Occupancy and
@@ -394,13 +482,6 @@
 
             // Applies (or undoes) the LGA rules when the OP Type changes.
             handleOpTypeChange(transaction) {
-                // Moving to an LGA kind takes the OP Category question away, so the answer
-                // goes with it -- otherwise a hidden 'Old OP' would keep exempting the
-                // registration particulars from a field nobody can see.
-                if (!this.showOpCategory(transaction)) {
-                    transaction.opCategory = '';
-                }
-
                 if (this.isLgaOpType(transaction)) {
                     // Registration number 0/0/0, no date, no time — the state registry never saw it.
                     transaction.serialNo = '0';
@@ -1005,7 +1086,7 @@
 
                 // An LGA-issued OP is a government transaction whose grantor is NOT the State,
                 // so it keeps whichever Local Government was picked instead of being reset.
-                if (isGov && !this.isLgaOpType(transaction)) {
+                if (isGov && !this.isLgaType(transaction)) {
                     transaction.firstParty = 'KANO STATE GOVERNMENT';
                 } else if (!isGov) {
                     if (transaction.firstParty === 'KANO STATE GOVERNMENT') {
@@ -1022,9 +1103,20 @@
                 transaction.thirdParty = '';
                 transaction.fourthParty = '';
 
+                // Not a plot allocation letter any more: drop the issuing body, and the
+                // party 1 it wrote, so a deed does not inherit a grantor from a letter.
+                // A Type or Category the new instrument does not offer is not an answer to
+                // ITS question, so it goes rather than riding along invisibly.
+                if (!this.typeOptionsFor(transaction).some((o) => o.value === transaction.typeValue)) {
+                    transaction.typeValue = '';
+                }
+                if (!this.categoryOptionsFor(transaction).some((o) => o.value === transaction.instrumentCategory)) {
+                    transaction.instrumentCategory = '';
+                }
+
                 if (!this.isOPTransaction(transaction.transactionType)) {
                     transaction.opSerialNumber = '';
-                    transaction.opCategory = '';
+
                     // opType is cleared by the caller; undo the LGA registration stamp here so a
                     // deed does not inherit 0/0/0 from a permit the row used to be.
                     if (transaction.serialNo === '0' && transaction.pageNo === '0' && transaction.volumeNo === '0') {
@@ -1032,14 +1124,15 @@
                         transaction.pageNo = '';
                         transaction.volumeNo = '';
                     }
-                    if (this.kanoLgaAuthorities.includes(transaction.firstParty)) {
-                        transaction.firstParty = '';
-                    }
                 }
 
                 if (!this.isCofOTransaction(transaction.transactionType)) {
                     transaction.cofoType = '';
                 }
+
+                // Party 1 last, once typeValue has settled: a Local Government stays on the
+                // row only while the new instrument's Type is still LGA.
+                this.applyLgaGrantorRules(transaction);
 
                 // Right of Occupancy: Registration Number is fixed at 0/0/0 and Reg Date/Time are not applicable.
                 if (this.isROFOTransaction(transaction.transactionType)) {
@@ -1372,11 +1465,11 @@
                         Swal.fire({
                             icon: 'error',
                             title: 'Validation Error',
-                            text: 'OP Type is required for Occupancy Permit (OP) transactions. Please select Resettlement, Direct Allocation or LGA.',
+                            text: 'Type is required for an Occupancy Permit. Please select Resettlement, Direct Allocation or LGA.',
                             confirmButtonText: 'OK'
                         });
                     } else {
-                        alert('OP Type is required for Occupancy Permit (OP) transactions.');
+                        alert('Type is required for an Occupancy Permit.');
                     }
                     return;
                 }
@@ -1384,7 +1477,7 @@
                 // An LGA-issued OP is exempt: the Local Government registers nothing in the
                 // state deeds registry, so it has no serial or volume number to supply.
                 const missingLgaGrantor = this.transactions.some(t =>
-                    this.isLgaOpType(t) && !String(t.firstParty || '').trim()
+                    this.isLgaType(t) && !String(t.firstParty || '').trim()
                 );
 
                 if (missingLgaGrantor) {
@@ -1733,9 +1826,15 @@
                                     </div>
                                 </div>
 
-                                <!-- Status (applies to all instruments) / CofO Type -->
-                                <div class="grid grid-cols-2 gap-3">
-                                    <div>
+                                <!-- Status / Type / Category, on one row -->
+                                {{-- flex rather than a fixed grid: Type and Category are hidden
+                                     for an instrument that has neither, and a hidden flex child
+                                     collapses instead of leaving an empty column. So the row
+                                     reads Status alone, Status + one, or all three, and each
+                                     takes an equal share of whatever is showing. min-w keeps
+                                     them from being squeezed unreadable before they wrap. --}}
+                                <div class="flex flex-wrap gap-3">
+                                    <div class="flex-1 min-w-[180px]">
                                         <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
                                         <select x-model="transaction.status"
                                             :name="'transactions[' + index + '][status]'"
@@ -1746,73 +1845,67 @@
                                         </select>
                                     </div>
 
-                                    <!-- CofO Type (shown only for Certificate of Occupancy) -->
-                                    <div x-show="isCofOTransaction(transaction.transactionType)" x-cloak>
-                                        <label class="block text-sm font-medium text-gray-700 mb-1">CofO Type</label>
-                                        <select x-model="transaction.cofoType"
-                                            :name="'transactions[' + index + '][cofo_type]'"
-                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
-                                            {{-- Options are static; x-model holds the value, so no server-side $selected. --}}
-                                            @include('partials.cofo_type_options', ['selected' => null, 'placeholder' => 'Select CofO type'])
-                                            {{-- Keeps a legacy stored value (e.g. "Old CofO (Ministry)") selectable
-                                                 so loading an old record does not silently blank its CofO Type. --}}
-                                            <template x-if="transaction.cofoType && !isKnownCofoType(transaction.cofoType)">
-                                                <option :value="transaction.cofoType" x-text="transaction.cofoType + ' (legacy)'"></option>
+                                    <!-- Type (options come from the instrument) -->
+                                    {{-- One field, whatever the instrument. Its options are
+                                         InstrumentTypeCatalog's, so the three capture screens
+                                         cannot drift apart, and an instrument with no Type
+                                         (either allocation letter) simply hides it.
+
+                                         The VALUE keeps the spelling its instrument has always
+                                         stored — 'OP Resettlement', 'Land CofO' — because ~34k
+                                         pra and ~15.5k CofO_staging rows carry those and have to
+                                         re-select on load. Only the labels read as the table
+                                         does. handleTypeChange() copies the answer into opType /
+                                         cofoType so the OP and CofO rules below keep working
+                                         off the field they have always read. --}}
+                                    <div class="flex-1 min-w-[180px]" x-show="typeOptionsFor(transaction).length > 0" x-cloak>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">
+                                            Type <span x-show="isOPTransaction(transaction.transactionType)" class="text-red-500">*</span>
+                                        </label>
+                                        <select x-model="transaction.typeValue"
+                                            @change="handleTypeChange(transaction)"
+                                            :name="'transactions[' + index + '][type_value]'"
+                                            :class="isOPTransaction(transaction.transactionType) && !transaction.typeValue ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'"
+                                            class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                            <option value="">Select type</option>
+                                            <template x-for="option in typeOptionsFor(transaction)" :key="option.value">
+                                                <option :value="option.value" x-text="option.label"></option>
+                                            </template>
+                                            {{-- A stored value the catalogue no longer lists (a legacy
+                                                 cofo_type such as 'Legacy CofO', which 14,818 rows carry)
+                                                 stays selectable, so loading an old record cannot blank it. --}}
+                                            <template x-if="transaction.typeValue && !isCatalogType(transaction)">
+                                                <option :value="transaction.typeValue" x-text="transaction.typeValue + ' (legacy)'"></option>
                                             </template>
                                         </select>
+                                        <p x-show="isLgaOpType(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
+                                            Issued by a Local Government: registration number is fixed at 0/0/0 and
+                                            the registration date and time are left blank.
+                                        </p>
                                     </div>
-                                </div>
 
-                                <!-- OP Type (shown only for Occupancy Permit) -->
-                                {{-- The first two values keep their historic "OP " prefix so a
-                                     stored row still re-selects on load; only the labels read as
-                                     the plain types.
-                                     The two LGA entries are issued by a Local Government rather
-                                     than by the State — an LGA OP, and the allocation letter an
-                                     LGA issues in place of one. Both change party 1 into an LGA
-                                     picker and drop the registration particulars, date and time
-                                     below — see isLgaOpType() and handleOpTypeChange(). --}}
-                                <div x-show="isOPTransaction(transaction.transactionType)" x-cloak>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">
-                                        OP Type <span class="text-red-500">*</span>
-                                    </label>
-                                    <select x-model="transaction.opType"
-                                        @change="handleOpTypeChange(transaction)"
-                                        :name="'transactions[' + index + '][op_type]'"
-                                        :required="isOPTransaction(transaction.transactionType)"
-                                        :class="isOPTransaction(transaction.transactionType) && !transaction.opType ? 'border-red-400 ring-1 ring-red-300' : 'border-gray-300'"
-                                        class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
-                                        <option value="">Select OP type</option>
-                                        <option value="OP Resettlement">Resettlement</option>
-                                        <option value="OP Direct Allocation">Direct Allocation</option>
-                                        <option value="LGA">LGA OP</option>
-                                        <option value="LGA Allocation Letter">LGA Allocation Letter</option>
-                                    </select>
-                                    <p x-show="isLgaOpType(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
-                                        Issued by a Local Government: registration number is fixed at 0/0/0 and
-                                        the registration date and time are left blank.
-                                    </p>
-                                </div>
-
-                                <!-- OP Category (Resettlement and Direct Allocation only) -->
-                                {{-- Which generation of permit the paper is. Deliberately NOT
-                                     shown for the LGA kinds: a Local Government issues no
-                                     generation of State permit, so the question does not apply.
-                                     Left blank it behaves as a New OP does today, which is what
-                                     every permit captured before this field is. --}}
-                                <div x-show="showOpCategory(transaction)" x-cloak>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">OP Category</label>
-                                    <select x-model="transaction.opCategory"
-                                        :name="'transactions[' + index + '][op_category]'"
-                                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
-                                        <option value="">Select OP category</option>
-                                        <option value="Old OP">Old OP</option>
-                                        <option value="New OP">New OP</option>
-                                    </select>
-                                    <p x-show="isOldOpCategory(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
-                                        Old OP: the registration particulars (Serial No., Page No. and Vol No.)
-                                        are optional.
-                                    </p>
+                                    <!-- Category (options come from the instrument) -->
+                                    {{-- Which generation the paper is: Old / New on an Occupancy
+                                         Permit, a Certificate of Occupancy and a Right of Occupancy
+                                         alike, and nothing at all on a Plot Allocation Letter, which
+                                         has no generation. Blank is allowed and means the question
+                                         was never put, which is what every row captured before this
+                                         field is. --}}
+                                    <div class="flex-1 min-w-[180px]" x-show="categoryOptionsFor(transaction).length > 0" x-cloak>
+                                        <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                                        <select x-model="transaction.instrumentCategory"
+                                            :name="'transactions[' + index + '][instrument_category]'"
+                                            class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                            <option value="">Select category</option>
+                                            <template x-for="option in categoryOptionsFor(transaction)" :key="option.value">
+                                                <option :value="option.value" x-text="option.label"></option>
+                                            </template>
+                                        </select>
+                                        <p x-show="isOldCategory(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
+                                            Old: the registration particulars (Serial No., Page No. and Vol No.)
+                                            are optional.
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <!-- Registration Number -->
@@ -1945,11 +2038,12 @@
                                         <label class="block text-sm font-medium text-gray-700 mb-1"
                                             x-text="getPartyLabels(transaction.transactionType).first"></label>
                                         {{-- Party 1 is normally free text, and locked to KANO STATE
-                                             GOVERNMENT on a government grant. An LGA-issued OP is the
-                                             third case: the grantor is one of the 44 Local Governments,
-                                             so the field becomes a picker and the chosen full name is
-                                             what gets saved as party_1. --}}
-                                        <template x-if="isLgaOpType(transaction)">
+                                             GOVERNMENT on a government grant. Anything issued by a
+                                             Local Government is the third case: the grantor is one of
+                                             the 44, so the field becomes a picker and the chosen full
+                                             name is what gets saved as party_1. That is every
+                                             instrument whose Type is LGA, not only a permit. --}}
+                                        <template x-if="isLgaType(transaction)">
                                             <select x-model="transaction.firstParty"
                                                 :name="'transactions[' + index + '][first_party]'"
                                                 class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white"
@@ -1964,7 +2058,7 @@
                                                 </template>
                                             </select>
                                         </template>
-                                        <template x-if="!isLgaOpType(transaction)">
+                                        <template x-if="!isLgaType(transaction)">
                                             <input type="text" x-model="transaction.firstParty"
                                                 :name="'transactions[' + index + '][first_party]'"
                                                 :class="isGovernmentTransaction(transaction.transactionType) ? 'w-full px-3 py-2 text-sm border border-gray-200 rounded-md shadow-sm bg-gray-50 text-gray-600 cursor-not-allowed' : 'w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors'"
@@ -2471,7 +2565,12 @@
                                         status: record.status || 'Normal',
                                         transactionDate: formattedTransactionDate || '',
                                         opType: record.op_type || record.opType || '',
-                                        opCategory: record.op_category || record.opCategory || '',
+                                        // The visible Type comes from whichever column this
+                                        // instrument stores it in; the catalogue decides which.
+                                        typeValue: record.op_type || record.opType
+                                            || record.cofo_type || record.cofoType
+                                            || record.instrument_subtype || record.instrumentSubtype || '',
+                                        instrumentCategory: record.instrument_category || record.instrumentCategory || '',
                                         opSerialNumber: record.op_serial_number || record.opSerialNumber || '',
                                         cofoType: record.cofo_type || record.cofoType || '',
                                         serialNo: record.serialNo || record.serial_no || '',
@@ -2526,7 +2625,8 @@
                                     transactionType: '',
                                     status: 'Normal',
                                     transactionDate: '',
-                                    opCategory: '',
+                                    typeValue: '',
+                                    instrumentCategory: '',
                                     opSerialNumber: '',
                                     cofoType: '',
                                     serialNo: '',
@@ -2817,7 +2917,13 @@
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',
             op_type: t.opType || '',
-            op_category: t.opCategory || '',
+            // The visible Type, sent under every column name it could belong to. Each
+            // destination table is filtered to its own columns, so only the right one
+            // lands -- op_type on pra, cofo_type on CofO_staging, instrument_subtype on
+            // file_history_staging.
+            type_value: t.typeValue || '',
+            instrument_subtype: t.typeValue || '',
+            instrument_category: t.instrumentCategory || '',
             cofo_type: t.cofoType || '',
             transaction_date: t.transactionDate || '',
             op_serial_number: String(t.opSerialNumber || '').trim().replace(/^0+(\d)/, '$1'),

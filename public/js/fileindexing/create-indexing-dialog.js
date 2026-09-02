@@ -5095,10 +5095,12 @@
         const opCategoryGroup = document.getElementById('occupancy-permit-op-category-group');
         const opOldOpNote = document.getElementById('occupancy-permit-old-op-note');
 
-        // Both LGA kinds - an LGA OP and an LGA allocation letter - are issued by a Local
-        // Government, which registers nothing in the State deeds registry. Neither has
-        // registration particulars, a deeds date or a time, so both take the same rules.
-        const LGA_OP_TYPES = ['LGA', 'LGA ALLOCATION LETTER'];
+        // A permit issued by a Local Government, which registers nothing in the State
+        // deeds registry: no registration particulars, no deeds date, no time.
+        //
+        // A letter issued by a Local Government is NOT here: that is a Plot Allocation
+        // Letter with Type 'LGA', captured on the transaction card, not a kind of permit.
+        const LGA_OP_TYPES = ['LGA'];
 
         function isOccupancyPermitLgaType() {
             // Tolerant of the "OP " prefix the sibling screens put on their stored values.
@@ -5106,37 +5108,21 @@
             return LGA_OP_TYPES.includes(normalized);
         }
 
-        // OP Category (Old OP / New OP) asks which generation of State permit the paper
-        // is, so it is put only for Resettlement and Direct Allocation. A Local Government
-        // issues no generation of State permit, so the two LGA types are outside it.
-        const OP_CATEGORY_TYPES = ['RESETTLEMENT', 'DIRECT ALLOCATION'];
-
-        function showsOccupancyPermitCategory() {
-            const normalized = String(opTypeSelect?.value || '').trim().toUpperCase().replace(/^OP\s+/, '');
-            return OP_CATEGORY_TYPES.includes(normalized);
-        }
-
         function isOldOccupancyPermitCategory() {
-            if (!showsOccupancyPermitCategory()) return false;
-            return String(opCategorySelect?.value || '').trim().toUpperCase() === 'OLD OP';
+            return String(opCategorySelect?.value || '').trim().toUpperCase() === 'OLD';
         }
 
         /**
-         * Show or hide OP Category, and clear it when it no longer applies.
-         *
-         * The clear matters: a hidden 'Old OP' would go on exempting the registration
-         * particulars from a field nobody can see, and would be posted with the form.
+         * Category (Old / New) is asked for EVERY permit Type, LGA included, so the field
+         * never hides — only its note does.
          *
          * The registration particulars are already optional on this page (no `required`
          * attribute, and applyOccupancyPermitLgaRules() sets required=false either way),
-         * so Old OP has nothing to relax here — the note simply says so. The rule bites
-         * on the transaction card, which does block a save on a missing Serial/Vol No.
+         * so Old has nothing to relax here — the note simply states the rule. It bites on
+         * the transaction card, which does block a save on a missing Serial/Vol No.
          */
         function applyOccupancyPermitCategoryRules() {
-            const shows = showsOccupancyPermitCategory();
-
-            if (opCategoryGroup) opCategoryGroup.classList.toggle('hidden', !shows);
-            if (!shows && opCategorySelect) opCategorySelect.value = '';
+            if (opCategoryGroup) opCategoryGroup.classList.remove('hidden');
             if (opOldOpNote) opOldOpNote.classList.toggle('hidden', !isOldOccupancyPermitCategory());
         }
 

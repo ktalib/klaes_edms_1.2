@@ -892,7 +892,10 @@ class PropertyRecordController extends Controller
             'op_type' => 'nullable|string|max:255',
             // Old OP / New OP. Asked only for Resettlement and Direct Allocation; blank
             // means the question was never put and the row keeps the New OP rules.
-            'op_category' => 'nullable|string|max:50',
+            // The one Type answer for an instrument with no column of its own, and the
+            // one Category answer for every instrument. See App\Services\InstrumentTypeCatalog.
+            'instrument_subtype' => 'nullable|string|max:100',
+            'instrument_category' => 'nullable|string|max:100',
             'op_serial_number' => 'nullable|string|max:255',
             'has_official_file_number' => 'nullable|in:0,1',
             'record_mode' => 'nullable|in:property,index',
@@ -1266,7 +1269,8 @@ class PropertyRecordController extends Controller
                     'metric_sheet' => $request->metric_sheet,
                     'temp_fileno' => $tempFileno,
                     'op_type' => $request->op_type,
-                    'op_category' => $request->op_category,
+                    'instrument_subtype' => $request->instrument_subtype,
+                    'instrument_category' => $request->instrument_category,
                     'op_serial_number' => $request->op_serial_number,
                     'related_file_number' => $relatedFileNumber,
                     'related_fileno' => $relatedFileNumber,
@@ -1366,7 +1370,8 @@ class PropertyRecordController extends Controller
                 'metric_sheet' => $request->metric_sheet,
                 'temp_fileno' => $tempFileno,
                 'op_type' => $request->op_type,
-                'op_category' => $request->op_category,
+                'instrument_subtype' => $request->instrument_subtype,
+                'instrument_category' => $request->instrument_category,
                 'op_serial_number' => $request->op_serial_number,
                 'related_file_number' => $relatedFileNumber,
                 'related_fileno' => $relatedFileNumber,
@@ -1620,7 +1625,8 @@ class PropertyRecordController extends Controller
             'Surrenderor_2' => 'nullable|string|max:255',
             'temp_fileno' => 'nullable|string|max:255',
             'op_type' => 'nullable|string|max:255',
-            'op_category' => 'nullable|string|max:50',
+            'instrument_subtype' => 'nullable|string|max:100',
+            'instrument_category' => 'nullable|string|max:100',
             'op_serial_number' => 'nullable|string|max:255',
             'party_3' => 'nullable|string|max:255',
             // Generic party fields for fallback
@@ -1836,8 +1842,11 @@ class PropertyRecordController extends Controller
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_type')) {
                 $data['op_type'] = $request->input('op_type');
             }
-            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_category')) {
-                $data['op_category'] = $request->input('op_category');
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'instrument_subtype')) {
+                $data['instrument_subtype'] = $request->input('instrument_subtype');
+            }
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'instrument_category')) {
+                $data['instrument_category'] = $request->input('instrument_category');
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_serial_number')) {
                 $data['op_serial_number'] = $request->input('op_serial_number');
@@ -3046,7 +3055,9 @@ class PropertyRecordController extends Controller
                 'transactions.*.transaction_date' => 'nullable|date',
                 'transactions.*.op_serial_number' => 'nullable|string|max:255',
                 'transactions.*.op_type' => 'nullable|string|max:255',
-                'transactions.*.op_category' => 'nullable|string|max:50',
+                'transactions.*.cofo_type' => 'nullable|string|max:255',
+                'transactions.*.instrument_subtype' => 'nullable|string|max:100',
+                'transactions.*.instrument_category' => 'nullable|string|max:100',
                 'transactions.*.record_id' => 'nullable|integer',
             ]);
 
@@ -3314,6 +3325,12 @@ class PropertyRecordController extends Controller
                         // (file_history_staging, CofO_staging, pra) via the column filter below.
                         'status' => trim((string) ($transaction['status'] ?? '')) ?: 'Normal',
                         'transaction_date' => $transaction['transaction_date'] ?? null,
+                        // Both live on every capture table, so they survive the column filter
+                        // below whichever destination the instrument routes to. op_type and
+                        // cofo_type do NOT — they exist only on pra and CofO_staging — which is
+                        // why those two are restored inside their own branches further down.
+                        'instrument_subtype' => $transaction['instrument_subtype'] ?? null,
+                        'instrument_category' => $transaction['instrument_category'] ?? null,
                         'op_serial_number' => $transaction['op_serial_number'] ?? null,
                         'regNo' => $registrationNumber,
                         'serialNo' => $transaction['serial_no'] ?? null,
@@ -3540,19 +3557,17 @@ class PropertyRecordController extends Controller
                             $praData['Grantee'] = $praData['party_2'];
                         }
 
-                        // op_type, op_category and op_serial_number are restored from the raw
-                        // transaction here, NOT read out of $propertyData: that array was
-                        // filtered against file_history_staging's columns further up, and none
-                        // of the three exist there, so they were dropped before this branch ran.
-                        // pra is the only table that has them.
+                        // op_type and op_serial_number are restored from the raw transaction
+                        // here, NOT read out of $propertyData: that array was filtered against
+                        // file_history_staging's columns further up, and neither exists there,
+                        // so both were dropped before this branch ran. pra is the only table
+                        // with them. (instrument_subtype / instrument_category need no such
+                        // rescue — every capture table carries those.)
                         if (empty($praData['op_serial_number'])) {
                             $praData['op_serial_number'] = $transaction['op_serial_number'] ?? null;
                         }
                         if (empty($praData['op_type'])) {
                             $praData['op_type'] = $transaction['op_type'] ?? null;
-                        }
-                        if (empty($praData['op_category'])) {
-                            $praData['op_category'] = $transaction['op_category'] ?? null;
                         }
 
                         $praData['created_by'] = Auth::id();
@@ -3633,19 +3648,17 @@ class PropertyRecordController extends Controller
                             $praData['Grantee'] = $praData['party_2'];
                         }
 
-                        // op_type, op_category and op_serial_number are restored from the raw
-                        // transaction here, NOT read out of $propertyData: that array was
-                        // filtered against file_history_staging's columns further up, and none
-                        // of the three exist there, so they were dropped before this branch ran.
-                        // pra is the only table that has them.
+                        // op_type and op_serial_number are restored from the raw transaction
+                        // here, NOT read out of $propertyData: that array was filtered against
+                        // file_history_staging's columns further up, and neither exists there,
+                        // so both were dropped before this branch ran. pra is the only table
+                        // with them. (instrument_subtype / instrument_category need no such
+                        // rescue — every capture table carries those.)
                         if (empty($praData['op_serial_number'])) {
                             $praData['op_serial_number'] = $transaction['op_serial_number'] ?? null;
                         }
                         if (empty($praData['op_type'])) {
                             $praData['op_type'] = $transaction['op_type'] ?? null;
-                        }
-                        if (empty($praData['op_category'])) {
-                            $praData['op_category'] = $transaction['op_category'] ?? null;
                         }
 
                         $praData['updated_by'] = Auth::id();

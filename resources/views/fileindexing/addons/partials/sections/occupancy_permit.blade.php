@@ -39,11 +39,13 @@
 
         <div class="grid grid-cols-2 gap-4">
             <div class="form-group">
-                <label for="occupancy-permit-op-type" class="block text-sm font-medium text-gray-700 mb-2">Occupancy Permit (OP) Type</label>
+                <label for="occupancy-permit-op-type" class="block text-sm font-medium text-gray-700 mb-2">Type</label>
                 @php $occupancyPermitOpTypeValue = isset($record) ? ($record->occupancy_permit_op_type ?? '') : ''; @endphp
-                {{-- The two LGA entries are issued by a Local Government rather than by the
-                     State: an LGA OP, and the allocation letter an LGA issues in place of one.
-                     Picking either turns the Grantor field into a 44-LGA picker and fixes the
+                {{-- This section captures Occupancy Permits only, so the list is the permit
+                     row of the catalogue: Resettlement, Direct Allocation, LGA. ("LGA
+                     Allocation Letter" was briefly here; it is its own instrument type, not
+                     a permit Type, and belongs on the transaction card instead.)
+                     LGA turns the Grantor field into a 44-LGA picker and fixes the
                      registration particulars at 0/0/0 with no deeds date or time — see
                      applyOccupancyPermitLgaRules() in public/js/fileindexing/create-indexing-dialog.js. --}}
                 <select id="occupancy-permit-op-type" name="occupancy_permit_op_type"
@@ -51,31 +53,29 @@
                     <option value="">Select OP Type</option>
                     <option value="Resettlement" {{ $occupancyPermitOpTypeValue === 'Resettlement' ? 'selected' : '' }}>Resettlement</option>
                     <option value="Direct Allocation" {{ $occupancyPermitOpTypeValue === 'Direct Allocation' ? 'selected' : '' }}>Direct Allocation</option>
-                    <option value="LGA" {{ $occupancyPermitOpTypeValue === 'LGA' ? 'selected' : '' }}>LGA OP</option>
-                    <option value="LGA Allocation Letter" {{ $occupancyPermitOpTypeValue === 'LGA Allocation Letter' ? 'selected' : '' }}>LGA Allocation Letter</option>
+                    <option value="LGA" {{ $occupancyPermitOpTypeValue === 'LGA' ? 'selected' : '' }}>LGA</option>
                 </select>
                 <p id="occupancy-permit-lga-note" class="mt-1 text-[11px] text-amber-700 hidden">
                     Issued by a Local Government: registration number is fixed at 0/0/0 and the
                     deeds date and time are left blank.
                 </p>
             </div>
-            <div class="form-group hidden" id="occupancy-permit-op-category-group">
-                <label for="occupancy-permit-op-category" class="block text-sm font-medium text-gray-700 mb-2">OP Category</label>
+            <div class="form-group" id="occupancy-permit-op-category-group">
+                <label for="occupancy-permit-op-category" class="block text-sm font-medium text-gray-700 mb-2">Category</label>
                 @php $occupancyPermitOpCategoryValue = isset($record) ? ($record->occupancy_permit_op_category ?? '') : ''; @endphp
-                {{-- Which generation of permit the paper is. Shown only for Resettlement and
-                     Direct Allocation: a Local Government issues no generation of State
-                     permit, so the question does not apply to the two LGA types. Left blank
-                     it behaves as a New OP does, which is what every permit captured before
-                     this field is -- see applyOccupancyPermitCategoryRules() in
+                {{-- Which generation of permit the paper is. Asked for EVERY permit Type,
+                     LGA included. Left blank it behaves as a New one does, which is what
+                     every permit captured before this field is -- see
+                     applyOccupancyPermitCategoryRules() in
                      public/js/fileindexing/create-indexing-dialog.js. --}}
                 <select id="occupancy-permit-op-category" name="occupancy_permit_op_category"
                     class="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm">
-                    <option value="">Select OP category</option>
-                    <option value="Old OP" {{ $occupancyPermitOpCategoryValue === 'Old OP' ? 'selected' : '' }}>Old OP</option>
-                    <option value="New OP" {{ $occupancyPermitOpCategoryValue === 'New OP' ? 'selected' : '' }}>New OP</option>
+                    <option value="">Select category</option>
+                    <option value="Old" {{ $occupancyPermitOpCategoryValue === 'Old' ? 'selected' : '' }}>Old</option>
+                    <option value="New" {{ $occupancyPermitOpCategoryValue === 'New' ? 'selected' : '' }}>New</option>
                 </select>
                 <p id="occupancy-permit-old-op-note" class="mt-1 text-[11px] text-amber-700 hidden">
-                    Old OP: the registration particulars (Serial No., Page No. and Vol No.) are optional.
+                    Old: the registration particulars (Serial No., Page No. and Vol No.) are optional.
                 </p>
             </div>
             <div class="form-group">
