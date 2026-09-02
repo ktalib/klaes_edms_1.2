@@ -520,6 +520,23 @@
                                             <span style="font-size:18px; font-weight:900; letter-spacing:0.1em; color:#dc2626; font-family:'Courier New', monospace;">{{ $recSc['digits_end'] }}</span>
                                         </div>
                                     @endif
+                                    {{-- Came through OSS by way of the OP-holder Match: the file keeps the
+                                         recommendation it was granted on paper, so nothing is generated or
+                                         printed for it. The badge is what says so on the list — the record
+                                         is an ordinary Land row in every other respect, deliberately, so
+                                         that it stays on the page whose actions can work it. Amber while
+                                         the letter is still missing, because approval is held until it. --}}
+                                    @if($rec->is_existing_recommendation)
+                                        @php $hasLetter = isset(($approvedLetters ?? collect())[$rec->id]); @endphp
+                                        <span class="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[9px] font-bold tracking-wide {{ $hasLetter ? 'bg-violet-100 text-violet-800' : 'bg-amber-100 text-amber-800' }}"
+                                              style="font-family: ui-sans-serif, system-ui, sans-serif;"
+                                              title="{{ $hasLetter
+                                                    ? 'This file\'s Occupancy Permit was matched. It keeps the recommendation approved on paper — the uploaded scan is its letter, and none is printed from KLAES.'
+                                                    : 'This file\'s Occupancy Permit was matched. Upload the already-approved recommendation before it can be approved.' }}">
+                                            <i data-lucide="{{ $hasLetter ? 'file-check-2' : 'upload' }}" class="h-3 w-3"></i>
+                                            {{ $hasLetter ? 'EXTANT RECOMMENDATION' : 'EXTANT LETTER PENDING' }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-4 py-2 text-slate-700 whitespace-nowrap uppercase font-bold text-blue-900">{{ $rec->applicant_name }}</td>
                                 <td class="px-4 py-2 text-slate-600 whitespace-nowrap">{{ $rec->landuse_purpose }}</td>
@@ -665,7 +682,28 @@
                                                     <div class="border-t border-slate-100 my-1"></div>
 
                                                     <!-- Batch Print Logic -->
-                                                    @if($rec->status === \App\Models\LandRecommendation::STATUS_APPROVED)
+                                                    @if($needsLetter)
+                                                        {{-- Nothing is generated or printed for a file whose OP was
+                                                             matched: it keeps the recommendation it was granted on
+                                                             paper, and the uploaded scan IS that letter. Printing
+                                                             would mint a serial and put a second, KLAES-issued
+                                                             recommendation on a file that already has one, so the
+                                                             two print entries are replaced by the one thing there is
+                                                             to do with the document — read it. The server refuses
+                                                             the print route as well; this only saves the trip.
+                                                             The RofO is unaffected — it is generated and printed
+                                                             from the RofO table as usual, once this is approved. --}}
+                                                        <span title="This file keeps the recommendation it was already granted on paper — the uploaded scan is its letter. Nothing is printed from here; the RofO still prints from the RofO table once this record is approved."
+                                                              class="flex items-center px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed gap-2">
+                                                            <i data-lucide="printer" class="h-4 w-4 text-slate-200"></i>
+                                                            <span class="flex-1 leading-tight">
+                                                                Print
+                                                                <span class="block text-[10px] font-medium text-violet-600">
+                                                                    {{ $letter ? 'Not printed — read it from "View approved recommendation" above' : 'Not printed — this file keeps its extant letter' }}
+                                                                </span>
+                                                            </span>
+                                                        </span>
+                                                    @elseif($rec->status === \App\Models\LandRecommendation::STATUS_APPROVED)
                                                         @php
                                                             // The proofing stage in front of the official print.
                                                             // whiteCopyOwnsDate is deliberately NOT set: this

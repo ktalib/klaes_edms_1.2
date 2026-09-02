@@ -81,6 +81,8 @@ class PropertyTransactionModalMarkupTest extends TestCase
             'isLgaOpType(transaction)',
             'handleOpTypeChange(transaction)',
             'regParticularsLocked(transaction)',
+            'showOpCategory(transaction)',   // OP Category, and the Old OP rule it
+            'opRegNoRequired(transaction)',  // relaxes, both live inside the attribute
             'kanoLgaAuthorities:',
         ] as $member) {
             $this->assertStringContainsString(

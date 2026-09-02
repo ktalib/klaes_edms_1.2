@@ -1093,6 +1093,7 @@
             occupancyPermitDetailsContainerEdit.classList.remove('hidden');
             const occupancyPermitFieldMap = {
                 'occupancy-permit-op-type': record.occupancy_permit_op_type,
+                'occupancy-permit-op-category': record.occupancy_permit_op_category,
                 'occupancy-permit-op-serial-number': record.occupancy_permit_op_serial_number,
                 'occupancy-permit-date': record.occupancy_permit_date,
                 'occupancy-permit-file-number': record.occupancy_permit_file_number || record.file_number,
@@ -5083,20 +5084,64 @@
         // Some conversion and direct-allocation files hold permits granted by an LGA rather
         // than by the Kano State Government. An LGA registers nothing in the state deeds
         // registry, so such a permit has no serial, page, volume, deeds date or deeds time —
-        // only which Local Government granted it. Selecting OP Type "LGA" therefore swaps the
+        // only which Local Government granted it. Selecting either LGA OP Type therefore swaps the
         // read-only KANO STATE GOVERNMENT grantor for a picker of the 44 authorities and fixes
         // the registration particulars at 0/0/0 with the dates left blank.
         const opTypeSelect = document.getElementById('occupancy-permit-op-type');
         const opLgaGrantorSelect = document.getElementById('occupancy-permit-lga-grantor');
         const opGrantorInput = document.getElementById('occupancy-permit-grantor');
         const opLgaNote = document.getElementById('occupancy-permit-lga-note');
+        const opCategorySelect = document.getElementById('occupancy-permit-op-category');
+        const opCategoryGroup = document.getElementById('occupancy-permit-op-category-group');
+        const opOldOpNote = document.getElementById('occupancy-permit-old-op-note');
+
+        // Both LGA kinds - an LGA OP and an LGA allocation letter - are issued by a Local
+        // Government, which registers nothing in the State deeds registry. Neither has
+        // registration particulars, a deeds date or a time, so both take the same rules.
+        const LGA_OP_TYPES = ['LGA', 'LGA ALLOCATION LETTER'];
 
         function isOccupancyPermitLgaType() {
             // Tolerant of the "OP " prefix the sibling screens put on their stored values.
-            return String(opTypeSelect?.value || '').trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+            const normalized = String(opTypeSelect?.value || '').trim().toUpperCase().replace(/^OP\s+/, '');
+            return LGA_OP_TYPES.includes(normalized);
+        }
+
+        // OP Category (Old OP / New OP) asks which generation of State permit the paper
+        // is, so it is put only for Resettlement and Direct Allocation. A Local Government
+        // issues no generation of State permit, so the two LGA types are outside it.
+        const OP_CATEGORY_TYPES = ['RESETTLEMENT', 'DIRECT ALLOCATION'];
+
+        function showsOccupancyPermitCategory() {
+            const normalized = String(opTypeSelect?.value || '').trim().toUpperCase().replace(/^OP\s+/, '');
+            return OP_CATEGORY_TYPES.includes(normalized);
+        }
+
+        function isOldOccupancyPermitCategory() {
+            if (!showsOccupancyPermitCategory()) return false;
+            return String(opCategorySelect?.value || '').trim().toUpperCase() === 'OLD OP';
+        }
+
+        /**
+         * Show or hide OP Category, and clear it when it no longer applies.
+         *
+         * The clear matters: a hidden 'Old OP' would go on exempting the registration
+         * particulars from a field nobody can see, and would be posted with the form.
+         *
+         * The registration particulars are already optional on this page (no `required`
+         * attribute, and applyOccupancyPermitLgaRules() sets required=false either way),
+         * so Old OP has nothing to relax here — the note simply says so. The rule bites
+         * on the transaction card, which does block a save on a missing Serial/Vol No.
+         */
+        function applyOccupancyPermitCategoryRules() {
+            const shows = showsOccupancyPermitCategory();
+
+            if (opCategoryGroup) opCategoryGroup.classList.toggle('hidden', !shows);
+            if (!shows && opCategorySelect) opCategorySelect.value = '';
+            if (opOldOpNote) opOldOpNote.classList.toggle('hidden', !isOldOccupancyPermitCategory());
         }
 
         function applyOccupancyPermitLgaRules() {
+            applyOccupancyPermitCategoryRules();
             const isLga = isOccupancyPermitLgaType();
             const regFieldIds = [
                 'occupancy-permit-serial-no',
@@ -5164,6 +5209,9 @@
 
         if (opTypeSelect) {
             opTypeSelect.addEventListener('change', applyOccupancyPermitLgaRules);
+        if (opCategorySelect) {
+            opCategorySelect.addEventListener('change', applyOccupancyPermitCategoryRules);
+        }
         }
         if (opLgaGrantorSelect) {
             opLgaGrantorSelect.addEventListener('change', function () {
@@ -5172,7 +5220,7 @@
         }
         // Reachable from the record-load and clear paths, which sit outside this closure.
         window.applyOccupancyPermitLgaRules = applyOccupancyPermitLgaRules;
-        // Runs once so a record loaded with OP Type "LGA" opens in the right shape.
+        // Runs once so a record loaded with an LGA OP Type opens in the right shape.
         applyOccupancyPermitLgaRules();
 
         // Occupancy Permit Page No always mirrors Serial No (Page No is read-only).
@@ -5745,6 +5793,7 @@
     function clearOccupancyPermitFields() {
         const occupancyPermitFields = [
             'occupancy-permit-op-type',
+            'occupancy-permit-op-category',
             'occupancy-permit-op-serial-number',
             'occupancy-permit-date',
             'occupancy-permit-file-number',
@@ -6388,6 +6437,7 @@
             has_occupancy_permit: document.getElementById('has-occupancy-permit-toggle')?.checked || false,
             occupancy_permit_instrument_type: document.getElementById('occupancy-permit-instrument-type')?.value || '',
             occupancy_permit_op_type: document.getElementById('occupancy-permit-op-type')?.value || '',
+            occupancy_permit_op_category: document.getElementById('occupancy-permit-op-category')?.value || '',
             occupancy_permit_op_serial_number: document.getElementById('occupancy-permit-op-serial-number')?.value || '',
             occupancy_permit_date: document.getElementById('occupancy-permit-date')?.value || '',
             occupancy_permit_file_number: document.getElementById('occupancy-permit-file-number')?.value || '',

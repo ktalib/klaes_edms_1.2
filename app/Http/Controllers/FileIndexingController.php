@@ -1026,6 +1026,7 @@ class FileIndexingController extends Controller
         return [
             'occupancy_permit_instrument_type' => $record->instrument_type ?? 'Occupancy Permit',
             'occupancy_permit_op_type' => $record->op_type ?? null,
+            'occupancy_permit_op_category' => $record->op_category ?? null,
             'occupancy_permit_op_serial_number' => $record->op_serial_number ?? null,
             'occupancy_permit_date' => $this->formatDateForForm($record->transaction_date ?? null),
             'occupancy_permit_file_number' => $record->mlsFNo ?? $fileNumber,
@@ -1184,6 +1185,7 @@ class FileIndexingController extends Controller
                 'has_occupancy_permit' => 'nullable|boolean',
                 'occupancy_permit_instrument_type' => 'nullable|string|max:255',
                 'occupancy_permit_op_type' => 'nullable|string|max:100',
+                'occupancy_permit_op_category' => 'nullable|string|max:50',
                 'occupancy_permit_op_serial_number' => 'nullable|string|max:100',
                 'occupancy_permit_date' => 'nullable|date',
                 'occupancy_permit_file_number' => 'nullable|string|max:255',
@@ -3635,6 +3637,7 @@ class FileIndexingController extends Controller
                 'has_occupancy_permit' => 'nullable|boolean',
                 'occupancy_permit_instrument_type' => 'nullable|string|max:255',
                 'occupancy_permit_op_type' => 'nullable|string|max:100',
+                'occupancy_permit_op_category' => 'nullable|string|max:50',
                 'occupancy_permit_op_serial_number' => 'nullable|string|max:100',
                 'occupancy_permit_date' => 'nullable|date',
                 'occupancy_permit_file_number' => 'nullable|string|max:255',
@@ -5208,6 +5211,9 @@ class FileIndexingController extends Controller
         $permitPayload = [
             'instrument_type' => $this->normalizeValue($request->input('occupancy_permit_instrument_type')),
             'op_type' => $this->normalizeValue($request->input('occupancy_permit_op_type')),
+            // Old OP / New OP. Asked only for Resettlement and Direct Allocation; blank
+            // means the question was never put and the permit keeps the New OP rules.
+            'op_category' => $this->normalizeValue($request->input('occupancy_permit_op_category')),
             'op_serial_number' => $this->normalizeValue($request->input('occupancy_permit_op_serial_number')),
             'transaction_date' => $this->normalizeValue($request->input('occupancy_permit_date')),
             'land_use' => $this->normalizeValue($request->input('occupancy_permit_land_use')),
@@ -5246,6 +5252,7 @@ class FileIndexingController extends Controller
             'instrument_type' => $instrumentType,
             'transaction_type' => $instrumentType,
             'op_type' => $permitPayload['op_type'] ?? null,
+            'op_category' => $permitPayload['op_category'] ?? null,
             'op_serial_number' => $permitPayload['op_serial_number'] ?? null,
             'transaction_date' => $permitPayload['transaction_date'] ?? null,
             'party_1' => $permitPayload['party_1'] ?? null,

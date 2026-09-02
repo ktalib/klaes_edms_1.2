@@ -86,8 +86,8 @@ class OpHolderMatchService
      *
      * @return array{
      *   applies:bool, reason:string, file_number:string, indexing_name:?string,
-     *   op:?array, timeline:array, root_of_title:?string, has_working_transfer:bool,
-     *   name_spelling_only:bool, matched:bool
+     *   op:?array, timeline:array, root_of_title:?string, roots:array,
+     *   has_working_transfer:bool, name_spelling_only:bool, matched:bool
      * }
      */
     public function check(?string $fileNumber): array
@@ -131,6 +131,10 @@ class OpHolderMatchService
             'op'                   => null,
             'timeline'             => [],
             'root_of_title'        => null,
+            // Every Occupancy Permit this file is rooted in, with the plot each was
+            // granted over. One entry on an ordinary file; two or more on a merged
+            // one, where naming only the first would misdescribe the title.
+            'roots'                => [],
             'has_working_transfer' => false,
             'name_spelling_only'   => false,
             'matched'              => false,
@@ -199,6 +203,20 @@ class OpHolderMatchService
         // The line above the chain must name the SAME grant the chain badges "-RoT",
         // or the card contradicts itself in the space of two rows.
         $base['root_of_title'] = $this->rootOfTitleFor($ops[0], $fileNumber, $indexing->prop_id ?? null);
+
+        // Every permit this file is rooted in, not just the first one the engine
+        // badges. A merged file has two, and naming one of them above the chain says
+        // the land came from one man while the history directly below shows it came
+        // from two — which is the same contradiction the "-RoT" ordering exists to
+        // avoid. Filled in EVERY state, not only where Match is offered: the file is
+        // rooted in both permits before the transfer is written and just as much
+        // after it, so the box must not shrink to one name the moment it is matched.
+        //
+        // Read from the file's OWN pra rows — the set the merger transfer is built
+        // from — so the roots box and the transfer that combines them can never name
+        // different people. The chain is deliberately not the source: it gathers a
+        // parcel, so it can carry a permit belonging to another file on the same land.
+        $base['roots'] = $this->rootHolders($fileNumber);
 
         // An OP that already names the indexed holder means the file never moved.
         foreach ($ops as $op) {
@@ -287,6 +305,10 @@ class OpHolderMatchService
                     'source'  => $d['source'] ?? null,
                     'file_no' => $fileNumber,
                     'system_generated' => $wasWrittenHere,
+                    // Only ever set for a transfer THIS flow wrote. It is what the
+                    // capture form stores as op_match_tot_pra_id when the Match itself
+                    // happened earlier, on the Match OP page.
+                    'pra_id'  => $wasWrittenHere ? ($d['system_generated_pra_id'] ?? null) : null,
                 ];
 
                 return $base;
@@ -865,7 +887,8 @@ class OpHolderMatchService
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
             ->where('system_source', self::SYSTEM_SOURCE)
-            ->get(['party_1', 'party_2', 'transaction_type', 'instrument_type']);
+            ->orderBy('id')
+            ->get(['id', 'party_1', 'party_2', 'transaction_type', 'instrument_type']);
 
         if ($generated->isEmpty()) {
             return $rows;
@@ -876,10 +899,16 @@ class OpHolderMatchService
         // flow wrote — a real deed an officer captured — and matching on names alone
         // labelled that deed "system generated", which is exactly the misdescription
         // this method exists to avoid.
+        // Keyed to the pra id, not just to true/false. A file matched on the Match OP
+        // page is captured minutes or days later on a form that finds nothing left to
+        // press, so the id of the transfer written here is the only way that capture
+        // can record WHICH row put it into "existing recommendation" mode. Earliest id
+        // wins on the (impossible in practice) tie, so the answer is stable.
         $keys = [];
         foreach ($generated as $row) {
             $type = $this->norm($row->transaction_type ?: $row->instrument_type);
-            $keys[$type . '|' . $this->norm($row->party_1) . '|' . $this->norm($row->party_2)] = true;
+            $key = $type . '|' . $this->norm($row->party_1) . '|' . $this->norm($row->party_2);
+            $keys[$key] = $keys[$key] ?? (int) $row->id;
         }
 
         foreach ($rows as $i => $row) {
@@ -887,6 +916,7 @@ class OpHolderMatchService
                 . $this->norm($row['party_1'] ?? '') . '|'
                 . $this->norm($row['party_2'] ?? '');
             $rows[$i]['system_generated'] = isset($keys[$key]);
+            $rows[$i]['system_generated_pra_id'] = $keys[$key] ?? null;
         }
 
         return $rows;
@@ -1216,6 +1246,50 @@ class OpHolderMatchService
         }
 
         return $holder . ' (OP)';
+    }
+
+    /**
+     * The holder of every Occupancy Permit on this file, with the plot it was
+     * granted over.
+     *
+     * `root_of_title` stays exactly as it was — one line, the grant the engine
+     * badges "-RoT" — and this is what the card lists instead when there is more
+     * than one. Two permits granted to two people over two plots ARE the root of
+     * title of a merged file, in every state the card can be in.
+     *
+     * Distinct by holder AND plot: one man merging two of his own plots is two
+     * permits and must read as two, while the same permit reaching this list twice
+     * must not.
+     *
+     * @return array<int,array{holder:string, plot_no:string, serial:string, pra_id:int}>
+     */
+    private function rootHolders(string $fileNumber): array
+    {
+        $grants = array_values(array_filter($this->praRows($fileNumber), fn ($r) => $this->isOp($r)));
+
+        $out = [];
+        foreach ($grants as $g) {
+            $holder = trim((string) $g->party_2);
+            $plot   = trim((string) $g->plot_no);
+
+            if ($holder === '') {
+                continue;
+            }
+
+            $key = $this->norm($holder) . '|' . $this->norm($plot);
+            if (isset($out[$key])) {
+                continue;
+            }
+
+            $out[$key] = [
+                'holder'  => $holder,
+                'plot_no' => $plot,
+                'serial'  => trim((string) $g->op_serial_number),
+                'pra_id'  => (int) $g->id,
+            ];
+        }
+
+        return array_values($out);
     }
 
     private function rootOfTitleLabel(string $fileNumber, $propId): ?string

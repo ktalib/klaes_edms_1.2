@@ -57,19 +57,39 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 hidden" data-role="op-fields-wrapper">
                 <div>
                     <label for="op_type" class="text-xs">OP Type</label>
-                    {{-- "LGA" = a permit issued by a Local Government rather than by the State.
-                         Picking it turns the Grantor field into a 44-LGA picker and fixes the
+                    {{-- The two LGA entries are issued by a Local Government rather than by the
+                         State: an LGA OP, and the allocation letter an LGA issues in place of one.
+                         Picking either turns the Grantor field into a 44-LGA picker and fixes the
                          registration particulars at 0/0/0 with no date or time — see
                          applyLgaOpTypeRules() in public/js/pra/form-controller.js. --}}
                     <select id="op_type" name="op_type" class="form-select text-xs py-1" data-model="opType">
                         <option value="">Select OP type</option>
                         <option value="Resettlement">Resettlement</option>
                         <option value="Direct Allocation">Direct Allocation</option>
-                        <option value="LGA">LGA</option>
+                        <option value="LGA">LGA OP</option>
+                        <option value="LGA Allocation Letter">LGA Allocation Letter</option>
                     </select>
                     <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="op-lga-note">
                         Issued by a Local Government: registration number is fixed at 0/0/0 and the
                         deeds date and time are left blank.
+                    </p>
+                </div>
+                <div class="hidden" data-role="op-category-group">
+                    <label for="op_category" class="text-xs">OP Category</label>
+                    {{-- Which generation of permit the paper is. Shown only for Resettlement
+                         and Direct Allocation: a Local Government issues no generation of
+                         State permit, so the question does not apply to the two LGA types.
+                         Left blank it behaves as a New OP does, which is what every permit
+                         captured before this field is — see applyOpCategoryRules() in
+                         public/js/pra/form-controller.js. --}}
+                    <select id="op_category" name="op_category" class="form-select text-xs py-1" data-model="opCategory">
+                        <option value="">Select OP category</option>
+                        <option value="Old OP">Old OP</option>
+                        <option value="New OP">New OP</option>
+                    </select>
+                    <p class="mt-1 text-[11px] text-amber-700 hidden" data-role="op-old-op-note">
+                        Old OP: the registration particulars (Serial No., Page No. and Vol No.)
+                        are optional.
                     </p>
                 </div>
                 <div>

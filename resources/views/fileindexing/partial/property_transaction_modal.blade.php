@@ -67,6 +67,9 @@
                 status: 'Normal',
                 transactionDate: '',
                 opType: '',
+                // Old OP / New OP. Asked only for Resettlement and Direct Allocation,
+                // and blank means the question was never put — see showOpCategory().
+                opCategory: '',
                 opSerialNumber: '',
                 cofoType: '',
                 serialNo: '',
@@ -233,6 +236,7 @@
                     transactionType: '',
                     status: 'Normal',
                     transactionDate: '',
+                    opCategory: '',
                     opSerialNumber: '',
                     cofoType: '',
                     serialNo: '',
@@ -338,14 +342,47 @@
             // of this object onto the page as visible text.
             kanoLgaAuthorities: {{ json_encode(app(\App\Services\KanoLgaDirectory::class)->fullNames()) }},
 
-            // An Occupancy Permit granted by a Local Government rather than by the State.
-            // Some conversion and direct-allocation files carry these, and an LGA does not
-            // register its permits in the State deeds registry — so they have no serial,
-            // page, volume, date or time to enter.
+            // Issued by a Local Government rather than by the State: an LGA OP, or the
+            // allocation letter an LGA issues in place of one. Some conversion and
+            // direct-allocation files carry these, and an LGA registers nothing in the
+            // State deeds registry — so NEITHER has a serial, page, volume, date or time
+            // to enter. Both therefore answer yes here and take the same rules.
+            LGA_OP_TYPES: ['LGA', 'LGA ALLOCATION LETTER'],
+
             isLgaOpType(transaction) {
                 if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
                 // Tolerant of the historic 'OP ' prefix the other two options carry.
-                return String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+                const normalized = String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '');
+                return this.LGA_OP_TYPES.includes(normalized);
+            },
+
+            // OP Category (Old OP / New OP) is a question about a State-granted permit
+            // only: it asks which generation of paper this is. The two LGA kinds are
+            // outside it entirely, because a Local Government issues no generation of
+            // State permit at all — so the field is shown for Resettlement and Direct
+            // Allocation and for nothing else.
+            OP_CATEGORY_TYPES: ['RESETTLEMENT', 'DIRECT ALLOCATION'],
+
+            showOpCategory(transaction) {
+                if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
+                // Tolerant of the historic 'OP ' prefix the stored values carry.
+                const normalized = String(transaction.opType || '').trim().toUpperCase().replace(/^OP\s+/, '');
+                return this.OP_CATEGORY_TYPES.includes(normalized);
+            },
+
+            isOldOpCategory(transaction) {
+                if (!transaction || !this.showOpCategory(transaction)) return false;
+                return String(transaction.opCategory || '').trim().toUpperCase() === 'OLD OP';
+            },
+
+            // Serial No. and Volume No. are required on an Occupancy Permit -- EXCEPT on
+            // the two kinds that were never entered in the State deeds registry to begin
+            // with. An LGA permit never reached it, and an Old OP predates the practice
+            // that produced a serial, page and volume. A blank OP Category still counts as
+            // required, so the ~4,500 permits captured before the field keep their rule.
+            opRegNoRequired(transaction) {
+                if (!transaction || !this.isOPTransaction(transaction.transactionType)) return false;
+                return !this.isLgaOpType(transaction) && !this.isOldOpCategory(transaction);
             },
 
             // Registration particulars are fixed and uneditable for Right of Occupancy and
@@ -357,6 +394,13 @@
 
             // Applies (or undoes) the LGA rules when the OP Type changes.
             handleOpTypeChange(transaction) {
+                // Moving to an LGA kind takes the OP Category question away, so the answer
+                // goes with it -- otherwise a hidden 'Old OP' would keep exempting the
+                // registration particulars from a field nobody can see.
+                if (!this.showOpCategory(transaction)) {
+                    transaction.opCategory = '';
+                }
+
                 if (this.isLgaOpType(transaction)) {
                     // Registration number 0/0/0, no date, no time — the state registry never saw it.
                     transaction.serialNo = '0';
@@ -980,6 +1024,7 @@
 
                 if (!this.isOPTransaction(transaction.transactionType)) {
                     transaction.opSerialNumber = '';
+                    transaction.opCategory = '';
                     // opType is cleared by the caller; undo the LGA registration stamp here so a
                     // deed does not inherit 0/0/0 from a permit the row used to be.
                     if (transaction.serialNo === '0' && transaction.pageNo === '0' && transaction.volumeNo === '0') {
@@ -1352,8 +1397,10 @@
                     return;
                 }
 
+                // opRegNoRequired() exempts the two kinds that never reached the State
+                // deeds registry: an LGA permit and an Old OP.
                 const missingOpRegNo = this.transactions.some(t =>
-                    this.isOPTransaction(t.transactionType) && !this.isLgaOpType(t)
+                    this.opRegNoRequired(t)
                     && (!String(t.serialNo || '').trim() || !String(t.volumeNo || '').trim())
                 );
 
@@ -1717,11 +1764,14 @@
                                 </div>
 
                                 <!-- OP Type (shown only for Occupancy Permit) -->
-                                {{-- Values keep their historic "OP " prefix so a stored row still
-                                     re-selects on load; only the labels read as the three types.
-                                     "LGA" is a permit issued by a Local Government rather than by
-                                     the State, which changes both party 1 and the registration
-                                     particulars below — see handleOpTypeChange(). --}}
+                                {{-- The first two values keep their historic "OP " prefix so a
+                                     stored row still re-selects on load; only the labels read as
+                                     the plain types.
+                                     The two LGA entries are issued by a Local Government rather
+                                     than by the State — an LGA OP, and the allocation letter an
+                                     LGA issues in place of one. Both change party 1 into an LGA
+                                     picker and drop the registration particulars, date and time
+                                     below — see isLgaOpType() and handleOpTypeChange(). --}}
                                 <div x-show="isOPTransaction(transaction.transactionType)" x-cloak>
                                     <label class="block text-sm font-medium text-gray-700 mb-1">
                                         OP Type <span class="text-red-500">*</span>
@@ -1735,7 +1785,8 @@
                                         <option value="">Select OP type</option>
                                         <option value="OP Resettlement">Resettlement</option>
                                         <option value="OP Direct Allocation">Direct Allocation</option>
-                                        <option value="LGA">LGA</option>
+                                        <option value="LGA">LGA OP</option>
+                                        <option value="LGA Allocation Letter">LGA Allocation Letter</option>
                                     </select>
                                     <p x-show="isLgaOpType(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
                                         Issued by a Local Government: registration number is fixed at 0/0/0 and
@@ -1743,21 +1794,42 @@
                                     </p>
                                 </div>
 
+                                <!-- OP Category (Resettlement and Direct Allocation only) -->
+                                {{-- Which generation of permit the paper is. Deliberately NOT
+                                     shown for the LGA kinds: a Local Government issues no
+                                     generation of State permit, so the question does not apply.
+                                     Left blank it behaves as a New OP does today, which is what
+                                     every permit captured before this field is. --}}
+                                <div x-show="showOpCategory(transaction)" x-cloak>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">OP Category</label>
+                                    <select x-model="transaction.opCategory"
+                                        :name="'transactions[' + index + '][op_category]'"
+                                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors bg-white">
+                                        <option value="">Select OP category</option>
+                                        <option value="Old OP">Old OP</option>
+                                        <option value="New OP">New OP</option>
+                                    </select>
+                                    <p x-show="isOldOpCategory(transaction)" x-cloak class="mt-1 text-[11px] text-amber-700">
+                                        Old OP: the registration particulars (Serial No., Page No. and Vol No.)
+                                        are optional.
+                                    </p>
+                                </div>
+
                                 <!-- Registration Number -->
                                 <div>
                                     <label class="block text-sm font-medium text-gray-700 mb-2">Registration
                                         Number
-                                        <span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500 text-xs font-normal ml-1">(Serial No. &amp; Volume No. required for OP)</span>
+                                        <span x-show="opRegNoRequired(transaction)" x-cloak class="text-red-500 text-xs font-normal ml-1">(Serial No. &amp; Volume No. required for OP)</span>
                                         <span x-show="isLgaOpType(transaction)" x-cloak class="text-amber-700 text-xs font-normal ml-1">(not applicable for an LGA-issued OP)</span>
                                     </label>
                                     <div class="grid grid-cols-5 gap-2">
                                         <div>
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Serial
-                                                No.<span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500"> *</span></label>
+                                                No.<span x-show="opRegNoRequired(transaction)" x-cloak class="text-red-500"> *</span></label>
                                             <input type="text" x-model="transaction.serialNo"
                                                 @input="transaction.serialNo = transaction.serialNo.replace(/[^0-9]/g, '').replace(/^0+(\d)/, '$1'); syncPageNo(transaction)"
                                                 :name="'transactions[' + index + '][serial_no]'"
-                                                :class="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction) && !transaction.serialNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
+                                                :class="opRegNoRequired(transaction) && !transaction.serialNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
                                                 :readonly="regParticularsLocked(transaction)"
                                                 class="w-full px-2 py-1.5 text-xs border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
                                                 placeholder="e.g. 1">
@@ -1772,11 +1844,11 @@
                                         </div>
                                         <div>
                                             <label class="block text-xs font-medium text-gray-600 mb-1">Volume
-                                                No.<span x-show="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction)" class="text-red-500"> *</span></label>
+                                                No.<span x-show="opRegNoRequired(transaction)" x-cloak class="text-red-500"> *</span></label>
                                             <input type="text" x-model="transaction.volumeNo"
                                                 @input="transaction.volumeNo = transaction.volumeNo.replace(/[^0-9]/g, '').replace(/^0+(\d)/, '$1')"
                                                 :name="'transactions[' + index + '][volume_no]'"
-                                                :class="isOPTransaction(transaction.transactionType) && !isLgaOpType(transaction) && !transaction.volumeNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
+                                                :class="opRegNoRequired(transaction) && !transaction.volumeNo ? 'border-red-400 ring-1 ring-red-300' : (regParticularsLocked(transaction) ? 'border-gray-200 bg-gray-50 text-gray-500 cursor-not-allowed' : 'border-gray-300')"
                                                 :readonly="regParticularsLocked(transaction)"
                                                 class="w-full px-2 py-1.5 text-xs border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
                                                 placeholder="e.g. 2">
@@ -2380,8 +2452,11 @@
 
                                     // Matches isLgaOpType(), but on the raw record: the payload below
                                     // is what isLgaOpType() will later read, so it cannot ask itself.
-                                    const isStoredLgaOpType = String(record.op_type || record.opType || '')
-                                        .trim().toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+                                    // Both LGA kinds count — keep this list in step with LGA_OP_TYPES.
+                                    const isStoredLgaOpType = ['LGA', 'LGA ALLOCATION LETTER'].includes(
+                                        String(record.op_type || record.opType || '')
+                                            .trim().toUpperCase().replace(/^OP\s+/, '')
+                                    );
 
                                     const transactionPayload = {
                                         id: index + 1,
@@ -2396,6 +2471,7 @@
                                         status: record.status || 'Normal',
                                         transactionDate: formattedTransactionDate || '',
                                         opType: record.op_type || record.opType || '',
+                                        opCategory: record.op_category || record.opCategory || '',
                                         opSerialNumber: record.op_serial_number || record.opSerialNumber || '',
                                         cofoType: record.cofo_type || record.cofoType || '',
                                         serialNo: record.serialNo || record.serial_no || '',
@@ -2450,6 +2526,7 @@
                                     transactionType: '',
                                     status: 'Normal',
                                     transactionDate: '',
+                                    opCategory: '',
                                     opSerialNumber: '',
                                     cofoType: '',
                                     serialNo: '',
@@ -2740,6 +2817,7 @@
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',
             op_type: t.opType || '',
+            op_category: t.opCategory || '',
             cofo_type: t.cofoType || '',
             transaction_date: t.transactionDate || '',
             op_serial_number: String(t.opSerialNumber || '').trim().replace(/^0+(\d)/, '$1'),

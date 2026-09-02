@@ -798,10 +798,20 @@ class PropertyRecordController extends Controller
 
         $dupType = $isCofOSubmission ? 'cofo_staging' : 'pra';
 
-        if ($duplicateFound = check_duplicate($dupType, $dupParams)) {
-            $errorMsg = $isCofOSubmission
-                ? 'A similar Certificate of Occupancy already exists. Please review the existing record before creating a new one.'
-                : 'A similar Property Record already exists for this registration or file number.';
+        $duplicateFound = check_duplicate($dupType, $dupParams);
+
+        // A Certificate of Occupancy still refuses: a file has ONE, so a second one
+        // with matching details is an error, not a judgement call.
+        //
+        // A Property Record does not. A file legitimately carries several instruments,
+        // and this check matches on file number as well as registration particulars,
+        // so it fired on the ordinary case of capturing the next instrument on a file
+        // that already had one — with no way past it. It is now advisory: the match is
+        // logged, the pre-check card has already listed what the file holds, and the
+        // form asks 'Add anyway?' before an exact match is saved. The decision belongs
+        // to the officer holding the paper.
+        if ($duplicateFound && $isCofOSubmission) {
+            $errorMsg = 'A similar Certificate of Occupancy already exists. Please review the existing record before creating a new one.';
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
@@ -809,10 +819,20 @@ class PropertyRecordController extends Controller
                     'message' => $errorMsg,
                     'duplicate' => $duplicateFound,
                     'duplicate_type' => $dupType,
-                    'lock_form' => $isCofOSubmission,
+                    'lock_form' => true,
                 ], 422);
             }
             return redirect()->back()->with('error', $errorMsg)->withInput();
+        }
+
+        if ($duplicateFound) {
+            Log::warning('Property Record saved over a duplicate match', [
+                'duplicate_type' => $dupType,
+                'fileno' => $dupParams['fileno'] ?? null,
+                'transaction_type' => $dupParams['transaction_type'] ?? null,
+                'matched_id' => is_object($duplicateFound) ? ($duplicateFound->id ?? null) : null,
+                'user_id' => Auth::id(),
+            ]);
         }
         // ----------------------------------------------
 
@@ -870,6 +890,9 @@ class PropertyRecordController extends Controller
             'is_mapped' => 'nullable|boolean',
             'temp_fileno' => 'nullable|string|max:255',
             'op_type' => 'nullable|string|max:255',
+            // Old OP / New OP. Asked only for Resettlement and Direct Allocation; blank
+            // means the question was never put and the row keeps the New OP rules.
+            'op_category' => 'nullable|string|max:50',
             'op_serial_number' => 'nullable|string|max:255',
             'has_official_file_number' => 'nullable|in:0,1',
             'record_mode' => 'nullable|in:property,index',
@@ -1243,6 +1266,7 @@ class PropertyRecordController extends Controller
                     'metric_sheet' => $request->metric_sheet,
                     'temp_fileno' => $tempFileno,
                     'op_type' => $request->op_type,
+                    'op_category' => $request->op_category,
                     'op_serial_number' => $request->op_serial_number,
                     'related_file_number' => $relatedFileNumber,
                     'related_fileno' => $relatedFileNumber,
@@ -1342,6 +1366,7 @@ class PropertyRecordController extends Controller
                 'metric_sheet' => $request->metric_sheet,
                 'temp_fileno' => $tempFileno,
                 'op_type' => $request->op_type,
+                'op_category' => $request->op_category,
                 'op_serial_number' => $request->op_serial_number,
                 'related_file_number' => $relatedFileNumber,
                 'related_fileno' => $relatedFileNumber,
@@ -1595,6 +1620,7 @@ class PropertyRecordController extends Controller
             'Surrenderor_2' => 'nullable|string|max:255',
             'temp_fileno' => 'nullable|string|max:255',
             'op_type' => 'nullable|string|max:255',
+            'op_category' => 'nullable|string|max:50',
             'op_serial_number' => 'nullable|string|max:255',
             'party_3' => 'nullable|string|max:255',
             // Generic party fields for fallback
@@ -1809,6 +1835,9 @@ class PropertyRecordController extends Controller
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_type')) {
                 $data['op_type'] = $request->input('op_type');
+            }
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_category')) {
+                $data['op_category'] = $request->input('op_category');
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_serial_number')) {
                 $data['op_serial_number'] = $request->input('op_serial_number');
@@ -3016,6 +3045,8 @@ class PropertyRecordController extends Controller
                 'transactions.*.transaction_type' => 'required|string',
                 'transactions.*.transaction_date' => 'nullable|date',
                 'transactions.*.op_serial_number' => 'nullable|string|max:255',
+                'transactions.*.op_type' => 'nullable|string|max:255',
+                'transactions.*.op_category' => 'nullable|string|max:50',
                 'transactions.*.record_id' => 'nullable|integer',
             ]);
 
@@ -3509,8 +3540,19 @@ class PropertyRecordController extends Controller
                             $praData['Grantee'] = $praData['party_2'];
                         }
 
+                        // op_type, op_category and op_serial_number are restored from the raw
+                        // transaction here, NOT read out of $propertyData: that array was
+                        // filtered against file_history_staging's columns further up, and none
+                        // of the three exist there, so they were dropped before this branch ran.
+                        // pra is the only table that has them.
                         if (empty($praData['op_serial_number'])) {
                             $praData['op_serial_number'] = $transaction['op_serial_number'] ?? null;
+                        }
+                        if (empty($praData['op_type'])) {
+                            $praData['op_type'] = $transaction['op_type'] ?? null;
+                        }
+                        if (empty($praData['op_category'])) {
+                            $praData['op_category'] = $transaction['op_category'] ?? null;
                         }
 
                         $praData['created_by'] = Auth::id();
@@ -3591,8 +3633,19 @@ class PropertyRecordController extends Controller
                             $praData['Grantee'] = $praData['party_2'];
                         }
 
+                        // op_type, op_category and op_serial_number are restored from the raw
+                        // transaction here, NOT read out of $propertyData: that array was
+                        // filtered against file_history_staging's columns further up, and none
+                        // of the three exist there, so they were dropped before this branch ran.
+                        // pra is the only table that has them.
                         if (empty($praData['op_serial_number'])) {
                             $praData['op_serial_number'] = $transaction['op_serial_number'] ?? null;
+                        }
+                        if (empty($praData['op_type'])) {
+                            $praData['op_type'] = $transaction['op_type'] ?? null;
+                        }
+                        if (empty($praData['op_category'])) {
+                            $praData['op_category'] = $transaction['op_category'] ?? null;
                         }
 
                         $praData['updated_by'] = Auth::id();

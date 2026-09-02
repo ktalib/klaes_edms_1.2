@@ -618,7 +618,9 @@ function renderPraDuplicateCard(form, records, locked, transactionType) {
                 </button>
             </div>
             <div class="text-[11px]">
-                A matching instrument already exists for this file number. Click <strong>Update</strong> to modify the existing record.
+                This file already holds a matching instrument. You can carry on and save this
+                one as a new record, or click <strong>Update</strong> on a record below to edit
+                that one instead.
             </div>
         </div>
         <div class="space-y-2 max-h-64 overflow-y-auto pr-1">${rowsHtml}</div>
@@ -842,12 +844,21 @@ async function runCofoDuplicatePreCheck(form, { force = false } = {}) {
                 unlockPropertyRecordForm(form, { silent: true });
             }
         } else {
-            // PRA duplicates: show card and enter update mode — do NOT lock the form.
+            // PRA duplicates are ADVISORY. The card lists what the file already holds
+            // and offers an Update button per row; nothing else changes.
+            //
+            // It used to call prepareFormForUpdateFromDuplicate() here whenever the
+            // server returned lock_form, so merely picking a file number silently
+            // repointed the form at an existing record — action switched to
+            // PUT /property-records/{id}, submit relabelled "Update Existing Record".
+            // An officer capturing a SECOND instrument on the file would have
+            // overwritten the first one without ever asking to. Entering update mode
+            // is now the Update button's job alone, which is the only place the user
+            // says which record they mean.
             clearCofoDuplicateCard();
             renderPraDuplicateCard(form, matches, false, transactionType);
-            if (shouldLock && matches.length > 0 && matches[0].id) {
-                prepareFormForUpdateFromDuplicate(form, matches[0].id);
-            } else if (!shouldLock && form.dataset.duplicateLocked === '1') {
+            if (form.dataset.duplicateLocked === '1') {
+                // Only ever a leftover from a CofO type selected earlier on this form.
                 unlockPropertyRecordForm(form, { silent: true });
             }
         }

@@ -217,6 +217,22 @@
             var merger = state.merger || null;
             var matchInfo = state.match || null;
 
+            // The file was matched EARLIER, on the Match OP page, and is only now being
+            // captured — the two-officer split that page exists for. The check comes
+            // back "matched" with nothing left to press, so without this the capture
+            // records an ordinary recommendation and the whole consequence of matching
+            // (no new letter, upload the extant one, approval waits for it) is lost.
+            //
+            // Derived from the transfer THIS FLOW wrote, never from "matched" alone: a
+            // file bridged by a deed an officer keyed off paper has had no recommendation
+            // yet, and forcing it into existing mode would demand a letter that does not
+            // exist. system_generated is the server's answer to "did Match write this",
+            // matched on instrument AND both parties.
+            var writtenHere = !!(matchInfo && matchInfo.kind === 'dealing' && matchInfo.system_generated);
+            if (writtenHere && !standalone && !batchOn()) {
+                setExistingMode(true, matchInfo.pra_id || null);
+            }
+
             var verdict = '';
             if (applies) {
                 verdict = '<div class="mb-2 flex flex-wrap items-center gap-2"><span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-rose-600 text-white">'
@@ -279,11 +295,18 @@
             // whole claim the card is making — two separate properties, granted to two
             // different people, becoming one file — and it should be readable without
             // opening the history below.
-            var rootBox = merger
+            // Every permit the file is rooted in. Before a Match that list comes off the
+            // merger block; after one there is no merger block any more — the file is
+            // still rooted in both permits, so the box must not shrink to the first name
+            // just because the transfer combining them now exists. state.roots carries
+            // them in every state, from the same pra rows the merger is built from.
+            var rootList = merger ? merger.grants : (state.roots || []);
+
+            var rootBox = (rootList.length > 1)
                 ? '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'
-                +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Roots of title (' + merger.op_count + ' Occupancy Permits)</div>'
+                +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Roots of title (' + rootList.length + ' Occupancy Permits)</div>'
                 +   '<div class="mt-1 flex flex-col gap-1">'
-                +     merger.grants.map(function (g) {
+                +     rootList.map(function (g) {
                             return '<div class="flex items-center gap-2">'
                                 + (g.plot_no
                                     ? '<span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ' + esc(g.plot_no) + '</span>'
@@ -351,7 +374,9 @@
                                 + 'Moving it onto this file number is a records correction, not something Match can do.</span></p>'
                             : '<p class="mt-2 flex items-center gap-1.5 text-[11px] font-semibold ' + (elsewhere ? 'text-amber-800' : 'text-emerald-800') + ' border-t border-emerald-200 pt-2">'
                                 + '<i data-lucide="check-circle-2" class="h-3.5 w-3.5 shrink-0"></i>'
-                                + '<span>No action needed on this file.</span></p>')
+                                + '<span>' + (writtenHere && !standalone
+                                        ? 'Nothing further on the chain — carry on with the capture below.'
+                                        : 'No action needed on this file.') + '</span></p>')
                     + '</div>';
             }
 

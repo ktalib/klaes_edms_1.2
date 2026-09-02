@@ -263,6 +263,10 @@
             // Grantor picker + hint shown only for an OP issued by a Local Government.
             this.opLgaGrantorSelect = container.querySelector('[data-role="op-lga-grantor"]');
             this.opLgaNote = container.querySelector('[data-role="op-lga-note"]');
+            // OP Category (Old OP / New OP) and its note, shown only for the two
+            // State-granted OP types.
+            this.opCategoryGroup = container.querySelector('[data-role="op-category-group"]');
+            this.opOldOpNote = container.querySelector('[data-role="op-old-op-note"]');
             this.state = {
                 formMode: 'property',
                 transactionType: '',
@@ -307,6 +311,7 @@
                 deedsDate: '',
                 deedsTime: '',
                 opType: '',
+                opCategory: '',
                 opSerialNumber: '',
                 cofoType: '',
                 tempFileNumber: '',
@@ -363,6 +368,7 @@
                 'deedsDate',
                 'deedsTime',
                 'opType',
+                'opCategory',
                 'opSerialNumber',
                 'cofoType',
                 'tempFileNumber',
@@ -481,7 +487,11 @@
          */
         isLgaOpType() {
             // Tolerant of the "OP " prefix the sibling screens put on their stored values.
-            return normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '') === 'LGA';
+            // Both LGA kinds answer yes: an LGA OP and the allocation letter an LGA issues
+            // in place of one. Neither is registered in the State deeds registry, so neither
+            // has registration particulars, a date or a time.
+            const normalized = normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '');
+            return normalized === 'LGA' || normalized === 'LGA ALLOCATION LETTER';
         }
 
         /** The 44 authority names, read off the picker so this file holds no second copy. */
@@ -580,6 +590,46 @@
             if (authorities.includes(normalizeText(this.state.firstParty))) {
                 const isGovernment = GOVERNMENT_TRANSACTION_TYPES.includes(this.state.transactionType);
                 this.setState('firstParty', isGovernment ? 'KANO STATE GOVERNMENT' : '');
+            }
+        }
+
+        /**
+         * OP Category asks which generation of State permit the paper is, so it is put
+         * only for Resettlement and Direct Allocation. A Local Government issues no
+         * generation of State permit, so the two LGA types are outside the question.
+         */
+        showsOpCategory() {
+            const normalized = normalizeText(this.state.opType).toUpperCase().replace(/^OP\s+/, '');
+            return normalized === 'RESETTLEMENT' || normalized === 'DIRECT ALLOCATION';
+        }
+
+        isOldOpCategory() {
+            if (!this.showsOpCategory()) return false;
+            return normalizeText(this.state.opCategory).toUpperCase() === 'OLD OP';
+        }
+
+        /**
+         * Show or hide OP Category, and clear the answer when the question no longer
+         * applies — a hidden 'Old OP' would otherwise be posted with the form and go on
+         * exempting the registration particulars from a field nobody can see.
+         *
+         * The particulars are already optional on this form (setRegParticularsLocked()
+         * sets required=false either way), so Old OP has nothing to relax here; the note
+         * states the rule. It bites on the transaction card, which blocks a save on a
+         * missing Serial/Vol No.
+         */
+        applyOpCategoryRules() {
+            const shows = this.showsOpCategory();
+
+            if (this.opCategoryGroup) {
+                this.opCategoryGroup.classList.toggle('hidden', !shows);
+            }
+            if (!shows && normalizeText(this.state.opCategory) !== '') {
+                this.state.opCategory = '';
+                this.syncModelElement('opCategory', '');
+            }
+            if (this.opOldOpNote) {
+                this.opOldOpNote.classList.toggle('hidden', !this.isOldOpCategory());
             }
         }
 
@@ -716,6 +766,11 @@
                 case 'opType':
                     this.syncModelElement(key, value);
                     this.applyLgaOpTypeRules();
+                    this.applyOpCategoryRules();
+                    break;
+                case 'opCategory':
+                    this.syncModelElement(key, value);
+                    this.applyOpCategoryRules();
                     break;
                 case 'serialNo':
                 case 'pageNo':
@@ -1122,6 +1177,8 @@
             if (!isOpTransaction) {
                 this.setState('opType', '', { silent: true });
                 this.syncModelElement('opType', '');
+                this.setState('opCategory', '', { silent: true });
+                this.syncModelElement('opCategory', '');
                 this.setState('opSerialNumber', '', { silent: true });
                 this.syncModelElement('opSerialNumber', '');
             }
@@ -1129,6 +1186,7 @@
             // Runs for both branches: applies the LGA rules when the row is an LGA permit and
             // undoes the 0/0/0 stamp when the type has just moved away from one.
             this.applyLgaOpTypeRules();
+            this.applyOpCategoryRules();
 
             if (this.cofoFieldsWrapper) {
                 this.cofoFieldsWrapper.classList.toggle('hidden', !isCofOTransaction);
@@ -1991,6 +2049,7 @@
                 'deeds_date': 'deedsDate',
                 'deeds_time': 'deedsTime',
                 'op_type': 'opType',
+                'op_category': 'opCategory',
                 'op_serial_number': 'opSerialNumber',
                 'cofo_type': 'cofoType',
                 'transaction_date': 'transactionDate',

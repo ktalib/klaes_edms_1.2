@@ -2729,7 +2729,24 @@ class LandRecommendationController extends Controller
 
         $validated['updated_by'] = Auth::id();
 
+        // Also applied on the edit, not only on the capture. A record saved before the
+        // form learned to recognise a file matched on the Match OP page carries the
+        // flag as 0, and re-opening it is the repair: the card sets the hidden inputs
+        // again and this writes them. It never CLEARS the flag — a form posting 0 for
+        // any other reason leaves a flagged record flagged.
+        $this->applyExistingRecommendationMode($request, $validated);
+
         $recommendation->update($validated);
+
+        // Same landing as the capture: a record standing for a letter that is not on
+        // file yet goes back to the register with its upload open, rather than to a
+        // list where the one outstanding step is a menu the officer has to go looking
+        // for.
+        if ($recommendation->is_existing_recommendation && ! $recommendation->document()->exists()) {
+            return redirect()->route('land-recommendations.index', ['type' => 'ROFO', 'upload_letter' => $recommendation->id])
+                ->with('success', 'Recommendation updated. No new recommendation is generated for '
+                    . $recommendation->file_number . ' — upload the approved one to allow approval.');
+        }
 
         return redirect()->route('land-recommendations.index', ['type' => 'ROFO'])
             ->with('success', 'Recommendation updated successfully.');
@@ -2829,8 +2846,16 @@ class LandRecommendationController extends Controller
      * absence made the file qualify, so re-asking the question later finds a file
      * that no longer qualifies and a gate with nothing to enforce.
      *
-     * The origin also becomes OSS: these files come through OSS, and the register
-     * splits Lands from OSS on this column.
+     * `type` is deliberately LEFT ALONE. It used to be forced to 'OSS' to record
+     * that these files come through OSS, but that column is not a label — it is what
+     * partitions the register, and every list that can act on the record excludes
+     * it: the Land list filters `type <> 'OSS'`, and the OSS list additionally
+     * demands a print record and an OSSOPCHANGEOFNAME application row, which a
+     * matched file has neither of. A record saved as OSS therefore appeared on NO
+     * page at all, so the letter could never be uploaded and the approval it gates
+     * could never be reached — while the RofO table, which admits `type = 'OSS'`
+     * regardless of status, showed it as PRINT READY before either had happened.
+     * The OSS origin is carried by this flag instead, which the register badges.
      */
     private function applyExistingRecommendationMode(Request $request, array &$validated): void
     {
@@ -2839,7 +2864,6 @@ class LandRecommendationController extends Controller
         }
 
         $validated['is_existing_recommendation'] = true;
-        $validated['type'] = 'OSS';
 
         $totId = (int) $request->input('op_match_tot_pra_id');
         $validated['op_match_tot_pra_id'] = $totId > 0 ? $totId : null;
@@ -3080,6 +3104,29 @@ class LandRecommendationController extends Controller
     public function print(Request $request, $id)
     {
         $recommendation = LandRecommendation::findOrFail($id);
+
+        // A file whose Occupancy Permit was matched keeps the recommendation it was
+        // already granted on paper — the scan uploaded against the record IS its
+        // letter, and the record exists to carry it, not to replace it. Printing
+        // here would mint a fresh security serial and put a second, KLAES-issued
+        // recommendation on a file that already has one.
+        //
+        // The white copy comes through this same method, so the proof is refused
+        // with the official print rather than separately. The RofO is untouched:
+        // it prints from LandRofoController on its own route, which is the document
+        // these records are captured to produce.
+        if ($recommendation->is_existing_recommendation) {
+            RecLog::warning('Recommendation print refused — file keeps its extant letter', [
+                'id'          => $recommendation->id,
+                'file_number' => $recommendation->file_number,
+                'white_copy'  => (bool) view()->shared('isWhiteCopy', false),
+            ]);
+
+            abort(403, 'No recommendation is printed for ' . $recommendation->file_number
+                . '. Its Occupancy Permit was matched, so this record stands for the recommendation '
+                . 'already approved on paper — open "View approved recommendation" on the record to read it.');
+        }
+
         $isOssRecommendation = strtoupper((string) ($recommendation->type ?? '')) === 'OSS';
 
         if ($isOssRecommendation) {
