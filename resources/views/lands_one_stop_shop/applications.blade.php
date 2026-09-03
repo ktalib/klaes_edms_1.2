@@ -474,6 +474,12 @@
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:70px">S/N</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:120px">Customer Type</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:140px">Source</th>
+                                {{-- OSS commissioning captures the applicant's photograph too (it is filed
+                                     into the file's EDMS folder and mirrored onto oss_applications.passport_photo),
+                                     so the listing shows it here the same way the MLS FC table does.
+                                     `passport_url` is already resolved per record by the controller, primed
+                                     one page at a time — no extra query per row. --}}
+                                <th class="px-4 py-3 text-center whitespace-nowrap" style="min-width:70px">Passport</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:140px">MLS File No</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:180px">File Title</th>
                                 <th class="px-4 py-3 text-left whitespace-nowrap" style="min-width:110px">Land Use</th>
@@ -507,6 +513,11 @@
                                             <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-violet-50 text-violet-700 border border-violet-200 whitespace-nowrap">
                                                 TRANSFER OF TITLE (OP)
                                             </span>
+                                        </td>
+                                        <td class="px-4 py-2.5 text-center">
+                                            {{-- A batch row speaks for N files, each with its own applicant, so
+                                                 there is no single photograph to show. Open the batch to see them. --}}
+                                            <span class="text-slate-300 font-bold" title="Open the batch to see each file's passport">—</span>
                                         </td>
                                         <td class="px-4 py-2.5">
                                             <button type="button"
@@ -576,7 +587,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="{{ $isSupperAdmin ? 19 : 18 }}" class="px-4 py-10 text-center text-slate-500">
+                                        <td colspan="{{ $isSupperAdmin ? 20 : 19 }}" class="px-4 py-10 text-center text-slate-500">
                                             No op_batch records found.
                                         </td>
                                     </tr>
@@ -660,6 +671,23 @@
                                                     {{ $src }}
                                                 </span>
                                             </div>
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-2.5 text-center">
+                                        @if(!empty($record['passport_url']))
+                                            <img src="{{ $record['passport_url'] }}"
+                                                 alt="Passport"
+                                                 title="{{ $record['file_title'] ?? '' }}"
+                                                 loading="lazy"
+                                                 class="w-9 h-11 object-cover rounded border border-gray-200 mx-auto cursor-zoom-in"
+                                                 onclick="openOssPassportPreview(this.src, @js($record['file_title'] ?? ''))">
+                                        @else
+                                            {{-- No photograph is ordinary: a corporate file has none, and neither
+                                                 does a file commissioned before the capture existed. --}}
+                                            <span class="inline-flex items-center justify-center w-9 h-11 rounded border border-dashed border-gray-300 bg-gray-50 text-gray-300 mx-auto"
+                                                  title="No passport on record">
+                                                <i data-lucide="user" class="w-4 h-4"></i>
+                                            </span>
                                         @endif
                                     </td>
                                     <td class="px-4 py-2.5">
@@ -865,7 +893,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="15" class="px-4 py-10 text-center text-slate-400 italic">No records found.</td>
+                                    <td colspan="16" class="px-4 py-10 text-center text-slate-400 italic">No records found.</td>
                                 </tr>
                             @endforelse
                             @endif
@@ -2205,7 +2233,9 @@
      */
     function exportOssTableToCsv() {
         const dt = $('#op-resettlement-table').DataTable();
-        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
+        // Passport travels as Yes/No — an image is meaningless in a CSV or a PDF table,
+        // but whether the file HAS a photograph on record is worth exporting.
+        const headers = ['S/N','Customer Type','Source','Passport','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
         const escape = (v) => '"' + String(v).replace(/"/g, '""') + '"';
         const norm = (v) => String(v == null ? '' : v).trim();
 
@@ -2219,6 +2249,7 @@
                 norm(rec.sn),
                 norm(rec.customer_type),
                 norm(rec.source),
+                rec.passport_url ? 'Yes' : 'No',
                 norm(rec.mls_file_no),
                 norm(rec.source_temp_fileno && rec.source_temp_fileno !== '—' ? rec.source_temp_fileno : ''),
                 norm(rec.file_title),
@@ -2255,7 +2286,9 @@
      */
     function printOssTable() {
         const dt = $('#op-resettlement-table').DataTable();
-        const headers = ['S/N','Customer Type','Source','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
+        // Passport travels as Yes/No — an image is meaningless in a CSV or a PDF table,
+        // but whether the file HAS a photograph on record is worth exporting.
+        const headers = ['S/N','Customer Type','Source','Passport','MLS File No','Temp FileNo','File Title','Land Use','TP No','Plot No','LGA','Location','Latitude','Longitude','Commissioned By','Time Commissioned','Date Commissioned','Full Commissioned Date'];
         const norm = (v) => String(v == null ? '' : v).trim();
 
         let tHead = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
@@ -2269,6 +2302,7 @@
                 norm(rec.sn),
                 norm(rec.customer_type),
                 norm(rec.source),
+                rec.passport_url ? 'Yes' : 'No',
                 norm(rec.mls_file_no),
                 norm(rec.source_temp_fileno && rec.source_temp_fileno !== '—' ? rec.source_temp_fileno : ''),
                 norm(rec.file_title),
@@ -2323,6 +2357,25 @@
     // Rows from the last batch fetch, so the Capture OP card can read the full TOT
     // (pra_id, parties, op_type) rather than just the tracking id the button carries.
     let opBatchRowCache = [];
+
+    /**
+     * Full-size view of a passport thumbnail from the listing.
+     *
+     * The thumbnails are 36px wide so the row stays readable, which is too small to check a
+     * face against a file. Opening the record's edit card just to see the photograph is a lot
+     * of clicks for a look.
+     */
+    window.openOssPassportPreview = function (url, title) {
+        if (!url) return;
+        Swal.fire({
+            title: title || 'Passport',
+            imageUrl: url,
+            imageAlt: 'Passport photograph',
+            imageWidth: 260,
+            showConfirmButton: false,
+            showCloseButton: true,
+        });
+    };
 
     window.openOpBatchModal = function (batchNo) {
         if (!batchNo) return;

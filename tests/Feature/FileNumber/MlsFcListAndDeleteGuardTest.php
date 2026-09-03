@@ -217,6 +217,64 @@ class MlsFcListAndDeleteGuardTest extends TestCase
     }
 
     /** @test */
+    public function the_oss_commissioning_listing_renders_a_passport_column(): void
+    {
+        // OSS commissioning captures the applicant's photograph as well (331 oss_applications
+        // rows carry a passport_photo), and the controller already resolved `passport_url`
+        // per record — it simply was not rendered. Column counts are asserted because the
+        // page has TWO row shapes (normal and OP-batch) and a cell added to only one of them
+        // shears every column after it.
+        $view = file_get_contents(resource_path('views/lands_one_stop_shop/applications.blade.php'));
+
+        $start = strpos($view, 'id="op-resettlement-table"');
+        $this->assertNotFalse($start, 'The OP resettlement table is missing');
+
+        $theadStart = strpos($view, '<thead>', $start);
+        $thead = substr($view, $theadStart, strpos($view, '</thead>', $theadStart) - $theadStart);
+
+        $this->assertStringContainsString('>Passport<', $thead, 'The Passport header is missing');
+
+        $tbodyStart = strpos($view, '<tbody', $start);
+        $tbody = substr($view, $tbodyStart, strpos($view, '</tbody>', $tbodyStart) - $tbodyStart);
+
+        $batch = substr($tbody, strpos($tbody, '@forelse($opBatchGroups'));
+        $batch = substr($batch, 0, strpos($batch, '@empty'));
+
+        $normal = substr($tbody, strpos($tbody, '@forelse($records'));
+        $normal = substr($normal, 0, strpos($normal, '@empty'));
+
+        $this->assertSame(
+            substr_count($batch, '<td'),
+            substr_count($normal, '<td'),
+            'The OP-batch row and the normal row must carry the same number of cells'
+        );
+
+        // A batch stands for N files with N applicants, so it shows no single photograph.
+        $this->assertStringContainsString('passport_url', $normal, 'The normal row does not render the passport');
+        $this->assertStringNotContainsString('passport_url', $batch, 'A batch row must not claim a single passport');
+    }
+
+    /** @test */
+    public function the_oss_exports_carry_the_passport_as_a_flag(): void
+    {
+        // An image means nothing in a CSV or PDF, but whether a photograph is on record does.
+        // Both exports read the row's data-record JSON rather than cell indices, so the new
+        // column cannot shift them — but the header and the value must stay in step.
+        $view = file_get_contents(resource_path('views/lands_one_stop_shop/applications.blade.php'));
+
+        $this->assertSame(
+            2,
+            substr_count($view, "'Source','Passport','MLS File No'"),
+            'Both the CSV and PDF export headers should list Passport after Source'
+        );
+        $this->assertSame(
+            2,
+            substr_count($view, "rec.passport_url ? 'Yes' : 'No',"),
+            'Both exports should emit the passport flag in the matching position'
+        );
+    }
+
+    /** @test */
     public function master_delete_refuses_a_temporary_row(): void
     {
         $admin = $this->admin();
