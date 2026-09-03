@@ -70,7 +70,12 @@ class OpPropIdMatchController extends Controller
 
     public function index()
     {
-        return view('op_propid_match.index', ['PageTitle' => 'OP → File Property ID Matching']);
+        return view('op_propid_match.index', [
+            'PageTitle' => 'Match OP Property ID',
+            // The one kind of match this page performs, named from the service so the
+            // badge on the page and the value in the audit trail cannot drift apart.
+            'matchModeLabel' => OpPropIdMatchService::MATCH_MODE_LABEL,
+        ]);
     }
 
 
@@ -81,20 +86,21 @@ class OpPropIdMatchController extends Controller
      * import wrote row ordinals into that column on thousands of files, and reading it
      * here would aim a batch of permits at a number that identifies nothing.
      *
-     * A FILE WITH NO REGISTERED PROPERTY ID IS NOT GIVEN ONE SILENTLY.
+     * A FILE WITH NO REGISTERED PROPERTY ID GETS A PREVIEW, NOT A WRITE.
      *
-     * The picker offers KANGIS and New KANGIS tabs, and a land file, its Old KANGIS file
-     * and its New KANGIS file each hold their OWN prop_id by design — they are three
-     * physical files over one parcel, linked upward by parent_prop_id, not one file with
-     * three names. So an unregistered KANGIS number is a routine thing to pick, and
-     * quietly minting a parcel id for it would be the worst possible answer: the batch
-     * would land on a brand-new id belonging to nothing, splitting the file instead of
-     * consolidating it — the exact failure this page exists to repair. (Observed: picking
-     * "KNML 4545" minted a fresh id while the land file behind it already held 10373.)
+     * An unregistered file is common and unremarkable here — the picker offers KANGIS and
+     * New KANGIS tabs, and a land file, its Old KANGIS file and its New KANGIS file each
+     * hold their OWN prop_id by design (three physical files over one parcel, linked
+     * upward by parent_prop_id). So rather than refuse, this returns the id the file WOULD
+     * be given, flagged `prop_id_proposed`. Nothing is written: merely looking at a file
+     * must never consume a parcel id, or an afternoon of browsing burns a hundred of them.
      *
-     * Instead the endpoint reports `needs_allocation` along with every related number on
-     * the file and the prop_id each one carries, and the officer either picks the related
-     * file that already has an id or asks for a new one explicitly (`allocate=1`).
+     * The preview is settled at match time by resolveTargetPropId(), which registers it —
+     * or a different one, if it was claimed in the meantime.
+     *
+     * The related numbers are still listed either way. They matter: a KANGIS number with
+     * no id of its own often sits beside a land file that already has one, and matching to
+     * the wrong one of the two splits the file instead of consolidating it.
      */
     public function fileTarget(Request $request): JsonResponse
     {
@@ -140,32 +146,18 @@ class OpPropIdMatchController extends Controller
         $related = $this->relatedFileNumbers($fileNo, $mls, $indexing);
         $propIds = $this->propIdsForFileNumbers($related);
         $propId = $propIds[mb_strtoupper($fileNo)] ?? null;
-        $allocated = false;
 
-        // Allocation happens only when the officer asks for it, having seen the related
-        // numbers below and decided none of them is the file in front of them.
-        if ($propId === null && $request->boolean('allocate')) {
-            try {
-                $propId = (int) app(PropertyIdAllocationService::class)->allocateOrRetrievePropId($fileNo, $fileNo);
-                $allocated = $propId > 0;
-
-                Log::channel('op_batch')->warning('OP prop_id match: allocated a new Property ID on request', [
-                    'file_no' => $fileNo,
-                    'prop_id' => $propId,
-                    'user' => \Illuminate\Support\Facades\Auth::id(),
-                ]);
-            } catch (\Throwable $e) {
-                Log::channel('op_batch')->warning('OP prop_id match: could not allocate a target prop_id', [
-                    'file_no' => $fileNo,
-                    'error' => $e->getMessage(),
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This file has no registered Property ID and one could not be allocated: '
-                        . $e->getMessage(),
-                ], 422);
-            }
+        // NOT registered yet: show the number this file WOULD be given, rather than an
+        // empty target and a warning. Nothing is written here — the id is only reserved
+        // when the officer actually matches, so opening a file to look at it never
+        // consumes a parcel id.
+        //
+        // The preview can go stale (another officer registers it first), which is exactly
+        // why batchMatch() re-resolves before it writes and mints a fresh id if this one
+        // has been taken since.
+        $proposed = $propId === null;
+        if ($proposed) {
+            $propId = $this->nextAvailablePropId();
         }
 
         // What the file is called in its own indexing row. When the officer picked a
@@ -178,9 +170,10 @@ class OpPropIdMatchController extends Controller
             'data' => [
                 'file_number' => $fileNo,
                 'also_known_as' => ($canonical !== '' && mb_strtoupper($canonical) !== mb_strtoupper($fileNo)) ? $canonical : null,
-                // Null means "not registered". The page must offer the choice below rather
-                // than treat this as a target.
-                'needs_allocation' => $propId === null,
+                // True means this id is a PREVIEW, not yet registered against the file.
+                // The page shows it as the target; the server confirms or replaces it at
+                // match time.
+                'prop_id_proposed' => $proposed,
                 'related' => collect($related)
                     ->reject(fn ($number) => mb_strtoupper($number) === mb_strtoupper($fileNo))
                     ->map(fn ($number) => [
@@ -199,8 +192,8 @@ class OpPropIdMatchController extends Controller
                 'in_mls' => (bool) $mls,
                 'indexed' => (bool) $indexing,
                 'prop_id' => $propId,
-                'prop_id_allocated' => $allocated,
-                'existing' => $propId ? $this->recordsOnPropId($propId) : [],
+                // A proposed id has nothing on it by definition; skip the lookup.
+                'existing' => ($propId && ! $proposed) ? $this->recordsOnPropId($propId) : [],
             ],
         ]);
     }
@@ -219,7 +212,7 @@ class OpPropIdMatchController extends Controller
         $fileNo = trim((string) $request->query('file_no', ''));
         $party = trim((string) $request->query('party', ''));
         $propId = trim((string) $request->query('prop_id', ''));
-        $opType = trim((string) $request->query('op_type', ''));
+        $plotNo = trim((string) $request->query('plot_no', ''));
         $mode = in_array($request->query('serial_mode'), ['exact', 'starts', 'contains'], true)
             ? $request->query('serial_mode')
             : 'exact';
@@ -228,15 +221,15 @@ class OpPropIdMatchController extends Controller
 
         $serials = $this->splitList($serialInput);
 
-        if (empty($serials) && $fileNo === '' && $party === '' && $propId === '') {
+        if (empty($serials) && $fileNo === '' && $party === '' && $propId === '' && $plotNo === '') {
             return response()->json([
                 'success' => false,
-                'message' => 'Give at least one of: OP serial number, file number, holder name, or Property ID.',
+                'message' => 'Give at least one of: OP serial number, Temp FileNo, holder name, plot number, or Property ID.',
             ], 422);
         }
 
         // A name on its own would sweep 36k permits. It narrows a search; it does not make one.
-        if (empty($serials) && $fileNo === '' && $propId === '' && mb_strlen($party) < 3) {
+        if (empty($serials) && $fileNo === '' && $propId === '' && $plotNo === '' && mb_strlen($party) < 3) {
             return response()->json([
                 'success' => false,
                 'message' => 'A holder name on its own must be at least 3 characters — or add a serial, file number or Property ID.',
@@ -246,8 +239,8 @@ class OpPropIdMatchController extends Controller
         $conn = DB::connection(self::CONNECTION);
 
         try {
-            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $opType, $excludePropId, $unlinkedOnly);
-            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $opType, $excludePropId, $unlinkedOnly);
+            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $unlinkedOnly);
+            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $unlinkedOnly);
         } catch (\Throwable $e) {
             Log::channel('op_batch')->error('OP prop_id match: OP search failed', [
                 'serials' => $serials,
@@ -301,14 +294,49 @@ class OpPropIdMatchController extends Controller
             'ops.*.source_table' => 'required|string|in:pra,instrument_capture',
             'ops.*.op_id' => 'required|integer|min:1',
             'move_companions' => 'nullable|boolean',
+            // Says the prop_id above is a PREVIEW the page showed for a file that had
+            // none. It is a hint, not an instruction — the id is settled below.
+            'prop_id_proposed' => 'nullable|boolean',
+            // No match_mode is accepted from the browser. There is one kind of match and
+            // the service sets it, so there is nothing here for a caller to get wrong.
         ], [
             'ops.required' => 'Tick at least one OP before matching.',
             'prop_id.required' => 'Select a confirmed file on the left first.',
         ]);
 
+        $fileNo = isset($validated['file_no']) ? trim((string) $validated['file_no']) : null;
+
+        try {
+            $resolved = $this->resolveTargetPropId(
+                $fileNo,
+                (int) $validated['prop_id'],
+                $request->boolean('prop_id_proposed')
+            );
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->error('OP prop_id match: could not settle the target Property ID', [
+                'file_no' => $fileNo,
+                'requested' => $validated['prop_id'],
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The file could not be given a Property ID, so nothing was matched: ' . $e->getMessage(),
+            ], 422);
+        }
+
+        $propId = $resolved['prop_id'];
+
+        if ($propId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No usable Property ID for this file, so nothing was matched.',
+            ], 422);
+        }
+
         $result = $this->matcher->batchMatch(
-            (int) $validated['prop_id'],
-            isset($validated['file_no']) ? trim((string) $validated['file_no']) : null,
+            $propId,
+            $fileNo,
             $validated['ops'],
             $request->boolean('move_companions', true)
         );
@@ -319,13 +347,19 @@ class OpPropIdMatchController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => $result['message'],
+            // A substituted id is said plainly and first: the officer matched against a
+            // number on screen, and if it is not the number that was written they must be
+            // told, not left to notice.
+            'message' => trim(($resolved['message'] ? $resolved['message'] . ' ' : '') . $result['message']),
             'batch_ref' => $result['batch_ref'],
             'moved' => $result['moved'],
             'companions' => $result['companions'],
             'skipped' => $result['skipped'],
             'errors' => $result['errors'],
-            'existing' => $this->recordsOnPropId((int) $validated['prop_id']),
+            // The id actually used, so the page can correct its target card.
+            'prop_id' => $propId,
+            'prop_id_changed' => $resolved['changed'],
+            'existing' => $this->recordsOnPropId($propId),
         ]);
     }
 
@@ -371,7 +405,7 @@ class OpPropIdMatchController extends Controller
 
     // ---------------------------------------------------------------- search internals
 
-    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $opType, string $excludePropId, bool $unlinkedOnly)
+    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $unlinkedOnly)
     {
         $query = $conn->table('pra as o')
             ->where('o.instrument_type', 'LIKE', OpPropIdMatchService::PRA_OP_TYPE_LIKE)
@@ -385,8 +419,11 @@ class OpPropIdMatchController extends Controller
             $query->where('o.prop_id', $propId);
         }
 
-        if ($opType !== '') {
-            $query->where('o.op_type', $opType);
+        // Plot numbers are entered inconsistently ("3E", "3 E", "PLOT 3E"), so this
+        // matches on containment rather than equality. `pra` spells the column
+        // plot_no; instrument_capture spells it plot_number - hence the two branches.
+        if ($plotNo !== '') {
+            $query->where('o.plot_no', 'LIKE', '%' . $plotNo . '%');
         }
 
         if ($excludePropId !== '') {
@@ -433,7 +470,7 @@ class OpPropIdMatchController extends Controller
             ]);
     }
 
-    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $opType, string $excludePropId, bool $unlinkedOnly)
+    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $unlinkedOnly)
     {
         $query = $conn->table('instrument_capture as o')
             ->where('o.instrument_type', OpPropIdMatchService::IC_OP_TYPE)
@@ -452,8 +489,9 @@ class OpPropIdMatchController extends Controller
             $query->where('o.prop_id', (int) $propId);
         }
 
-        if ($opType !== '') {
-            $query->where('o.op_type', $opType);
+        // instrument_capture spells this column plot_number, not plot_no.
+        if ($plotNo !== '') {
+            $query->where('o.plot_number', 'LIKE', '%' . $plotNo . '%');
         }
 
         if ($excludePropId !== '' && ctype_digit($excludePropId)) {
@@ -804,6 +842,101 @@ class OpPropIdMatchController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * The prop_id the allocator would hand out next.
+     *
+     * Deliberately the SAME rule PropertyIdAllocationService uses — MAX(prop_id) + 1 over
+     * PropID_Master — so the number previewed on the page is the number actually minted.
+     * A prettier preview computed a different way would simply be a lie the officer
+     * discovers after pressing Batch Match.
+     *
+     * Nothing is reserved: this reads, it does not write. Two officers previewing at once
+     * see the same number, and the first to match gets it — which is what the re-resolve
+     * in resolveTargetPropId() exists to handle.
+     *
+     * NOTE: the running maximum currently sits in the 99,000,00x band, seeded by a
+     * ZZTEST row, so this returns a number from that band. That is a pre-existing defect
+     * in the allocator affecting every capture screen, not something this page invents —
+     * and it is not quietly worked around here, because a page that skipped the band
+     * would disagree with the id the allocator then writes.
+     */
+    private function nextAvailablePropId(): int
+    {
+        if (! $this->masterExists()) {
+            return 1;
+        }
+
+        try {
+            $max = (int) DB::connection(self::CONNECTION)->table('PropID_Master')
+                ->where('prop_id', '<', 2147483647)  // stay inside the column's 32-bit int
+                ->max('prop_id');
+
+            return $max > 0 ? $max + 1 : 1;
+        } catch (\Throwable $e) {
+            Log::channel('op_batch')->warning('OP prop_id match: could not read the next Property ID', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return 0;
+        }
+    }
+
+    /**
+     * Settle the target Property ID at the moment of writing.
+     *
+     * A registered id is trusted as given. A PROPOSED one — previewed while the file had
+     * none — is re-checked here, because minutes may have passed:
+     *
+     *   1. the file may have been registered since, by this page or any other capture
+     *      screen. That id wins; the preview is discarded.
+     *   2. the previewed number may have been taken by a DIFFERENT file. Then it is not
+     *      ours to use and a fresh one is minted.
+     *   3. otherwise the allocator registers the file and returns its id — which is what
+     *      makes the number real, so the next officer to preview gets a different one.
+     *
+     * @return array{prop_id:int,changed:bool,message:?string}
+     */
+    private function resolveTargetPropId(?string $fileNo, int $requested, bool $proposed): array
+    {
+        if (! $proposed || $fileNo === null || $fileNo === '') {
+            return ['prop_id' => $requested, 'changed' => false, 'message' => null];
+        }
+
+        // (1) Registered while the officer was working?
+        $registered = $this->propIdsForFileNumbers([$fileNo])[mb_strtoupper($fileNo)] ?? null;
+
+        if ($registered !== null) {
+            return [
+                'prop_id' => (int) $registered,
+                'changed' => (int) $registered !== $requested,
+                'message' => (int) $registered !== $requested
+                    ? 'This file was given Property ID ' . $registered . ' while you were working, so that one was used instead of ' . $requested . '.'
+                    : null,
+            ];
+        }
+
+        // (2)+(3) Claim it properly. allocateOrRetrievePropId is idempotent per file
+        // number and takes MAX+1 under a lock, so it cannot return an id another file
+        // already holds — which covers the "taken since you looked" case without a
+        // separate check that could itself go stale between reading and writing.
+        $allocated = (int) app(PropertyIdAllocationService::class)->allocateOrRetrievePropId($fileNo, $fileNo);
+
+        Log::channel('op_batch')->info('OP prop_id match: registered a Property ID at match time', [
+            'file_no' => $fileNo,
+            'previewed' => $requested,
+            'allocated' => $allocated,
+            'user' => \Illuminate\Support\Facades\Auth::id(),
+        ]);
+
+        return [
+            'prop_id' => $allocated,
+            'changed' => $allocated !== $requested,
+            'message' => $allocated !== $requested
+                ? 'Property ID ' . $requested . ' had been taken since you opened the file, so this file was given ' . $allocated . ' instead.'
+                : null,
+        ];
     }
 
     private function masterExists(): bool

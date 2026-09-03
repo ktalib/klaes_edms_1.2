@@ -7,17 +7,24 @@
  * the ones that belong to the file, and Batch Match moves every ticked permit onto the
  * file's Property ID.
  *
- * WHY SELECTION SURVIVES A SEARCH
- * A file's permits rarely share one serial: the officer searches 989, ticks two,
- * searches 990, ticks another. So ticks are held in a Map keyed source_table:op_id and
- * are NOT cleared when a new search runs — only by Clear, by a change of file, or by a
- * completed match. Anything selected but no longer on screen is still counted and still
- * submitted, and the summary says how many are off-screen so that is never a surprise.
+ * TWO STAGES, TWO SETS
+ * A file's permits rarely share one serial: the officer searches 989, ticks two, ADDS
+ * them to the batch, searches 990, adds another. So there are two collections, both
+ * keyed source_table:op_id:
  *
- * WHY THE TARGET FILE CLEARS THE SELECTION
- * Ticks mean "these belong to THAT file". Changing the file changes what they mean, so
- * they are dropped rather than carried onto a target the officer never checked them
- * against.
+ *   selected   ticked on the CURRENT search. Cleared by Add, by Clear, by a new file.
+ *   staged     the batch. Survives every search until it is matched or emptied.
+ *
+ * Selection used to survive searches silently, which meant the officer pressed Batch
+ * Match on a set they could no longer see — the count said "3" while the screen showed
+ * one. Staging makes the batch a thing on the page: card 3 lists every record in it and
+ * each can be removed there. A row already in the batch is drawn ticked and locked in
+ * the results, so it cannot be added twice.
+ *
+ * WHY THE TARGET FILE CLEARS BOTH
+ * Ticks and batch alike mean "these belong to THAT file". Changing the file changes what
+ * they mean, so both are dropped rather than carried onto a target the officer never
+ * checked them against.
  */
 (function () {
     'use strict';
@@ -38,8 +45,10 @@
         // ------------------------------------------------------------------ state
         var target = null;          // the chosen file: {file_number, prop_id, ...}
         var results = [];           // the OP rows currently on screen
-        var selected = new Map();   // source_table:op_id -> the row, across searches
+        var selected = new Map();   // ticks on the CURRENT search only
+        var staged = new Map();     // the batch itself — added across many searches
         var busy = false;
+        var confirming = false;    // a confirmation dialog is open; ignore repeat clicks
 
         // ------------------------------------------------------------------ elements
         var el = {
@@ -59,14 +68,18 @@
             opFile: document.getElementById('opm-op-file'),
             party: document.getElementById('opm-party'),
             propId: document.getElementById('opm-prop-id'),
-            opType: document.getElementById('opm-op-type'),
+            plotNo: document.getElementById('opm-plot-no'),
             hideMatched: document.getElementById('opm-hide-matched'),
             unlinkedOnly: document.getElementById('opm-unlinked-only'),
             opSearchBtn: document.getElementById('opm-op-search-btn'),
             opClear: document.getElementById('opm-op-clear'),
             opCount: document.getElementById('opm-op-count'),
             opResults: document.getElementById('opm-op-results'),
+            addBtn: document.getElementById('opm-add-btn'),
+            addLabel: document.getElementById('opm-add-label'),
 
+            stagedList: document.getElementById('opm-staged'),
+            stagedClear: document.getElementById('opm-staged-clear'),
             summary: document.getElementById('opm-summary'),
             companions: document.getElementById('opm-move-companions'),
             batchBtn: document.getElementById('opm-batch-btn'),
@@ -201,40 +214,34 @@
         /**
          * Load a file as the target.
          *
-         * `allocate` is passed only when the officer has pressed the button on the
-         * unregistered-file panel. It is never set automatically: minting a parcel id for
-         * a file that already has one under another of its numbers is how a batch ends up
-         * on an id belonging to nothing.
+         * Read-only. A file with no registered Property ID comes back with the one it
+         * would be given, flagged as proposed; nothing is reserved until the match runs.
          */
-        function pickFile(fileNumber, allocate) {
+        function pickFile(fileNumber) {
             el.fileSelected.classList.remove('hidden');
             el.fileSelected.innerHTML = '<div class="rounded-lg border border-slate-200 px-4 py-6 text-center text-sm text-slate-400">Loading the file…</div>';
 
-            var params = { file_no: fileNumber };
-            if (allocate) params.allocate = 1;
-
-            get(urls.file, params).then(function (payload) {
+            get(urls.file, { file_no: fileNumber }).then(function (payload) {
                 target = payload.data;
                 el.fileDisplay.value = target.file_number;
 
-                // A change of target invalidates every tick: they meant "these belong to
-                // the file I was looking at", and that file is no longer this one.
+                // A change of target invalidates the ticks AND the batch: both meant
+                // "these belong to the file I was looking at", and that file is no longer
+                // this one. Carrying them over would match a set against a target the
+                // officer never checked them against.
                 selected.clear();
+                staged.clear();
+                renderStaged();
 
                 renderTarget();
                 renderExisting(target.existing || []);
                 renderResults();
                 updateSummary();
 
-                if (target.prop_id_allocated) {
-                    banner('ok', 'A new Property ID was allocated for ' + target.file_number + ': ' +
-                        target.prop_id + '. It is now this file\'s permanent parcel id.');
-                } else if (target.needs_allocation) {
-                    banner('warn', target.file_number + ' has no Property ID registered against it. ' +
-                        'Check the related numbers below before allocating a new one.');
-                } else {
-                    clearBanner();
-                }
+                // No banner for an unregistered file. The target card already shows the
+                // id it will be given and marks it as new; a warning on top of that turns
+                // a routine case into something that looks like a fault.
+                clearBanner();
             }).catch(function (error) {
                 target = null;
                 el.fileDisplay.value = '';
@@ -273,11 +280,13 @@
                       '<div class="flex flex-wrap gap-1.5 mt-2">' + badges.join('') + '</div>' +
                     '</div>' +
                     '<div class="flex-shrink-0 text-right">' +
-                      '<div class="text-[11px] font-semibold uppercase tracking-wide ' +
-                        (target.needs_allocation ? 'text-amber-600' : 'text-violet-600') + '">Target Property ID</div>' +
-                      (target.needs_allocation
-                        ? '<div class="text-2xl font-black text-amber-600 leading-tight">none</div>'
-                        : '<div class="text-3xl font-black text-violet-700 tabular-nums leading-tight">' + esc(target.prop_id) + '</div>') +
+                      '<div class="text-[11px] font-semibold uppercase tracking-wide text-violet-600">Target Property ID</div>' +
+                      '<div class="text-3xl font-black text-violet-700 tabular-nums leading-tight">' + esc(target.prop_id) + '</div>' +
+                      // A previewed id is marked, not hidden: it is the real target, but
+                      // it becomes this file's only when the match is written.
+                      (target.prop_id_proposed
+                        ? '<div class="text-[10px] font-semibold text-violet-500 uppercase tracking-wide mt-0.5">new · reserved when you match</div>'
+                        : '') +
                     '</div>' +
                   '</div>' +
                   '<dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 pt-3 border-t border-violet-200/70 text-xs">' +
@@ -300,7 +309,7 @@
          */
         function renderRelated() {
             var related = (target && target.related) || [];
-            if (!related.length && !target.needs_allocation) return '';
+            if (!related.length) return '';
 
             var rows = related.map(function (item) {
                 return '<div class="flex items-center justify-between gap-2 py-1">' +
@@ -318,19 +327,6 @@
                     'Other numbers on this file' +
                   '</div>' +
                   (rows || '<div class="text-xs text-slate-400 py-1">None recorded.</div>') +
-                  (target.needs_allocation
-                    ? '<div class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3">' +
-                        '<div class="text-xs text-amber-800">' +
-                          '<span class="font-semibold">This number has no Property ID.</span> ' +
-                          'If one of the numbers above is the same parcel, use its Property ID instead — ' +
-                          'a new one would put these permits on a parcel of their own.' +
-                        '</div>' +
-                        '<button type="button" id="opm-allocate-btn" ' +
-                          'class="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold transition">' +
-                          '<i data-lucide="plus-circle" class="h-3.5 w-3.5"></i> Allocate a new Property ID for ' + esc(target.file_number) +
-                        '</button>' +
-                      '</div>'
-                    : '') +
                 '</div>';
         }
 
@@ -380,7 +376,7 @@
                 file_no: el.opFile.value.trim(),
                 party: el.party.value.trim(),
                 prop_id: el.propId.value.trim(),
-                op_type: el.opType.value
+                plot_no: el.plotNo.value.trim()
             };
 
             if (el.unlinkedOnly.checked) params.unlinked_only = 1;
@@ -420,14 +416,19 @@
             }
 
             var onPageSelected = results.filter(function (row) { return selected.has(key(row)); }).length;
+            var onPageStaged = results.filter(function (row) { return staged.has(key(row)); }).length;
+            // Rows already in the batch are locked, so "all" means all the rows that can
+            // still be ticked — otherwise the box could never show as checked.
+            var tickable = results.length - onPageStaged;
 
-            el.opCount.textContent = results.length + ' found · ' + onPageSelected + ' ticked here';
+            el.opCount.textContent = results.length + ' found · ' + onPageSelected + ' ticked here' +
+                (onPageStaged ? ' · ' + onPageStaged + ' already in batch' : '');
             el.opResults.classList.remove('hidden');
             el.opResults.innerHTML = '' +
                 '<div class="rounded-lg border border-slate-200 overflow-hidden">' +
                   '<div class="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-3">' +
                     '<label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">' +
-                      '<input type="checkbox" id="opm-select-all" ' + (onPageSelected === results.length ? 'checked' : '') + ' ' +
+                      '<input type="checkbox" id="opm-select-all" ' + (tickable > 0 && onPageSelected === tickable ? 'checked' : '') + ' ' +
                         'class="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"> Select all on screen' +
                     '</label>' +
                   '</div>' +
@@ -441,15 +442,21 @@
         }
 
         function renderRow(row) {
-            var isSelected = selected.has(key(row));
+            var rowKey = key(row);
+            var isSelected = selected.has(rowKey);
+            // Already in the batch: shown ticked and locked, so it cannot be added twice.
+            // It is removed from card 3, where the whole batch is visible, not from here.
+            var isStaged = staged.has(rowKey);
             var alreadyOnTarget = target && target.prop_id && String(row.prop_id) === String(target.prop_id);
             var companions = row.companions;
+            var locked = alreadyOnTarget || isStaged;
 
             return '' +
-                '<label class="flex items-start gap-3 px-4 py-3 cursor-pointer transition ' +
-                  (isSelected ? 'bg-emerald-50/70' : 'hover:bg-slate-50') + '">' +
+                '<label class="flex items-start gap-3 px-4 py-3 transition ' +
+                  (locked ? 'cursor-default ' : 'cursor-pointer ') +
+                  (isStaged ? 'bg-violet-50/70' : (isSelected ? 'bg-emerald-50/70' : 'hover:bg-slate-50')) + '">' +
                   '<input type="checkbox" class="opm-op-tick mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500" ' +
-                    'data-key="' + esc(key(row)) + '" ' + (isSelected ? 'checked' : '') + (alreadyOnTarget ? ' disabled' : '') + '>' +
+                    'data-key="' + esc(rowKey) + '" ' + (isSelected || isStaged ? 'checked' : '') + (locked ? ' disabled' : '') + '>' +
                   '<div class="min-w-0 flex-1">' +
                     '<div class="flex items-center flex-wrap gap-2">' +
                       '<span class="px-2 py-0.5 rounded bg-slate-900 text-white text-[11px] font-bold tabular-nums">Serial ' + dash(row.op_serial_number) + '</span>' +
@@ -474,7 +481,9 @@
                   '<div class="flex-shrink-0 text-right">' +
                     (alreadyOnTarget
                       ? '<span class="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-semibold">already matched</span>'
-                      : '<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[11px] font-semibold tabular-nums">PROP_ID ' + dash(row.prop_id) + '</span>') +
+                      : isStaged
+                        ? '<span class="px-2 py-1 rounded-md bg-violet-600 text-white text-[11px] font-semibold">in batch</span>'
+                        : '<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[11px] font-semibold tabular-nums">PROP_ID ' + dash(row.prop_id) + '</span>') +
                     (companions
                       ? '<div class="text-[10px] text-amber-600 mt-1">+' + companions + ' linked row(s)</div>'
                       : '') +
@@ -489,20 +498,101 @@
             return null;
         }
 
+        // ------------------------------------------------------------------ staging
+        /**
+         * Move what is ticked on screen into the batch.
+         *
+         * The ticks are cleared afterwards: they belong to the search that produced them,
+         * and leaving them set would make the next "Add" re-submit permits already in the
+         * batch. The batch itself is what survives — it is drawn on card 3 where the
+         * officer can see and remove any part of it.
+         */
+        function addSelectedToBatch() {
+            if (selected.size === 0) return;
+
+            var added = 0;
+            selected.forEach(function (row, rowKey) {
+                if (!staged.has(rowKey)) added++;
+                staged.set(rowKey, row);
+            });
+
+            selected.clear();
+            renderResults();
+            renderStaged();
+            updateSummary();
+
+            banner('ok', added + ' OP record(s) added to the batch. ' +
+                'Search another serial to add more, or press Batch Match when the batch is complete.');
+        }
+
+        function removeFromBatch(rowKey) {
+            staged.delete(rowKey);
+            renderResults();
+            renderStaged();
+            updateSummary();
+        }
+
+        function renderStaged() {
+            el.stagedClear.classList.toggle('hidden', staged.size === 0);
+
+            if (staged.size === 0) {
+                el.stagedList.classList.add('hidden');
+                el.stagedList.innerHTML = '';
+                return;
+            }
+
+            var rows = [];
+            staged.forEach(function (row, rowKey) {
+                rows.push('' +
+                    '<div class="flex items-center gap-3 px-4 py-2.5">' +
+                      '<span class="px-2 py-0.5 rounded bg-slate-900 text-white text-[11px] font-bold tabular-nums flex-shrink-0">Serial ' +
+                        dash(row.op_serial_number) + '</span>' +
+                      '<div class="min-w-0 flex-1">' +
+                        '<div class="text-sm font-semibold text-slate-900 truncate">' + dash(row.file_no) + '</div>' +
+                        '<div class="text-[11px] text-slate-500 truncate">' +
+                          dash(row.holder) + ' · ' + esc(row.source_table) + ' #' + esc(row.op_id) +
+                        '</div>' +
+                      '</div>' +
+                      '<span class="flex-shrink-0 px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[11px] font-semibold tabular-nums">PROP_ID ' +
+                        dash(row.prop_id) + '</span>' +
+                      (row.companions
+                        ? '<span class="flex-shrink-0 text-[10px] text-amber-600">+' + row.companions + ' linked</span>'
+                        : '') +
+                      '<button type="button" class="opm-staged-remove flex-shrink-0 p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" ' +
+                        'title="Remove from batch" data-key="' + esc(rowKey) + '">' +
+                        '<i data-lucide="x" class="h-4 w-4"></i></button>' +
+                    '</div>');
+            });
+
+            el.stagedList.classList.remove('hidden');
+            el.stagedList.innerHTML = '' +
+                '<div class="rounded-lg border border-violet-200 bg-violet-50/40 overflow-hidden">' +
+                  '<div class="px-4 py-2 bg-violet-100/60 border-b border-violet-200 text-xs font-semibold text-violet-800">' +
+                    'In this batch — ' + staged.size + ' OP record(s)' +
+                  '</div>' +
+                  '<div class="max-h-64 overflow-auto divide-y divide-violet-100 bg-white">' + rows.join('') + '</div>' +
+                '</div>';
+
+            icons();
+        }
+
         // ------------------------------------------------------------------ batch
         function updateSummary() {
-            var count = selected.size;
-            var onScreen = results.filter(function (row) { return selected.has(key(row)); }).length;
-            var offScreen = count - onScreen;
+            var count = staged.size;
+            var ticked = selected.size;
 
             var companionTotal = 0;
-            selected.forEach(function (row) { companionTotal += (row.companions || 0); });
+            staged.forEach(function (row) { companionTotal += (row.companions || 0); });
+
+            // Card 2's Add button tracks the ticks; card 3's button tracks the batch.
+            el.addBtn.disabled = ticked === 0 || busy;
+            el.addLabel.textContent = ticked > 0 ? 'Add ' + ticked + ' to Batch' : 'Add to Batch';
 
             if (!target && count === 0) {
-                el.summary.innerHTML = 'Select a confirmed file on the left and at least one OP on the right.';
+                el.summary.innerHTML = 'Select a confirmed file on the left, then search OPs and add them to this batch.';
             } else if (!target) {
                 el.summary.innerHTML = '<span class="text-amber-600 font-medium">' + count +
-                    ' OP(s) ticked — now select the confirmed file on the left.</span>';
+                    ' OP(s) in the batch — now select the confirmed file on the left.</span>';
             } else if (!target.prop_id) {
                 // A target with no parcel id is not a target. There is nothing to move the
                 // permits ONTO, so the button stays shut until the officer resolves it.
@@ -512,7 +602,11 @@
             } else if (count === 0) {
                 el.summary.innerHTML = 'Target is <span class="font-semibold text-slate-800">' + esc(target.file_number) +
                     '</span> (Property ID <span class="font-semibold text-violet-700">' + esc(target.prop_id) +
-                    '</span>). Now search and tick the OPs that belong to it.';
+                    '</span>). Now search the OPs that belong to it, tick them, and press Add to Batch.' +
+                    (ticked > 0
+                        ? '<div class="text-xs text-amber-600 mt-1">' + ticked +
+                          ' ticked on the right but not yet added — press Add to Batch.</div>'
+                        : '');
             } else {
                 el.summary.innerHTML =
                     '<span class="font-semibold text-slate-800">' + count + ' OP record(s)</span>' +
@@ -521,9 +615,9 @@
                         : '') +
                     ' will be moved to Property ID <span class="font-semibold text-violet-700">' + esc(target.prop_id) +
                     '</span> — file <span class="font-semibold text-slate-800">' + esc(target.file_number) + '</span>.' +
-                    (offScreen > 0
-                        ? '<div class="text-xs text-amber-600 mt-1">' + offScreen +
-                          ' of these were ticked in an earlier search and are not on screen. They will still be matched.</div>'
+                    (ticked > 0
+                        ? '<div class="text-xs text-amber-600 mt-1">' + ticked +
+                          ' more ticked on the right but not yet added — press Add to Batch to include them.</div>'
                         : '');
             }
 
@@ -533,20 +627,35 @@
         }
 
         function runBatch() {
-            if (!target || !target.prop_id || selected.size === 0 || busy) return;
+            if (!target || !target.prop_id || staged.size === 0 || busy || confirming) return;
 
             var ops = [];
-            selected.forEach(function (row) {
+            staged.forEach(function (row) {
                 ops.push({ source_table: row.source_table, op_id: row.op_id });
             });
 
-            var confirmed = window.confirm(
-                'Move ' + ops.length + ' Occupancy Permit record(s) onto Property ID ' + target.prop_id +
-                ' (file ' + target.file_number + ')?\n\n' +
-                'Their current Property IDs will be replaced. This can be undone from Recent matches.'
-            );
-            if (!confirmed) return;
+            var pending = confirmAction({
+                title: 'Match ' + ops.length + ' Occupancy Permit record(s)?',
+                icon: 'warning',
+                confirmText: 'Yes, match them',
+                confirmColor: '#059669',
+                html:
+                    'They will move onto <strong>Property ID ' + esc(String(target.prop_id)) + '</strong>' +
+                    ' (file <strong>' + esc(target.file_number) + '</strong>).' +
+                    '<br><br><span style="font-size:13px;color:#64748b;">Their current Property IDs will be replaced. ' +
+                    'This can be undone from Recent matches.</span>'
+            });
 
+            confirming = true;
+            pending.then(function (confirmed) {
+                confirming = false;
+                if (!confirmed) return;
+                runBatchConfirmed(ops);
+            });
+        }
+
+        /** The batch itself, once the officer has confirmed it. */
+        function runBatchConfirmed(ops) {
             busy = true;
             el.batchBtn.disabled = true;
             el.batchLabel.textContent = 'Matching…';
@@ -555,13 +664,29 @@
                 file_no: target.file_number,
                 prop_id: target.prop_id,
                 ops: ops,
-                move_companions: el.companions.checked
+                move_companions: el.companions.checked,
+                // Tells the server this target was a preview, so it re-checks and
+                // registers the id (or a fresh one) before writing anything.
+                prop_id_proposed: !!target.prop_id_proposed
             }).then(function (payload) {
                 banner(payload.errors && payload.errors.length ? 'warn' : 'ok', payload.message);
 
-                // Done means done: the ticks are spent, and leaving them would invite the
-                // same batch being run twice against the next file the officer opens.
+                // Done means done: the batch is spent, and leaving it would invite the
+                // same records being matched twice against the next file the officer opens.
+                staged.clear();
                 selected.clear();
+                renderStaged();
+
+                // The server settles the id: a previewed one is now registered, and may
+                // not be the number that was on screen if it was claimed meanwhile. Adopt
+                // what actually got written, so the card and any further match agree with
+                // the database.
+                if (payload.prop_id) {
+                    target.prop_id = payload.prop_id;
+                    target.prop_id_proposed = false;
+                    renderTarget();
+                }
+
                 renderExisting(payload.existing || []);
 
                 // Re-run the search so the moved permits redraw carrying their new id,
@@ -576,6 +701,37 @@
             }).finally(function () {
                 busy = false;
                 updateSummary();
+            });
+        }
+
+        /**
+         * Confirm a destructive action. Returns a promise resolving true/false.
+         *
+         * Wrapped rather than calling Swal.fire at each site so the three
+         * confirmations share one look, and so a page where the SweetAlert CDN
+         * did not load still guards the action instead of silently proceeding.
+         */
+        function confirmAction(opts) {
+            if (typeof Swal === 'undefined') {
+                return Promise.resolve(window.confirm(
+                    opts.title + '\n\n' + (opts.text || '')
+                ));
+            }
+
+            return Swal.fire({
+                title: opts.title,
+                html: opts.html || undefined,
+                text: opts.html ? undefined : (opts.text || ''),
+                icon: opts.icon || 'question',
+                showCancelButton: true,
+                confirmButtonText: opts.confirmText || 'Continue',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: opts.confirmColor || '#7c3aed',
+                cancelButtonColor: '#64748b',
+                reverseButtons: true,
+                focusCancel: true
+            }).then(function (result) {
+                return !!result.isConfirmed;
             });
         }
 
@@ -612,15 +768,22 @@
         }
 
         function undoBatch(batchRef) {
-            if (!window.confirm('Put batch ' + batchRef + ' back the way it was?\n\n' +
-                'Records that have been moved again since will be left alone.')) return;
+            confirmAction({
+                title: 'Undo batch ' + batchRef + '?',
+                icon: 'warning',
+                confirmText: 'Yes, put it back',
+                confirmColor: '#e11d48',
+                text: 'Records that have been moved again since will be left alone.'
+            }).then(function (confirmed) {
+                if (!confirmed) return;
 
-            post(urls.undo, { batch_ref: batchRef }).then(function (payload) {
-                banner('ok', payload.message);
-                loadBatches();
-                if (target) pickFile(target.file_number);
-            }).catch(function (error) {
-                banner('error', error.message);
+                post(urls.undo, { batch_ref: batchRef }).then(function (payload) {
+                    banner('ok', payload.message);
+                    loadBatches();
+                    if (target) pickFile(target.file_number);
+                }).catch(function (error) {
+                    banner('error', error.message);
+                });
             });
         }
 
@@ -631,19 +794,7 @@
         el.fileSelected.addEventListener('click', function (event) {
             // Switch the target to a related number that already has a parcel id.
             var use = event.target.closest('.opm-use-related');
-            if (use) { pickFile(use.dataset.file); return; }
-
-            // The explicit allocation. Confirmed, because it creates a parcel identity
-            // that nothing else in the registry will point at.
-            if (event.target.closest('#opm-allocate-btn')) {
-                if (!target) return;
-                if (!window.confirm(
-                    'Allocate a brand-new Property ID for ' + target.file_number + '?\n\n' +
-                    'Do this only if none of the other numbers on this file is the same parcel. ' +
-                    'The permits you match will sit on a parcel of their own.'
-                )) return;
-                pickFile(target.file_number, true);
-            }
+            if (use) pickFile(use.dataset.file);
         });
 
         el.advancedToggle.addEventListener('click', function () {
@@ -663,8 +814,11 @@
             el.opFile.value = '';
             el.party.value = '';
             el.propId.value = '';
-            el.opType.value = '';
+            el.plotNo.value = '';
             results = [];
+            // The batch is deliberately NOT cleared here: Clear resets the search so the
+            // next serial can be looked up, and carrying the batch across searches is the
+            // entire reason it exists. Remove all on card 3 empties the batch.
             selected.clear();
             el.opResults.classList.add('hidden');
             el.opResults.innerHTML = '';
@@ -676,7 +830,9 @@
             if (event.target.id === 'opm-select-all') {
                 var on = event.target.checked;
                 results.forEach(function (row) {
-                    if (target && String(row.prop_id) === String(target.prop_id)) return;
+                    if (target && target.prop_id && String(row.prop_id) === String(target.prop_id)) return;
+                    // A row already in the batch is locked; select-all must not re-tick it.
+                    if (staged.has(key(row))) return;
                     if (on) selected.set(key(row), row);
                     else selected.delete(key(row));
                 });
@@ -693,13 +849,27 @@
                 else selected.delete(rowKey);
 
                 event.target.closest('label').classList.toggle('bg-emerald-50/70', event.target.checked);
-                el.opCount.textContent = results.length + ' found · ' +
-                    results.filter(function (r) { return selected.has(key(r)); }).length + ' ticked here';
-                updateSummary();
+                renderResults();
             }
         });
 
+        el.addBtn.addEventListener('click', addSelectedToBatch);
+
+        el.stagedList.addEventListener('click', function (event) {
+            var remove = event.target.closest('.opm-staged-remove');
+            if (remove) removeFromBatch(remove.dataset.key);
+        });
+
+        el.stagedClear.addEventListener('click', function () {
+            if (staged.size === 0) return;
+            staged.clear();
+            renderResults();
+            renderStaged();
+            updateSummary();
+        });
+
         el.companions.addEventListener('change', updateSummary);
+
         el.batchBtn.addEventListener('click', runBatch);
 
         el.batchesRefresh.addEventListener('click', loadBatches);
@@ -716,6 +886,8 @@
             target = null;
             results = [];
             selected.clear();
+            staged.clear();
+            renderStaged();
             el.fileDisplay.value = '';
             el.fileSelected.classList.add('hidden');
             el.fileExisting.classList.add('hidden');

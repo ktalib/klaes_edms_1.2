@@ -32,7 +32,31 @@ class UserController extends Controller
     ) {
     }
 
-    public function index()
+    /**
+     * Staff-type buckets behind the MDC / MLPP tabs.
+     *
+     * staff_type_category is free text (values seen: MDC, MDCM, MLPP, NULL), so both
+     * predicates normalise before comparing. A blank category counts as MLPP, which is
+     * what the blade did when it filtered the collection in PHP.
+     */
+    private const TAB_PREDICATES = [
+        'mdc'  => "UPPER(LTRIM(RTRIM(ISNULL([staff_type_category], '')))) IN ('MDC', 'MDCM')",
+        'mlpp' => "UPPER(LTRIM(RTRIM(ISNULL([staff_type_category], '')))) IN ('MLPP', '')",
+    ];
+
+    /** Sort key => the columns it orders by, in order. */
+    private const SORTABLE_COLUMNS = [
+        'name'       => ['first_name', 'last_name'],
+        'username'   => ['username'],
+        'email'      => ['email'],
+        'user_level' => ['user_level'],
+        'staff_type' => ['staff_type_category'],
+        'created_at' => ['created_at'],
+    ];
+
+    private const PER_PAGE_OPTIONS = [10, 25, 50, 100];
+
+    public function index(Request $request)
     {
         $PageTitle = __('User');
         $PageDescription = __('User List');
@@ -43,7 +67,30 @@ class UserController extends Controller
             && $currentUser
             && !in_array($currentUser->type, ['super admin', 'owner'], true);
 
-        $users = User::query()
+        $scope = function () use ($shouldFilterByParent, $parentId) {
+            return User::query()->when($shouldFilterByParent, function ($query) use ($parentId) {
+                $query->where('parent_id', $parentId);
+            });
+        };
+
+        $activeTab = $request->query('tab') === 'mlpp' ? 'mlpp' : 'mdc';
+
+        $search = trim((string) $request->query('search', ''));
+
+        $sort = $request->query('sort', 'name');
+        if (!array_key_exists($sort, self::SORTABLE_COLUMNS)) {
+            $sort = 'name';
+        }
+        $direction = strtolower((string) $request->query('dir', 'asc')) === 'desc' ? 'desc' : 'asc';
+
+        $perPage = (int) $request->query('per_page', 25);
+        if (!in_array($perPage, self::PER_PAGE_OPTIONS, true)) {
+            $perPage = 25;
+        }
+
+        // One page of rows, not the whole table: each rendered row costs ~12KB of HTML,
+        // so the old ->get() shipped ~18MB and left DataTables to paginate it in the browser.
+        $users = $scope()
             ->select([
                 'id',
                 'first_name',
@@ -53,7 +100,9 @@ class UserController extends Controller
                 'phone_number',
                 'department_id',
                 'assign_role',
+                'user_actions',
                 'profile',
+                'passport_photo_path',
                 'user_level',
                 'type',
                 'work_days_per_week',
@@ -64,18 +113,34 @@ class UserController extends Controller
                 'is_active',
             ])
             ->with(['department:id,name'])
-            ->when($shouldFilterByParent, function ($query) use ($parentId) {
-                $query->where('parent_id', $parentId);
+            ->whereRaw(self::TAB_PREDICATES[$activeTab])
+            ->when($search !== '', function ($query) use ($search) {
+                $like = '%' . $search . '%';
+                $query->where(function ($match) use ($like) {
+                    $match->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhereRaw("CONCAT([first_name], ' ', [last_name]) LIKE ?", [$like])
+                        ->orWhere('username', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('phone_number', 'like', $like)
+                        ->orWhere('assign_role', 'like', $like)
+                        ->orWhere('user_level', 'like', $like);
+                });
             })
-            ->orderByDesc('id')
-            ->get();
+            ->tap(function ($query) use ($sort, $direction) {
+                foreach (self::SORTABLE_COLUMNS[$sort] as $column) {
+                    $query->orderBy($column, $direction);
+                }
+                // Deterministic tie-break: without it SQL Server may hand back the same
+                // row on two different pages.
+                $query->orderBy('id', 'desc');
+            })
+            ->paginate($perPage)
+            ->withQueryString();
 
         // Counted in SQL: filtering these off the loaded collection re-parsed
         // every created_at into a Carbon instance and cost ~8s on 500+ users.
-        $userStats = (array) User::query()
-            ->when($shouldFilterByParent, function ($query) use ($parentId) {
-                $query->where('parent_id', $parentId);
-            })
+        $userStats = (array) $scope()
             ->selectRaw('COUNT(*) as total')
             ->selectRaw("SUM(CASE WHEN [type] COLLATE Latin1_General_BIN2 = 'admin' THEN 1 ELSE 0 END) as admins")
             ->selectRaw("SUM(CASE WHEN [type] COLLATE Latin1_General_BIN2 = 'user' THEN 1 ELSE 0 END) as regular")
@@ -85,8 +150,26 @@ class UserController extends Controller
             ->first()
             ->getAttributes();
 
-        return view('user.index', compact('users', 'userStats', 'PageTitle', 'PageDescription'));
+        $tabCounts = (array) $scope()
+            ->selectRaw('SUM(CASE WHEN ' . self::TAB_PREDICATES['mdc'] . ' THEN 1 ELSE 0 END) as mdc')
+            ->selectRaw('SUM(CASE WHEN ' . self::TAB_PREDICATES['mlpp'] . ' THEN 1 ELSE 0 END) as mlpp')
+            ->first()
+            ->getAttributes();
+
+        return view('user.index', compact(
+            'users',
+            'userStats',
+            'tabCounts',
+            'activeTab',
+            'search',
+            'sort',
+            'direction',
+            'perPage',
+            'PageTitle',
+            'PageDescription'
+        ) + ['perPageOptions' => self::PER_PAGE_OPTIONS]);
     }
+
 
 
     public function create()

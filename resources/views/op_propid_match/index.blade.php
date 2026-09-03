@@ -6,7 +6,8 @@
   Left: the confirmed FILE, which is the control record. Its Property ID is the target
   and never moves. Right: the Occupancy Permits, searched by serial number because that
   is what is printed on the permit the officer is holding. Tick the ones that belong to
-  the file, press Batch Match, and every ticked permit is moved onto the file's
+  the file, add them to the batch (repeating for as many serials as the file needs),
+  then press Batch Match and every permit in the batch is moved onto the file's
   Property ID.
 
   The shell is the one match_op.blade.php uses and for the same two reasons:
@@ -39,8 +40,19 @@
         <div>
           <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <i data-lucide="link-2" class="h-6 w-6 text-violet-600"></i>
-            OP → File Property ID Matching
+            Match OP Property ID
           </h1>
+          {{-- What every batch from this page is recorded as. There is only one kind
+               of match here, so it is stated rather than asked: the permits belong to
+               the file exactly as it already stands, and nothing about ownership is
+               being asserted. The server writes this value regardless of what the
+               browser sends. --}}
+          <div class="mt-2">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border border-emerald-300 bg-emerald-50 text-emerald-900">
+              <i data-lucide="shield-check" class="h-3.5 w-3.5"></i>
+              {{ $matchModeLabel }}
+            </span>
+          </div>
           <p class="text-slate-500 text-sm mt-1 max-w-3xl">
             Occupancy Permits captured before their file was confirmed each carry a Property ID of their own,
             so the file's records read as separate properties. Select the confirmed file, select the permits that
@@ -112,7 +124,7 @@
               <span class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-bold">2</span>
               <div>
                 <h2 class="text-base font-semibold text-slate-900">Occupancy Permits</h2>
-                <p class="text-xs text-slate-500">Search by OP serial number. Tick one or many.</p>
+                <p class="text-xs text-slate-500">Search by OP serial number, tick one or many, then Add to Batch. Repeat for each serial.</p>
               </div>
             </div>
             <button type="button" id="opm-advanced-toggle"
@@ -150,12 +162,15 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label for="opm-op-file" class="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                  File number on the permit
+                  Temp FileNo
                 </label>
                 <input type="text" id="opm-op-file" autocomplete="off" spellcheck="false"
-                       placeholder="MLS number or TEMP-144428"
+                       placeholder="e.g. TEMP-144428"
                        class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                <p class="text-[10px] text-slate-400 mt-1">Matches the confirmed number and the temporary one.</p>
+                {{-- Renamed to Temp FileNo because that is what an officer reads off the
+                     permit, but the search still covers the confirmed MLS number too:
+                     narrowing it would break every existing search that types one. --}}
+                <p class="text-[10px] text-slate-400 mt-1">Also matches the confirmed MLS number.</p>
               </div>
               <div>
                 <label for="opm-party" class="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
@@ -175,17 +190,15 @@
                        class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
               </div>
               <div>
-                <label for="opm-op-type" class="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
-                  OP type
+                <label for="opm-plot-no" class="block text-[11px] font-semibold text-slate-600 uppercase tracking-wide mb-1">
+                  Plot number
                 </label>
-                <select id="opm-op-type"
-                        class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white">
-                  <option value="">Any</option>
-                  <option value="OP Resettlement">OP Resettlement</option>
-                  <option value="OP Direct Allocation">OP Direct Allocation</option>
-                  <option value="Resettlement">Resettlement</option>
-                  <option value="Direct Allocation">Direct Allocation</option>
-                </select>
+                <input type="text" id="opm-plot-no" autocomplete="off" spellcheck="false"
+                       placeholder="e.g. 3E"
+                       class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
+                {{-- Contains-match, not exact: the same plot is recorded as "3E",
+                     "3 E" and "PLOT 3E" across the two source tables. --}}
+                <p class="text-[10px] text-slate-400 mt-1">Partial match — "3" finds "3E".</p>
               </div>
             </div>
 
@@ -212,6 +225,18 @@
                     class="inline-flex items-center gap-2 px-3 py-2.5 text-sm font-medium text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition">
               Clear
             </button>
+
+            {{-- The staging step. A file's permits rarely share one serial, so the officer
+                 searches a serial, ticks what belongs to the file, adds it to the batch,
+                 and searches the next serial. Without this the ticks would have to survive
+                 every new search invisibly, and the officer would be matching a set they
+                 could no longer see. --}}
+            <button type="button" id="opm-add-btn" disabled
+                    class="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition shadow-sm">
+              <i data-lucide="plus" class="h-4 w-4"></i>
+              <span id="opm-add-label">Add to Batch</span>
+            </button>
+
             <span id="opm-op-count" class="text-xs text-slate-500 ml-auto"></span>
           </div>
 
@@ -229,10 +254,19 @@
             <h2 class="text-base font-semibold text-slate-900">Batch Match</h2>
             <p class="text-xs text-slate-500">Selected OP Property IDs → the confirmed file's Property ID.</p>
           </div>
+          <button type="button" id="opm-staged-clear"
+                  class="hidden ml-auto text-xs font-medium text-slate-500 hover:text-rose-600 transition">
+            Remove all
+          </button>
         </div>
       </header>
 
       <div class="p-6">
+        {{-- The batch as it stands. Everything that will be written is listed here, so the
+             officer is never matching a set they cannot see — including the permits added
+             from a serial they searched several searches ago. --}}
+        <div id="opm-staged" class="hidden mb-4"></div>
+
         <div id="opm-summary" class="text-sm text-slate-500 mb-4">
           Select a confirmed file on the left and at least one OP on the right.
         </div>

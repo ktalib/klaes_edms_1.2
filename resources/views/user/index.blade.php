@@ -4,21 +4,6 @@
 @endsection
 @php
     $profile = asset(Storage::url('upload/profile/'));
-
-    $normalizeStaffTypeCategory = function ($value) {
-        return strtoupper(trim($value ?? ''));
-    };
-
-    $mlppUsers = $users->filter(function ($user) use ($normalizeStaffTypeCategory) {
-        $category = $normalizeStaffTypeCategory($user->staff_type_category ?? null);
-
-        return $category === 'MLPP' || $category === '';
-    })->values();
-
-    $mdcUsers = $users->filter(function ($user) use ($normalizeStaffTypeCategory) {
-        $category = $normalizeStaffTypeCategory($user->staff_type_category ?? null);
-        return $category === 'MDC' || $category === 'MDCM';
-    })->values();
 @endphp
  
 @section('content')
@@ -50,58 +35,39 @@
         .search-input:focus {
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
         }
-        /* DataTables custom styling */
-        .dataTables_wrapper .dataTables_length,
-        .dataTables_wrapper .dataTables_filter {
-            margin-bottom: 1rem;
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button {
-            padding: 0.5rem 0.75rem;
-            margin: 0 0.25rem;
-            border-radius: 0.375rem;
-            border: 1px solid #e5e7eb;
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button.current {
-            background-color: #4f46e5;
-            color: white;
-            border-color: #4f46e5;
-        }
-        .dataTables_wrapper .dataTables_paginate .paginate_button:hover {
-            background-color: #e0e7ff;
-            color: #4f46e5;
-        }
-        .dataTable thead th {
+        /* Users table */
+        .users-table thead th {
             background-color: #f9fafb;
             border-bottom: 2px solid #e5e7eb;
+            padding: 0.75rem 1.5rem;
+            text-align: left;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
         }
-        .dataTable tbody tr {
+        .users-table tbody tr {
             border-bottom: 1px solid #e5e7eb;
         }
-        .dataTable tbody tr:hover {
+        .users-table tbody tr:hover {
             background-color: #f0f4ff;
         }
-        .dt-buttons {
-            margin-bottom: 1rem;
+        .users-table thead th a {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            color: inherit;
         }
-        .dt-buttons .btn {
-            padding: 0.5rem 1rem;
-            margin-right: 0.5rem;
-            border-radius: 0.375rem;
-            background-color: #6b7280;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 0.875rem;
-        }
-        .dt-buttons .btn:hover {
-            background-color: #4b5563;
+        .users-table thead th a:hover {
+            color: #4f46e5;
         }
      </style>
     <!-- Main Content -->
     <div class="flex-1 overflow-auto" x-data="{ 
         rolesModalOpen: false, 
-        modalRoles: '',
-        activeTab: 'mdc'
+        modalRoles: ''
     }">
     <!-- Enhanced Roles Modal -->
     <div x-show="rolesModalOpen" x-cloak 
@@ -143,8 +109,8 @@
                 <div class="space-y-3">
                     <p class="text-sm text-gray-600 mb-4">{{ __('Complete list of roles assigned to this user:') }}</p>
                     <div class="bg-gray-50 rounded-lg p-4">
-                        <div class="flex flex-wrap gap-2" x-data="{ roles: modalRoles.split(', ') }">
-                            <template x-for="role in roles" :key="role">
+                        <div class="flex flex-wrap gap-2">
+                            <template x-for="role in (modalRoles ? modalRoles.split(', ') : [])" :key="role">
                                 <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
                                     <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                                         <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
@@ -268,46 +234,78 @@
                 </div>
                 <div class="px-6 pt-6 border-b border-gray-200 bg-white">
                     <div class="flex flex-wrap items-center gap-3">
-                        <button type="button"
-                                class="inline-flex items-center px-4 py-2 rounded-lg border text-sm font-semibold transition-all duration-200"
-                                :class="activeTab === 'mdc' ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/60' : 'bg-white text-gray-600 border-gray-200 hover:text-indigo-600 hover:border-indigo-300'"
-                                @click="activeTab = 'mdc'; $nextTick(() => window.dispatchEvent(new CustomEvent('users-tab-change', { detail: 'mdcUsersDataTable' })))">
-                            <span>{{ __('MDC - Mass Data Capture') }}</span>
-                            <span class="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold rounded-full"
-                                  :class="activeTab === 'mdc' ? 'bg-white text-indigo-600' : 'bg-indigo-50 text-indigo-600'">
-                                {{ $mdcUsers->count() }}
-                            </span>
-                        </button>
-
-                        <button type="button"
-                                class="inline-flex items-center px-4 py-2 rounded-lg border text-sm font-semibold transition-all duration-200"
-                                :class="activeTab === 'mlpp' ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/60' : 'bg-white text-gray-600 border-gray-200 hover:text-indigo-600 hover:border-indigo-300'"
-                                @click="activeTab = 'mlpp'; $nextTick(() => window.dispatchEvent(new CustomEvent('users-tab-change', { detail: 'mlppUsersDataTable' })))">
-                            <span>{{ __('MLPP - Ministry of Land and Physical Planning') }}</span>
-                            <span class="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold rounded-full"
-                                  :class="activeTab === 'mlpp' ? 'bg-white text-indigo-600' : 'bg-indigo-50 text-indigo-600'">
-                                {{ $mlppUsers->count() }}
-                            </span>
-                        </button>
+                        @foreach ([
+                            'mdc' => __('MDC - Mass Data Capture'),
+                            'mlpp' => __('MLPP - Ministry of Land and Physical Planning'),
+                        ] as $tabKey => $tabLabel)
+                            @php $isActiveTab = $activeTab === $tabKey; @endphp
+                            {{-- Tabs are links, not Alpine state: each tab is its own paginated query. --}}
+                            <a href="{{ route('users.index', ['tab' => $tabKey, 'search' => $search, 'per_page' => $perPage, 'sort' => $sort, 'dir' => $direction]) }}"
+                               class="inline-flex items-center px-4 py-2 rounded-lg border text-sm font-semibold transition-all duration-200 {{ $isActiveTab ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-200/60' : 'bg-white text-gray-600 border-gray-200 hover:text-indigo-600 hover:border-indigo-300' }}">
+                                <span>{{ $tabLabel }}</span>
+                                <span class="ml-2 inline-flex items-center justify-center px-2 py-0.5 text-xs font-semibold rounded-full {{ $isActiveTab ? 'bg-white text-indigo-600' : 'bg-indigo-50 text-indigo-600' }}">
+                                    {{ $tabCounts[$tabKey] ?? 0 }}
+                                </span>
+                            </a>
+                        @endforeach
                     </div>
                 </div>
+
+                <!-- Search / page size -->
+                <div class="px-6 py-4 bg-white border-b border-gray-200">
+                    <form method="GET" action="{{ route('users.index') }}" class="flex flex-col sm:flex-row sm:items-center gap-3">
+                        <input type="hidden" name="tab" value="{{ $activeTab }}">
+                        <input type="hidden" name="sort" value="{{ $sort }}">
+                        <input type="hidden" name="dir" value="{{ $direction }}">
+                        <div class="relative flex-1">
+                            <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                            </svg>
+                            <input type="search" name="search" value="{{ $search }}"
+                                   placeholder="{{ __('Search name, username, email, phone or role...') }}"
+                                   class="search-input w-full rounded-lg border-gray-300 pl-9 pr-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label for="per_page" class="text-sm text-gray-600 whitespace-nowrap">{{ __('Show') }}</label>
+                            <select id="per_page" name="per_page" onchange="this.form.submit()"
+                                    class="rounded-lg border-gray-300 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500">
+                                @foreach ($perPageOptions as $option)
+                                    <option value="{{ $option }}" @selected($perPage === $option)>{{ $option }}</option>
+                                @endforeach
+                            </select>
+                            <button type="submit" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                                {{ __('Search') }}
+                            </button>
+                            @if ($search !== '')
+                                <a href="{{ route('users.index', ['tab' => $activeTab, 'per_page' => $perPage, 'sort' => $sort, 'dir' => $direction]) }}"
+                                   class="inline-flex items-center px-3 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-lg border border-gray-200 hover:bg-gray-50">
+                                    {{ __('Clear') }}
+                                </a>
+                            @endif
+                        </div>
+                    </form>
+                </div>
+
                 <!-- Enhanced Table -->
                 <div class="overflow-hidden">
-                    <div x-show="activeTab === 'mdc'" x-cloak class="users-tab-panel">
-                        @include('user.partials.users-table', [
-                            'users' => $mdcUsers,
-                            'tableId' => 'mdcUsersDataTable',
-                            'emptyStateTitle' => __('No MDC users found'),
-                            'emptyStateSubtitle' => __('Invite new MDC users or adjust filters.')
-                        ])
-                    </div>
-                    <div x-show="activeTab === 'mlpp'" x-cloak class="users-tab-panel">
-                        @include('user.partials.users-table', [
-                            'users' => $mlppUsers,
-                            'tableId' => 'mlppUsersDataTable',
-                            'emptyStateTitle' => __('No MLPP users found'),
-                            'emptyStateSubtitle' => __('Create a new MLPP user or adjust filters.')
-                        ])
+                    @include('user.partials.users-table', [
+                        'users' => $users,
+                        'tableId' => $activeTab . 'UsersTable',
+                        'emptyStateTitle' => $activeTab === 'mdc' ? __('No MDC users found') : __('No MLPP users found'),
+                        'emptyStateSubtitle' => $search !== ''
+                            ? __('No user matches ":term". Try a different search.', ['term' => $search])
+                            : ($activeTab === 'mdc' ? __('Invite new MDC users or adjust filters.') : __('Create a new MLPP user or adjust filters.')),
+                    ])
+
+                    <div class="px-6 py-4 border-t border-gray-200 bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <p class="text-sm text-gray-600">
+                            {{ __('Showing :from to :to of :total users', [
+                                'from' => $users->total() ? $users->firstItem() : 0,
+                                'to' => $users->total() ? $users->lastItem() : 0,
+                                'total' => $users->total(),
+                            ]) }}
+                        </p>
+                        <div>{{ $users->links() }}</div>
                     </div>
                 </div>
             </div>
@@ -338,86 +336,6 @@ $(document).ready(function() {
             }
         });
     }
-
-    const dataTableOptions = {
-        responsive: true,
-        lengthChange: true,
-        autoWidth: false,
-        pageLength: 10,
-        lengthMenu: [ [10, 25, 50, 100, -1], [10, 25, 50, 100, "All"] ],
-        order: [[0, 'asc']],
-        dom: '<"row mb-3"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>' +
-             '<"row"<"col-sm-12"tr>>' +
-             '<"row"<"col-sm-12 col-md-5"i><"col-sm-12 col-md-7"p>>',
-        language: {
-            search: "{{ __('Search:') }}",
-            lengthMenu: "{{ __('Show _MENU_ entries') }}",
-            info: "{{ __('Showing _START_ to _END_ of _TOTAL_ entries') }}",
-            infoEmpty: "{{ __('Showing 0 to 0 of 0 entries') }}",
-            paginate: {
-                first: "{{ __('First') }}",
-                last: "{{ __('Last') }}",
-                next: "{{ __('Next') }}",
-                previous: "{{ __('Previous') }}"
-            },
-            loadingRecords: "{{ __('Loading...') }}",
-            processing: "{{ __('Processing...') }}",
-            emptyTable: "{{ __('No data available in table') }}"
-        },
-        columnDefs: [
-            {
-                targets: -1,
-                orderable: false,
-                searchable: false
-            }
-        ],
-        initComplete: function() {
-            const api = this.api();
-            $('.dataTables_length label').addClass('text-sm text-gray-600');
-            $('.dataTables_filter label').addClass('text-sm text-gray-600');
-            $('.dataTables_filter input').addClass('rounded border-gray-300 pl-3 pr-3 py-2');
-
-            attachModalHandlers();
-            attachConfirmDialogs();
-            api.columns.adjust();
-        },
-        drawCallback: function() {
-            attachModalHandlers();
-            attachConfirmDialogs();
-            this.api().columns.adjust();
-        }
-    };
-
-    const tableIds = ['mdcUsersDataTable', 'mlppUsersDataTable'];
-    const dataTablesInstances = {};
-
-    tableIds.forEach(function(tableId) {
-        const selector = '#' + tableId;
-        if ($(selector).length) {
-            dataTablesInstances[tableId] = $(selector).DataTable($.extend(true, {}, dataTableOptions));
-        }
-    });
-
-    if (dataTablesInstances['mdcUsersDataTable']) {
-        setTimeout(function() {
-            dataTablesInstances['mdcUsersDataTable'].columns.adjust();
-        }, 100);
-    }
-
-    window.addEventListener('users-tab-change', function(event) {
-        const tableId = event.detail;
-        if (dataTablesInstances[tableId]) {
-            setTimeout(function() {
-                dataTablesInstances[tableId].columns.adjust();
-            }, 100);
-        }
-    });
-
-    $(window).on('resize', function() {
-        Object.keys(dataTablesInstances).forEach(function(key) {
-            dataTablesInstances[key].columns.adjust();
-        });
-    });
 
     attachModalHandlers();
     attachConfirmDialogs();
@@ -461,14 +379,6 @@ $(document).ready(function() {
             success: function(response) {
                 if (response.success) {
                     alert(response.message);
-                    Object.keys(dataTablesInstances).forEach(function(key) {
-                        var instance = dataTablesInstances[key];
-                        if (instance.ajax) {
-                            instance.ajax.reload();
-                        } else {
-                            instance.draw(false);
-                        }
-                    });
                     location.reload();
                 } else {
                     alert(response.message);

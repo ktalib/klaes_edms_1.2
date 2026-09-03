@@ -1,18 +1,57 @@
+@php
+    // Column key => label. A key of null means the column is not sortable server-side.
+    $columns = [
+        ['key' => 'name', 'label' => __('User Profile'), 'class' => ''],
+        ['key' => 'username', 'label' => __('Username'), 'class' => ''],
+        ['key' => 'email', 'label' => __('Email'), 'class' => ''],
+        ['key' => 'user_level', 'label' => __('User Level'), 'class' => ''],
+        ['key' => null, 'label' => __('Department'), 'class' => ''],
+        ['key' => null, 'label' => __('Role'), 'class' => ''],
+        ['key' => null, 'label' => __('Work Days'), 'class' => 'text-center'],
+        ['key' => null, 'label' => __('Man Hours'), 'class' => 'text-center'],
+        ['key' => 'staff_type', 'label' => __('Staff Type'), 'class' => 'text-center'],
+        ['key' => null, 'label' => __('User Actions'), 'class' => ''],
+        ['key' => null, 'label' => __('Actions'), 'class' => ''],
+    ];
+@endphp
 <div class="overflow-x-auto">
-    <table id="{{ $tableId }}" class="min-w-full divide-y divide-gray-200 display" style="width:100%;">
+    <table id="{{ $tableId }}" class="users-table min-w-full divide-y divide-gray-200" style="width:100%;">
         <thead class="bg-gradient-to-r from-gray-50 to-gray-100">
             <tr>
-                <th>{{ __('User Profile') }}</th>
-                <th>{{ __('Username') }}</th>
-                <th>{{ __('Email') }}</th>
-                <th>{{ __('User Level') }}</th>
-                <th>{{ __('Department') }}</th>
-                <th>{{ __('Role') }}</th>
-                <th class="text-center">{{ __('Work Days') }}</th>
-                <th class="text-center">{{ __('Man Hours') }}</th>
-                <th class="text-center">{{ __('Staff Type') }}</th>
-                <th>{{ __('User Actions') }}</th>
-                <th>{{ __('Actions') }}</th>
+                @foreach ($columns as $column)
+                    <th class="{{ $column['class'] }}">
+                        @if ($column['key'])
+                            @php
+                                $isSorted = $sort === $column['key'];
+                                $nextDirection = $isSorted && $direction === 'asc' ? 'desc' : 'asc';
+                            @endphp
+                            <a href="{{ route('users.index', [
+                                'tab' => $activeTab,
+                                'search' => $search,
+                                'per_page' => $perPage,
+                                'sort' => $column['key'],
+                                'dir' => $nextDirection,
+                            ]) }}">
+                                <span>{{ $column['label'] }}</span>
+                                @if ($isSorted)
+                                    <svg class="w-3 h-3 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                        @if ($direction === 'asc')
+                                            <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd"/>
+                                        @else
+                                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/>
+                                        @endif
+                                    </svg>
+                                @else
+                                    <svg class="w-3 h-3 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M10 3l3 4H7l3-4zm0 14l-3-4h6l-3 4z"/>
+                                    </svg>
+                                @endif
+                            </a>
+                        @else
+                            {{ $column['label'] }}
+                        @endif
+                    </th>
+                @endforeach
             </tr>
         </thead>
         <tbody>

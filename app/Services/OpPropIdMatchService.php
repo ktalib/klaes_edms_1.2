@@ -52,6 +52,26 @@ class OpPropIdMatchService
     public const IC_OP_TYPE = 'Occupancy Permit (OP)';
 
     /**
+     * What every batch from this page is recorded as.
+     *
+     * There was briefly a second kind — Change of Ownership — chosen in a modal before
+     * any permit could be ticked. It is gone: this page only ever consolidates permits
+     * onto the parcel id of the file they already belong to, and asserts nothing about
+     * who owns anything. Asking a question with one true answer only invited the wrong
+     * one to be picked.
+     *
+     * The value is still WRITTEN to op_propid_matches.match_mode, so the audit trail
+     * says what each batch was. It is set here, not sent by the browser.
+     *
+     * NOTE: the chk_opm_match_mode CHECK constraint on that column still permits
+     * 'change_of_ownership'. Deliberately left alone — the constraint is permissive, no
+     * row ever carried that value, and narrowing it would be a migration for nothing.
+     */
+    public const MODE_NO_CHANGE_OF_OWNERSHIP = 'no_change_of_ownership';
+
+    public const MATCH_MODE_LABEL = 'Match OP - No Change of Ownership';
+
+    /**
      * Move the given OPs onto the target prop_id.
      *
      * @param  array<int,array{source_table:string,op_id:int}>  $selections
@@ -63,6 +83,8 @@ class OpPropIdMatchService
         array $selections,
         bool $moveCompanions = true
     ): array {
+        $matchMode = self::MODE_NO_CHANGE_OF_OWNERSHIP;
+
         if ($targetPropId <= 0) {
             return $this->refuse('No target Property ID — select a confirmed file first.');
         }
@@ -88,7 +110,8 @@ class OpPropIdMatchService
         try {
             $conn->transaction(function () use (
                 $conn, $selections, $targetPropId, $targetFileNumber, $moveCompanions,
-                $batchRef, $userId, $now, &$moved, &$companionCount, &$skipped, &$errors, &$ledger
+                $batchRef, $userId, $now, $matchMode,
+                &$moved, &$companionCount, &$skipped, &$errors, &$ledger
             ) {
                 foreach ($selections as $selection) {
                     $table = $selection['source_table'];
@@ -123,7 +146,7 @@ class OpPropIdMatchService
                     $ledger[] = $this->ledgerRow(
                         $batchRef, $targetFileNumber, $targetPropId, $table, $opId, 'op',
                         $this->readSerial($op), $this->readFileNumber($table, $op),
-                        $oldPropId, $userId, $now
+                        $oldPropId, $userId, $now, $matchMode
                     );
 
                     if (! $moveCompanions) {
@@ -143,7 +166,7 @@ class OpPropIdMatchService
                         $ledger[] = $this->ledgerRow(
                             $batchRef, $targetFileNumber, $targetPropId, 'pra', (int) $companion->id, 'companion',
                             $this->readSerial($companion), $this->readFileNumber('pra', $companion),
-                            $companionOld, $userId, $now
+                            $companionOld, $userId, $now, $matchMode
                         );
                     }
                 }
@@ -399,7 +422,8 @@ class OpPropIdMatchService
         ?string $fileNumber,
         string $oldPropId,
         $userId,
-        $now
+        $now,
+        ?string $matchMode = null
     ): array {
         return [
             'batch_ref' => $batchRef,
@@ -413,6 +437,8 @@ class OpPropIdMatchService
             'previous_prop_id' => $oldPropId !== '' ? $oldPropId : null,
             'new_prop_id' => (string) $targetPropId,
             'matched_by' => $userId,
+            // The basis the officer declared for this batch, on every row of it.
+            'match_mode' => $matchMode,
             'created_at' => $now,
             'updated_at' => $now,
         ];
