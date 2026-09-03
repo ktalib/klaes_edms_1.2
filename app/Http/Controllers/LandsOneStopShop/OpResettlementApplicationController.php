@@ -756,6 +756,37 @@ class OpResettlementApplicationController extends Controller
 
             return $record;
         });
+
+        // The applicant's photograph, carried on each row so the Edit Record modal can show
+        // what is already on file without a round trip when it opens.
+        //
+        // Primed for the whole page first: resolve() is two queries per file, and this list
+        // renders every row, so calling it inside the map would be an N+1 on a page that is
+        // already heavy. prime() makes the map's lookups free.
+        // Both columns fall back to an em dash when the row carries no number. That is a
+        // display placeholder, not a file, and must not reach the lookup.
+        $passportFileNo = static function (array $record): ?string {
+            foreach ([$record['mls_file_no'] ?? null, $record['file_no'] ?? null] as $candidate) {
+                $value = trim((string) $candidate);
+                if ($value !== '' && $value !== '—' && $value !== '-') {
+                    return $value;
+                }
+            }
+
+            return null;
+        };
+
+        $passports = app(FilePassportService::class);
+        $passports->prime($records->map($passportFileNo)->filter());
+
+        $records = $records->map(function ($record) use ($passports, $passportFileNo) {
+            $fileNo = $passportFileNo($record);
+            // Null is ordinary — a corporate file has no passport, and neither does a file
+            // commissioned before the photograph was captured.
+            $record['passport_url'] = $passports->resolve($fileNo)['url'] ?? null;
+
+            return $record;
+        });
         } // end !$opBatchMode
 
         // ── OP Batch Commissioning: collapse to one entry per batch ──

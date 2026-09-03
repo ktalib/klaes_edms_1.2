@@ -1302,6 +1302,34 @@
             <div class="p-5 overflow-y-auto flex-1">
                 <input type="hidden" id="opEditRecordId">
 
+                {{-- Applicant photograph. Uploaded on its own (the Save Changes button posts
+                     JSON, and an image has to ride as multipart), so it is filed the moment a
+                     file is chosen and Upload is pressed — independent of the rest of the form.
+                     Same store as commissioning: the file's EDMS scan folder, a scannings row,
+                     and oss_applications.passport_photo. --}}
+                <div class="mb-5 flex items-start gap-4 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                    <div class="h-24 w-20 flex-shrink-0 overflow-hidden rounded-lg border border-dashed border-slate-300 bg-white flex items-center justify-center">
+                        <img id="opEditPassportPreview" src="" alt="Passport photograph" class="hidden h-full w-full object-cover">
+                        {{-- The id sits on the wrapper, not the <i>: lucide swaps the <i> for an <svg>. --}}
+                        <span id="opEditPassportPlaceholder" class="flex items-center justify-center">
+                            <i data-lucide="user-square" class="h-8 w-8 text-slate-300"></i>
+                        </span>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-500">Passport Photograph</label>
+                        <p id="opEditPassportStatus" class="text-sm font-semibold text-slate-700">No passport on record</p>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <input type="file" id="opEditPassportInput" accept="image/jpeg,image/jpg,image/png"
+                                class="w-full max-w-xs rounded-lg border border-slate-300 bg-white p-1.5 text-xs text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-amber-50 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-amber-700 hover:file:bg-amber-100">
+                            <button type="button" id="opEditPassportUploadBtn" disabled
+                                class="rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+                                Upload
+                            </button>
+                        </div>
+                        <p class="mt-1 text-[11px] text-slate-500">JPG or PNG, max 2MB. Uploading replaces the photograph on record.</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                         <label class="mb-1 block text-xs font-bold uppercase tracking-wider text-slate-500">MLSF Number</label>
@@ -3151,6 +3179,8 @@
 
         toggleOpEditPartySection(false);
 
+        _opEditSetPassport(data.passport_url || null);
+
         document.getElementById('opEditModal').classList.remove('hidden');
         if (window.lucide) window.lucide.createIcons();
 
@@ -3197,7 +3227,132 @@
         // Clear selected tx badge
         var txBadge = document.getElementById('opEditSelectedTxBadge');
         if (txBadge) { txBadge.classList.add('hidden'); txBadge.textContent = ''; }
+
+        // One modal serves every row, so a photo left selected from a previous edit would
+        // otherwise be uploaded against the wrong file number.
+        _opEditSetPassport(null);
     }
+
+    // ── Passport photograph on the Edit Record modal ──────────────────────────
+    // One slot, two states: what is already filed against the file, and a replacement
+    // picked here. The replacement is previewed locally and only sent when Upload is
+    // pressed, so opening a record never touches the photo on file.
+
+    /** Current photo on record for the open row, so clearing the picker can fall back to it. */
+    var _opEditPassportOnRecord = null;
+
+    function _opEditSetPassport(url) {
+        _opEditPassportOnRecord = url || null;
+
+        var img = document.getElementById('opEditPassportPreview');
+        var placeholder = document.getElementById('opEditPassportPlaceholder');
+        var status = document.getElementById('opEditPassportStatus');
+        var input = document.getElementById('opEditPassportInput');
+        var btn = document.getElementById('opEditPassportUploadBtn');
+
+        if (input) input.value = '';
+        if (btn) btn.disabled = true;
+
+        if (img) {
+            if (url) {
+                img.src = url;
+                img.classList.remove('hidden');
+            } else {
+                img.removeAttribute('src');
+                img.classList.add('hidden');
+            }
+        }
+        if (placeholder) placeholder.classList.toggle('hidden', !!url);
+        if (status) status.textContent = url ? 'Passport on record' : 'No passport on record';
+    }
+
+    function _opEditOnPassportPicked(input) {
+        var file = input && input.files ? input.files[0] : null;
+        var btn = document.getElementById('opEditPassportUploadBtn');
+
+        if (!file) {
+            _opEditSetPassport(_opEditPassportOnRecord);
+            return;
+        }
+
+        // Checked here as well as server-side so an oversized photo is caught before the
+        // operator waits on an upload that will be rejected.
+        if (file.size > 2 * 1024 * 1024) {
+            Swal.fire('Passport too large', 'The passport photograph must be 2MB or smaller.', 'error');
+            input.value = '';
+            if (btn) btn.disabled = true;
+            return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function (e) {
+            var img = document.getElementById('opEditPassportPreview');
+            var placeholder = document.getElementById('opEditPassportPlaceholder');
+            var status = document.getElementById('opEditPassportStatus');
+            if (img) { img.src = e.target.result; img.classList.remove('hidden'); }
+            if (placeholder) placeholder.classList.add('hidden');
+            if (status) status.textContent = file.name + ' — replaces the current photo on upload';
+        };
+        reader.readAsDataURL(file);
+        if (btn) btn.disabled = false;
+    }
+
+    function _opEditUploadPassport() {
+        var recordId = (document.getElementById('opEditRecordId').value || '').toString().trim();
+        var input = document.getElementById('opEditPassportInput');
+        var btn = document.getElementById('opEditPassportUploadBtn');
+        var file = input && input.files ? input.files[0] : null;
+
+        if (!recordId) { Swal.fire('Error', 'Missing record id.', 'error'); return; }
+        if (!file) { Swal.fire('Required', 'Choose a passport photograph first.', 'warning'); return; }
+
+        var body = new FormData();
+        body.append('passport', file);
+
+        if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+
+        var csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        fetch('/lands-one-stop-shop/applications/op-resettlement/' + encodeURIComponent(recordId) + '/passport', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': csrfToken },
+            body: body
+        })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (result) {
+            if (btn) { btn.textContent = 'Upload'; }
+
+            if (result.ok && result.data.success) {
+                // The uploaded image is now the one on record.
+                _opEditSetPassport(result.data.url || _opEditPassportOnRecord);
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Passport Updated',
+                    text: result.data.message || 'Passport photograph filed.',
+                    timer: 2200,
+                    showConfirmButton: false
+                });
+                return;
+            }
+
+            var msg = result.data.message || 'Failed to upload the passport photograph.';
+            if (result.data.errors) {
+                msg += '\n' + Object.values(result.data.errors).flat().join('\n');
+            }
+            Swal.fire('Error', msg, 'error');
+            if (btn) btn.disabled = false;
+        })
+        .catch(function (err) {
+            if (btn) { btn.textContent = 'Upload'; btn.disabled = false; }
+            Swal.fire('Error', 'Network error: ' + err.message, 'error');
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        var input = document.getElementById('opEditPassportInput');
+        var btn = document.getElementById('opEditPassportUploadBtn');
+        if (input) input.addEventListener('change', function () { _opEditOnPassportPicked(this); });
+        if (btn) btn.addEventListener('click', _opEditUploadPassport);
+    });
 
     /**
      * Load purpose options for the edit modal based on the selected land use,

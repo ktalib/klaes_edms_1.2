@@ -11232,7 +11232,7 @@
         const period = h >= 12 ? 'PM' : 'AM';
         h = h % 12 || 12;
         return `${h}:${m} ${period}`;
-    }
+    }  
 
     function escapeHtml(value) {
         return (value ?? '').toString()

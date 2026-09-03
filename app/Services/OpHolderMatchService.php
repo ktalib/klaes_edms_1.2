@@ -1418,12 +1418,7 @@ class OpHolderMatchService
      */
     public function recentMatches(int $limit = 25): array
     {
-        return DB::connection('sqlsrv')
-            ->table('pra')
-            ->where('system_source', self::SYSTEM_SOURCE)
-            ->where(function ($q) {
-                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
-            })
+        $rows = $this->matchedByHand()
             ->orderByDesc('id')
             ->limit(max(1, $limit))
             ->get([
@@ -1431,20 +1426,93 @@ class OpHolderMatchService
                 'party_1', 'party_2', 'transaction_type', 'instrument_type',
                 'plot_no', 'op_serial_number', 'prop_id', 'merger_group_id',
                 'transaction_date', 'created_at', 'created_by',
+                // Carries the backfill's run id when the command wrote the row. Two
+                // different acts produce these transfers and the table must not
+                // present them as one — see backfillRunId().
+                'remarks',
             ])
             ->all();
+
+        $userIds = [];
+        foreach ($rows as $row) {
+            $id = (int) $row->created_by;
+            if ($id > 0) {
+                $userIds[$id] = true;
+            }
+        }
+
+        $names = [];
+        if ($userIds !== []) {
+            try {
+                foreach (\App\Models\User::whereIn('id', array_keys($userIds))->get(['id', 'first_name', 'last_name']) as $user) {
+                    $names[(int) $user->id] = trim($user->first_name . ' ' . $user->last_name);
+                }
+            } catch (\Throwable $e) {
+                // A missing name is not worth losing the table over.
+                Log::warning('op-holder-match.recent-matches-names-failed', ['error' => $e->getMessage()]);
+            }
+        }
+
+        foreach ($rows as $row) {
+            $row->run_id      = self::backfillRunId($row->remarks ?? null);
+            $row->recorded_by = $names[(int) $row->created_by] ?? null;
+        }
+
+        return $rows;
     }
 
-    /** How many transfers this flow has written in all. */
+    /**
+     * The backfill run that wrote this transfer, or null when a person pressed Match.
+     *
+     * Two things write with this system_source — the Match button, one file at a time,
+     * and `op-match:backfill`, which does hundreds in a single command — and reading
+     * the table without that distinction, an officer sees a hundred files they never
+     * touched and concludes the page has recorded transfers on its own. The run id is
+     * stamped into pra.remarks as "[OPMB-<date>-<time>]" by the command, and it is
+     * also what `op-match:rollback` undoes a run by.
+     */
+    public static function backfillRunId(?string $remarks): ?string
+    {
+        if (! $remarks) {
+            return null;
+        }
+
+        return preg_match('/\[(OPMB-\d{8}-\d{6})\]/', $remarks, $m) ? $m[1] : null;
+    }
+
+    /** How many transfers have been matched by hand. Same scope as the list. */
     public function matchCount(): int
     {
-        return (int) DB::connection('sqlsrv')
+        return (int) $this->matchedByHand()->count();
+    }
+
+    /**
+     * Transfers matched BY HAND on the Match OP page — the backfill's are excluded.
+     *
+     * Two things write with this system_source, and they are not the same act. A
+     * person picks a file, reads its chain and presses Match; `op-match:backfill`
+     * does hundreds in one command. Listing them together showed an officer a
+     * hundred files nobody on this page had touched, which reads as the page having
+     * recorded transfers on its own — so until the backfill has a presentation of
+     * its own, its rows are not listed here at all.
+     *
+     * The command stamps its run id into pra.remarks as "[OPMB-<date>-<time>]", so
+     * that is what identifies them. "[" opens a character class in T-SQL LIKE, hence
+     * "[[]" to match one literally; the NULL arm is needed because NOT LIKE against
+     * NULL is NULL, which would drop every row that has no remarks — which is most
+     * of the hand-matched ones.
+     */
+    private function matchedByHand(): \Illuminate\Database\Query\Builder
+    {
+        return DB::connection('sqlsrv')
             ->table('pra')
             ->where('system_source', self::SYSTEM_SOURCE)
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })
-            ->count();
+            ->where(function ($q) {
+                $q->whereNull('remarks')->orWhere('remarks', 'NOT LIKE', '%[[]OPMB-%');
+            });
     }
 
     private function displayDate(object $row): ?string

@@ -48,7 +48,13 @@ class RollbackOpHolderTots extends Command
 
         $rows = $db->table('pra')
             ->where('system_source', 'OPHOLDERMATCH')
-            ->where('remarks', 'LIKE', '%[' . $run . ']%')
+            // "[[]" is a LITERAL "[" in T-SQL LIKE. Written as '%[OPMB-…]%' the
+            // brackets opened a character CLASS instead, so the pattern matched any
+            // remarks containing a single character from that set — which is nearly
+            // every Match OP transfer, from every run and from the Match button. This
+            // command soft-deletes what it selects, so a rollback of one run was
+            // selecting other people's transfers along with it.
+            ->where('remarks', 'LIKE', '%[[]' . $run . ']%')
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
             })

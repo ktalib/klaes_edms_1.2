@@ -14,9 +14,24 @@
     cache: {},
 
     init: function () {
+      this.bind();
+      this.resolve();
+    },
+
+    /**
+     * Look the card's nodes up on demand rather than once at startup: the markup is
+     * mounted by the layout, but a page may render it after this file has run (or
+     * replace it), and a card that was not on the page at load time must not leave
+     * every trigger dead for the rest of the session.
+     */
+    resolve: function () {
+      if (this.root && this.root.isConnected) {
+        return true;
+      }
+
       this.root = document.getElementById('userProfileCard');
       if (!this.root) {
-        return;
+        return false;
       }
 
       this.endpoint = this.root.dataset.endpoint;
@@ -32,23 +47,37 @@
       this.faceCheck = document.getElementById('upcFaceCheck');
       this.state = document.getElementById('upcState');
 
-      this.bind();
+      return true;
     },
 
     bind: function () {
       var self = this;
 
+      if (this.bound) {
+        return;
+      }
+      this.bound = true;
+
       document.addEventListener('click', function (event) {
-        var trigger = event.target.closest('[data-user-card]');
+        var target = event.target instanceof Element ? event.target : null;
+        if (!target) {
+          return;
+        }
+
+        var trigger = target.closest('[data-user-card]');
         if (trigger) {
           event.preventDefault();
           // Creator cells often sit inside a row that expands or navigates on click.
           event.stopPropagation();
+          if (!self.resolve()) {
+            console.warn('[user-profile-card] #userProfileCard is not on this page.');
+            return;
+          }
           self.open(trigger.dataset.userId || '', trigger.dataset.userName || '');
           return;
         }
 
-        if (event.target.closest('[data-upc-close]') || event.target === self.root) {
+        if (self.root && (target.closest('[data-upc-close]') || target === self.root)) {
           self.close();
         }
       });
@@ -249,6 +278,9 @@
     },
 
     close: function () {
+      if (!this.root) {
+        return;
+      }
       this.root.classList.remove('upc-open');
       this.root.setAttribute('aria-hidden', 'true');
     }
@@ -256,7 +288,17 @@
 
   window.UserProfileCard = UserProfileCard;
 
-  document.addEventListener('DOMContentLoaded', function () {
-    UserProfileCard.init();
-  });
+  // Bind straight away rather than only on DOMContentLoaded: the listener lives on
+  // document, so it does not need the card markup to exist yet, and a script that
+  // lands after the event (deferred behind a slow CDN tag, restored from bfcache,
+  // or injected by a page) would otherwise never bind at all.
+  UserProfileCard.bind();
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () {
+      UserProfileCard.resolve();
+    });
+  } else {
+    UserProfileCard.resolve();
+  }
 })(window, document);

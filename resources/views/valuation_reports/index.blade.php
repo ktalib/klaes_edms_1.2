@@ -64,6 +64,24 @@
 
             <!-- Data Table -->
             <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                {{-- Filters the rows already on the page (owner/client name and file
+                     number only), so a file is found without paging through the list. --}}
+                <div class="px-6 py-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div class="relative flex-1 max-w-md">
+                        <i data-lucide="search" class="h-4 w-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+                        <input type="search" id="valuation-search" autocomplete="off"
+                            placeholder="Search by owner / client name or file number…"
+                            class="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition">
+                        <button type="button" id="valuation-search-clear"
+                            class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                            aria-label="Clear search">
+                            <i data-lucide="x" class="h-4 w-4"></i>
+                        </button>
+                    </div>
+                    <p id="valuation-search-count" class="text-xs font-semibold text-slate-500 whitespace-nowrap">
+                        Showing {{ count($reports) }} of {{ count($reports) }} reports
+                    </p>
+                </div>
                 <div class="overflow-x-auto text-sm">
                     <table class="w-full text-left border-collapse" id="valuation-table">
                         <thead class="bg-slate-50 border-b border-slate-100">
@@ -82,8 +100,9 @@
                         </thead>
                         <tbody class="divide-y divide-slate-100">
                             @forelse($reports as $report)
-                                <tr class="hover:bg-slate-50/50 transition duration-200">
-                                    <td class="px-6 py-4 text-slate-500 font-semibold">{{ $loop->iteration }}</td>
+                                <tr class="hover:bg-slate-50/50 transition duration-200" data-row
+                                    data-search="{{ Str::lower(trim($report->file_number . ' ' . $report->full_name)) }}">
+                                    <td class="px-6 py-4 text-slate-500 font-semibold" data-sn>{{ $loop->iteration }}</td>
                                     <td class="px-6 py-4 text-slate-900 font-bold whitespace-nowrap">
                                         {{ $report->file_number }}
                                     </td>
@@ -196,6 +215,12 @@
                                     </td>
                                 </tr>
                             @endforelse
+                            {{-- Shown only while a search matches nothing. --}}
+                            <tr id="valuation-no-match" class="hidden">
+                                <td colspan="10" class="px-6 py-12 text-center text-slate-500 italic">
+                                    No report matches <span class="font-semibold text-slate-700" id="valuation-no-match-term"></span>.
+                                </td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -249,6 +274,58 @@
                 }
             });
         };
+
+        // Table search. Every report is already on the page, so the filter runs
+        // locally over owner/client name and file number — the only two things
+        // this list is ever searched by.
+        (function () {
+            const input = document.getElementById('valuation-search');
+            if (!input) return;
+
+            const rows = Array.from(document.querySelectorAll('#valuation-table tbody tr[data-row]'));
+            const clearBtn = document.getElementById('valuation-search-clear');
+            const countEl = document.getElementById('valuation-search-count');
+            const noMatch = document.getElementById('valuation-no-match');
+            const noMatchTerm = document.getElementById('valuation-no-match-term');
+            const total = rows.length;
+
+            function apply() {
+                const term = input.value.trim().toLowerCase();
+                let shown = 0;
+
+                rows.forEach((row) => {
+                    const hit = term === '' || (row.dataset.search || '').includes(term);
+                    row.classList.toggle('hidden', !hit);
+                    if (hit) {
+                        shown++;
+                        // Keep S/N reading 1..n over what is actually on screen.
+                        const sn = row.querySelector('[data-sn]');
+                        if (sn) sn.textContent = shown;
+                    }
+                });
+
+                clearBtn.classList.toggle('hidden', term === '');
+                noMatch.classList.toggle('hidden', !(total > 0 && shown === 0));
+                noMatchTerm.textContent = '"' + input.value.trim() + '"';
+                countEl.textContent = term === ''
+                    ? `Showing ${total} of ${total} reports`
+                    : `Showing ${shown} of ${total} reports`;
+            }
+
+            input.addEventListener('input', apply);
+            clearBtn.addEventListener('click', () => {
+                input.value = '';
+                apply();
+                input.focus();
+            });
+            // Esc clears rather than leaving a filter the user cannot see the end of.
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    input.value = '';
+                    apply();
+                }
+            });
+        })();
 
         document.addEventListener('DOMContentLoaded', () => {
             if (window.lucide) {

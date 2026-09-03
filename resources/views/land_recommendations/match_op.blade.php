@@ -113,7 +113,10 @@
             <span id="match-op-count"
                   class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">{{ number_format($matchedTotal) }}</span>
           </h2>
-          <p class="text-slate-500 text-xs mt-1">Transfers of Title recorded here, newest first</p>
+          {{-- "Matched here" is now a claim the table can keep: rows written in bulk by
+               op-match:backfill carry the same system_source but are filtered out, so
+               everything listed is somebody's deliberate act on this page. --}}
+          <p class="text-slate-500 text-xs mt-1">Transfers of Title matched on this page, newest first</p>
         </div>
         <a href="{{ route('maintenance.tot.index', ['filter' => 'system']) }}"
            class="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
@@ -167,6 +170,13 @@
                     <span class="block text-[10px] text-slate-400 whitespace-nowrap">{{ $recordedAt->format('g:i A') }}</span>
                   @else
                     —
+                  @endif
+
+                  {{-- WHO. "I wasn't the one that matched it" is a fair question to be
+                       able to answer from the row itself, and every row here is
+                       somebody's deliberate act — the backfill's are not listed. --}}
+                  @if($tot->recorded_by)
+                    <span class="block text-[10px] text-slate-500 mt-0.5">by {{ $tot->recorded_by }}</span>
                   @endif
                 </td>
                 <td class="px-4 py-3 text-right">
@@ -236,6 +246,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── The Matched OPs table ───────────────────────────────────────────────
     var rows = document.getElementById('match-op-tot-rows');
 
+    // A row added here was matched by the person looking at the screen, so it is
+    // attributed the same way the rendered rows are rather than left anonymous.
+    var CURRENT_USER = @json(trim((auth()->user()->first_name ?? '') . ' ' . (auth()->user()->last_name ?? '')) ?: 'you');
+
     function esc(v) {
         return String(v === null || v === undefined ? '' : v)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -275,7 +289,10 @@ document.addEventListener('DOMContentLoaded', function () {
             + '<td class="px-4 py-3 text-slate-700 break-words" title="' + esc(m.party_1) + '">' + esc(m.party_1 || '—') + '</td>'
             + '<td class="px-4 py-3 font-semibold text-slate-900 break-words" title="' + esc(m.party_2) + '">' + esc(m.party_2 || '—') + '</td>'
             + '<td class="px-4 py-3 text-slate-500 text-xs break-words">' + esc(plots || '—') + '</td>'
-            + '<td class="px-4 py-3 text-emerald-700 text-xs font-bold">Just now</td>'
+            + '<td class="px-4 py-3 text-xs">'
+            +   '<span class="block font-bold text-emerald-700">Just now</span>'
+            +   '<span class="block text-[10px] text-slate-500 mt-0.5">by ' + esc(CURRENT_USER) + '</span>'
+            + '</td>'
             + '<td class="px-4 py-3 text-right">'
             +   '<button type="button" class="match-op-recheck inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition" data-file="' + esc(d.file_number) + '">'
             +     '<i data-lucide="search" class="h-3 w-3"></i> Check'

@@ -54,7 +54,7 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link rel="stylesheet" href="{{ asset('css/notification-flash.css') }}">
   <link rel="stylesheet" href="{{ asset('css/app-layout.css') }}?v={{ filemtime(public_path('css/app-layout.css')) }}">
-  <link rel="stylesheet" href="{{ asset('css/user-profile-card.css') }}">
+  <link rel="stylesheet" href="{{ asset('css/user-profile-card.css') }}?v={{ filemtime(public_path('css/user-profile-card.css')) }}">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.8.0/html2pdf.bundle.min.js"
     integrity="sha512-w3u9q/DeneCSwUDjhiMNibTRh/1i/gScBVp2imNVAMCt6cUHIw6xzhzcPFIaL3Q1EbI2l+nu17q2aLJJLo4ZYg=="
     crossorigin="anonymous" referrerpolicy="no-referrer"></script>
@@ -165,7 +165,7 @@
        any table that shows who created a record can open it. --}}
   @auth
     <x-user-profile-card />
-    <script src="{{ asset('js/user-profile-card.js') }}" defer></script>
+    <script src="{{ asset('js/user-profile-card.js') }}?v={{ filemtime(public_path('js/user-profile-card.js')) }}" defer></script>
   @endauth
   {{-- The proofing stage in front of it: the White Copy card and the
        "has this been proofread" gate. Global for the same reason the manager is. --}}
