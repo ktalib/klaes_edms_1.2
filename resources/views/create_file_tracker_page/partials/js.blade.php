@@ -795,12 +795,12 @@
 
         if (!url) {
             return `<div class="${size} flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50 text-gray-400 flex items-center justify-center text-[11px] font-semibold tracking-wide"
-                         title="No passport photograph on record for this file">${sanitize(initials)}</div>`;
+                         title="No passport photograph on record for this file">${escapeHtml(initials)}</div>`;
         }
 
         // onerror clears the frame back to the placeholder look: a stored path can point at
         // a file that has since been removed from the scan folder.
-        return `<img src="${sanitize(url)}" alt="Passport photograph of ${sanitize(name || 'the applicant')}"
+        return `<img src="${escapeHtml(url)}" alt="Passport photograph of ${escapeHtml(name || 'the applicant')}"
                      class="${size} flex-shrink-0 rounded-md border border-gray-200 object-cover bg-gray-50"
                      loading="lazy"
                      onerror="this.classList.add('hidden'); this.insertAdjacentHTML('afterend', '<div class=\'${size} flex-shrink-0 rounded-md border border-dashed border-gray-300 bg-gray-50\'></div>');">`;

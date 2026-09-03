@@ -8,14 +8,27 @@
         $landOfficerSignature = optional(\App\Models\LandOfficer::where('user_id', auth()->id())->first())->signature_file;
 
         // Uploads are stored on the "public" disk, which is exposed through the public/storage symlink.
-        // Legacy rows still hold values like "avatar.png" with no file behind them, so fall back to the icon.
-        $profilePath = auth()->user()->profile;
-        $profileImageUrl = $profilePath && \Illuminate\Support\Facades\Storage::disk('public')->exists($profilePath)
-            ? \Illuminate\Support\Facades\Storage::url($profilePath)
+        //
+        // The URL comes from UserPhoto (via $user->profile_url), NOT from Storage::url().
+        // Storage::url() builds against config('filesystems.disks.*.url'), which is
+        // APP_URL . '/storage' — so on any server whose APP_URL is not the address it is
+        // actually served from, this page emitted <img src="http://127.0.0.1:8000/...">
+        // and showed an empty circle even immediately after a successful upload. That is
+        // exactly the symptom reported on 2026-09-03. UserPhoto builds against the request
+        // host instead, and is the same resolver the header avatar and every list screen
+        // already use, so one upload now shows up identically everywhere.
+        //
+        // The exists() check is kept: this is a single record, so one stat is cheap, and a
+        // legacy row like "avatar.png" (or a path whose file was never copied to this
+        // server) should fall back to the icon rather than render a broken frame.
+        $profileUser = auth()->user();
+        $profilePath = $profileUser->profile;
+        $profileImageUrl = \App\Support\UserPhoto::existsOnDisk($profilePath)
+            ? $profileUser->profile_url
             : null;
 
         $signatureUrl = $landOfficerSignature && \Illuminate\Support\Facades\Storage::disk('public')->exists($landOfficerSignature)
-            ? \Illuminate\Support\Facades\Storage::url($landOfficerSignature)
+            ? asset('storage/' . ltrim($landOfficerSignature, '/'))
             : null;
     @endphp
   <div class="flex-1 overflow-auto">

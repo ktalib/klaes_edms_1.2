@@ -206,6 +206,32 @@
             }).join('');
         }
 
+        /**
+         * "Checked — there is nothing to match on this file."
+         *
+         * Deliberately plain and grey: this is not a warning and not a success, it is
+         * a file the officer can cross off. The reason is the server's own sentence,
+         * so the page never invents an explanation of its own.
+         */
+        function renderNoAction(state) {
+            host.innerHTML = ''
+                + '<div class="rounded-xl border border-slate-200 bg-white p-5">'
+                +   '<div class="flex items-start gap-3">'
+                +     '<span class="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500">'
+                +       '<i data-lucide="circle-slash" class="h-4 w-4"></i></span>'
+                +     '<div class="min-w-0">'
+                +       '<h3 class="text-sm font-bold text-slate-800">Nothing to match on '
+                +         '<span class="font-mono">' + esc(state.file_number || 'this file') + '</span></h3>'
+                +       '<p class="mt-0.5 text-xs text-slate-600">' + esc(state.reason || 'This file is not in the state Match applies to.') + '</p>'
+                +       '<p class="mt-2 text-[11px] text-slate-400">Pick the next file number to carry on.</p>'
+                +     '</div>'
+                +   '</div>'
+                + '</div>';
+
+            host.classList.remove('hidden');
+            if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+        }
+
         /** The card: what the file says, why it is a problem, and the one action. */
         function render(state) {
             var applies = !!state.applies;
@@ -242,7 +268,7 @@
                     // officer needs to read both facts, not one instead of the other.
                     + (merger
                         ? '<span class="inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold tracking-wide bg-violet-600 text-white">'
-                            + '<i data-lucide="git-merge" class="h-3 w-3"></i> Merger &mdash; ' + merger.op_count + ' OPs &rarr; 1 ToT</span>'
+                            + '<i data-lucide="git-merge" class="h-3 w-3"></i> OP Merger &mdash; ' + merger.op_count + ' OPs &rarr; 1 ToT</span>'
                         : '')
                     + '</div>';
             } else if (state.matched) {
@@ -394,7 +420,7 @@
             var action = applies
                 ? '<div class="mt-3 flex flex-wrap items-center gap-3">'
                 +   '<button type="button" id="op-match-btn" class="inline-flex items-center gap-2.5 px-8 py-3.5 bg-amber-600 text-white text-base font-bold rounded-xl hover:bg-amber-700 transition shadow-lg shadow-amber-200">'
-                +     '<i data-lucide="git-merge" class="h-5 w-5"></i> ' + (merger ? 'Match Merger' : 'Match')
+                +     '<i data-lucide="git-merge" class="h-5 w-5"></i> ' + (merger ? 'Match OP Merger' : 'Match')
                 +   '</button>'
                 +   (merger
                         // Says "one" explicitly. The officer is looking at two permits and
@@ -572,6 +598,19 @@
                     // explicit rather than relying on that to unlock the save.
                     setSubmitBlocked(false);
 
+                    // What the page around the card does about a write is the page's
+                    // business, not this script's: the Match OP page adds the new row to
+                    // its table, and the capture form ignores it. Announced rather than
+                    // called, so neither page has to be known here.
+                    document.dispatchEvent(new CustomEvent('opmatch:recorded', {
+                        detail: {
+                            file_number: fileNo,
+                            pra_id: res.data.pra_id,
+                            message: res.data.message,
+                            state: res.data.data || {}
+                        }
+                    }));
+
                     if (standalone) {
                         afterStandaloneMatch(res.data.message);
                     } else if (typeof Swal !== 'undefined') {
@@ -690,6 +729,16 @@
                         render(state);
                     } else {
                         reset();
+
+                        // The file WAS checked and the answer is "nothing to match here"
+                        // — a file with no Occupancy Permit at its root, or no indexing
+                        // row to compare one against. On the capture form that is
+                        // rightly silent: an ordinary capture just carries on. On the
+                        // Match OP page, where checking files IS the job, falling back
+                        // to "Select a file number to check it" reads as though the
+                        // check never ran, and the officer has no way to tell a file
+                        // they have cleared from one they have not looked at.
+                        if (standalone) renderNoAction(state);
                     }
                 })
                 .catch(function (err) {

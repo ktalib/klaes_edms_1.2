@@ -809,8 +809,15 @@ class LandRecommendationController extends Controller
         // parallel: one officer clears unmatched Occupancy Permits while another
         // captures recommendations, instead of the second waiting on the first.
         if ($request->has('match-op')) {
+            // The run's own record. Read here rather than fetched by the page so the
+            // table is there on first paint — an officer arriving to continue
+            // yesterday's work should see it, not a spinner.
+            $matcher = app(\App\Services\OpHolderMatchService::class);
+
             return view('land_recommendations.match_op', [
-                'PageTitle' => 'Match OP',
+                'PageTitle'    => 'Match OP',
+                'matchedTots'  => $matcher->recentMatches(25),
+                'matchedTotal' => $matcher->matchCount(),
             ]);
         }
 

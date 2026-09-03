@@ -24,6 +24,19 @@ class UserPhoto
      * Deliberately does not stat the disk: these run per row on list screens, where a
      * filesystem check cost ~0.8ms each. A row pointing at a deleted file yields a URL
      * that 404s, and the UI falls back to initials.
+     *
+     * asset(), NOT Storage::disk('public')->url(). The public disk's URL root is
+     * config('filesystems.disks.public.url') = APP_URL . '/storage', so Storage::url()
+     * hard-codes whatever APP_URL happens to say. .env is gitignored, so after a code
+     * upload production keeps a development APP_URL and every avatar is emitted as
+     * http://127.0.0.1:8000/storage/... — a URL the viewer's own browser resolves against
+     * their machine, which serves nothing. The photo silently renders as an empty circle
+     * while the file is present and the path is correct.
+     *
+     * asset() builds against the CURRENT REQUEST host instead, so the URL is right on
+     * whatever hostname the app is actually served from. This matches
+     * FilePassportService::describe() and ApplicationController::ossPassportUrl(), which
+     * already resolve their stored paths this way.
      */
     public static function url($profile, $passportPath = null): ?string
     {
@@ -34,13 +47,57 @@ class UserPhoto
                 continue;
             }
 
-            // Bare filenames were only ever written into upload/profile.
-            $path = str_contains($value, '/') ? $value : 'upload/profile/' . $value;
+            $path = self::relativePath($value);
 
-            return Storage::disk('public')->url($path);
+            if ($path === null) {
+                continue;
+            }
+
+            return asset('storage/' . $path);
         }
 
         return null;
+    }
+
+    /**
+     * Is there actually a file behind a stored `profile` value?
+     *
+     * url() deliberately never stats the disk — list screens render hundreds of avatars.
+     * A SINGLE-record screen can afford one stat, and wants it: a row pointing at a file
+     * that was never copied to this server should fall back to the placeholder icon rather
+     * than render a broken frame.
+     *
+     * Applies the same shape rules as url(), so the two can never disagree about which
+     * file a stored value names.
+     */
+    public static function existsOnDisk($profile): bool
+    {
+        $path = self::relativePath($profile);
+
+        return $path !== null && Storage::disk('public')->exists($path);
+    }
+
+    /**
+     * The public-disk-relative path a stored `profile` value names, or null when it names
+     * nothing (blank, or the legacy "avatar.png" placeholder that has no file behind it).
+     */
+    private static function relativePath($profile): ?string
+    {
+        $value = trim((string) ($profile ?? ''));
+
+        if ($value === '' || strtolower($value) === self::PLACEHOLDER) {
+            return null;
+        }
+
+        // Bare filenames were only ever written into upload/profile.
+        $path = str_contains($value, '/') ? $value : 'upload/profile/' . $value;
+
+        // Legacy rows carry a "public/" prefix; both shapes name the same file.
+        if (str_starts_with($path, 'public/')) {
+            $path = substr($path, 7);
+        }
+
+        return ltrim($path, '/');
     }
 
     /**

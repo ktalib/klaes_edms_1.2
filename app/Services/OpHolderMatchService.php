@@ -1401,6 +1401,52 @@ class OpHolderMatchService
         return implode(' ', $words);
     }
 
+    /**
+     * The transfers this flow has written, newest first.
+     *
+     * The Match OP page is worked as a run — file after file — and without this the
+     * officer has no sight of what the run has produced: the confirmation dialog is
+     * gone the moment it is dismissed, and the card only ever describes the ONE file
+     * in the box. This is the record of the work.
+     *
+     * Scoped to `system_source` rather than to the transaction type, so it lists what
+     * MATCH wrote and nothing else. Every other Transfer of Title in the register —
+     * deeds keyed off paper, OSS captures — belongs on the ToT dashboard, which lists
+     * them all; this table answers "what have we matched", not "what transfers exist".
+     *
+     * @return array<int,object>
+     */
+    public function recentMatches(int $limit = 25): array
+    {
+        return DB::connection('sqlsrv')
+            ->table('pra')
+            ->where('system_source', self::SYSTEM_SOURCE)
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->orderByDesc('id')
+            ->limit(max(1, $limit))
+            ->get([
+                'id', 'mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno',
+                'party_1', 'party_2', 'transaction_type', 'instrument_type',
+                'plot_no', 'op_serial_number', 'prop_id', 'merger_group_id',
+                'transaction_date', 'created_at', 'created_by',
+            ])
+            ->all();
+    }
+
+    /** How many transfers this flow has written in all. */
+    public function matchCount(): int
+    {
+        return (int) DB::connection('sqlsrv')
+            ->table('pra')
+            ->where('system_source', self::SYSTEM_SOURCE)
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->count();
+    }
+
     private function displayDate(object $row): ?string
     {
         $raw = $row->transaction_date ?: ($row->created_at ?? null);
