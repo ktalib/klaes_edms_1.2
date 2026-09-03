@@ -55,7 +55,19 @@
                 <i data-lucide="git-merge" class="h-3.5 w-3.5 text-emerald-400"></i>
                 <span>Match OP</span>
               </a>
-          
+
+            {{-- OP → File Property ID Matching. A different job from Match OP above:
+                 that one writes a missing transfer, this one moves permits that were
+                 captured before their file existed onto the file's parcel id, so the
+                 file's records stop reading as separate properties. Filed here for the
+                 same reason — it is indexing officers who hold the confirmed file. --}}
+            <a href="{{ route('op-propid-match.index') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('op-propid-match.*') ? 'active' : '' }}">
+              <i data-lucide="link-2" class="h-3.5 w-3.5 text-emerald-400"></i>
+              <span>OP → File Property ID</span>
+            </a>
+
+
             <a href="{{route('missing-files.index')}}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('missing-files.*') ? 'active' : '' }}">
               <i data-lucide="file-warning" class="h-3.5 w-3.5 text-emerald-400"></i>

@@ -7,6 +7,23 @@
 
     <p>A member of the public has submitted an Online Legal Search request. It will not be released until it is approved.</p>
 
+    @if($searchRequest->basketSize() > 1)
+        <div class="info-box" style="background:#eff6ff;border:1px solid #bfdbfe;">
+            <strong>Part of a {{ $searchRequest->basketSize() }}-file request</strong> (file {{ $searchRequest->basketPosition() }} of
+            {{ $searchRequest->basketSize() }}), paid for in one transaction. Each file has its own request number and its own
+            approve/decline decision — approving this one does not approve the others.
+            <table class="details" style="margin-top:10px;">
+                @foreach($searchRequest->basketSiblings() as $sibling)
+                    <tr>
+                        <td>{{ $sibling->file_number ?: '—' }}</td>
+                        <td><strong>{{ $sibling->request_no }}</strong>@if($sibling->id === $searchRequest->id) &nbsp;(this request) @endif</td>
+                        <td style="text-transform:capitalize;">{{ $sibling->status }}</td>
+                    </tr>
+                @endforeach
+            </table>
+        </div>
+    @endif
+
     <h3>Request Details</h3>
     <table class="details">
         <tr>

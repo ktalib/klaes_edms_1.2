@@ -136,9 +136,8 @@
               <th class="px-4 py-3 font-bold w-[19%]">File No</th>
               <th class="px-4 py-3 font-bold w-[24%]">Transferred From</th>
               <th class="px-4 py-3 font-bold w-[24%]">Transferred To</th>
-              <th class="px-4 py-3 font-bold w-[11%]">Plot(s)</th>
-              <th class="px-4 py-3 font-bold w-[13%]">Recorded</th>
-              <th class="px-4 py-3 font-bold w-[9%] text-right">&nbsp;</th>
+              <th class="px-4 py-3 font-bold w-[18%]">Recorded</th>
+              <th class="px-4 py-3 font-bold w-[11%] text-right">&nbsp;</th>
             </tr>
           </thead>
           <tbody id="match-op-tot-rows" class="divide-y divide-slate-100 text-sm">
@@ -162,7 +161,6 @@
                 </td>
                 <td class="px-4 py-3 text-slate-700 break-words" title="{{ $tot->party_1 }}">{{ $tot->party_1 ?: '—' }}</td>
                 <td class="px-4 py-3 font-semibold text-slate-900 break-words" title="{{ $tot->party_2 }}">{{ $tot->party_2 ?: '—' }}</td>
-                <td class="px-4 py-3 text-slate-500 text-xs break-words">{{ $tot->plot_no ?: '—' }}</td>
                 <td class="px-4 py-3 text-slate-500 text-xs">
                   @if($tot->created_at)
                     @php $recordedAt = \Carbon\Carbon::parse($tot->created_at); @endphp
@@ -191,7 +189,7 @@
               </tr>
             @empty
               <tr id="match-op-tot-empty">
-                <td colspan="6" class="px-6 py-14 text-center">
+                <td colspan="5" class="px-6 py-14 text-center">
                   <i data-lucide="git-merge" class="h-7 w-7 text-slate-300 mx-auto"></i>
                   <p class="mt-3 text-sm font-bold text-slate-600">Nothing matched yet</p>
                   <p class="mt-1 text-xs text-slate-500">Transfers recorded from this page will appear here.</p>
@@ -269,9 +267,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // The transfer's plots are the plots of the permits it was built from, which
         // is what `roots` holds — the response itself does not carry the written row.
-        var plots = roots.map(function (r) { return r.plot_no; })
-                         .filter(function (p) { return !!p; }).join(', ');
-
         var empty = document.getElementById('match-op-tot-empty');
         if (empty) empty.remove();
 
@@ -288,7 +283,6 @@ document.addEventListener('DOMContentLoaded', function () {
             + '</td>'
             + '<td class="px-4 py-3 text-slate-700 break-words" title="' + esc(m.party_1) + '">' + esc(m.party_1 || '—') + '</td>'
             + '<td class="px-4 py-3 font-semibold text-slate-900 break-words" title="' + esc(m.party_2) + '">' + esc(m.party_2 || '—') + '</td>'
-            + '<td class="px-4 py-3 text-slate-500 text-xs break-words">' + esc(plots || '—') + '</td>'
             + '<td class="px-4 py-3 text-xs">'
             +   '<span class="block font-bold text-emerald-700">Just now</span>'
             +   '<span class="block text-[10px] text-slate-500 mt-0.5">by ' + esc(CURRENT_USER) + '</span>'

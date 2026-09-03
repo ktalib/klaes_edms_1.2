@@ -1382,14 +1382,11 @@
 
                         let html = `<div>${title.replace(/</g, '&lt;')}</div>`;
 
-                        // Root of Title is a property OF the title, not a column of its own.
-                        // Hand-keyed on the File Indexing form and held only on
-                        // file_indexings, so a file that has never been indexed simply shows
-                        // nothing here rather than a guessed value.
-                        const rot = row.root_of_title;
-                        if (rot && rot !== 'N/A') {
-                            html += `<div class="mt-0.5"><span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">RoT</span>`
-                                + `<span class="text-[11px] font-medium text-emerald-800">${String(rot).toUpperCase().replace(/</g, '&lt;')}</span></div>`;
+                        // Mirror Legal Search's compact "-RoT" marker directly beneath
+                        // the title. The server applies the commissioning-source rule and
+                        // also recognises a manually indexed Root of Title.
+                        if (row.is_root_of_title) {
+                            html += '<div class="mt-0.5 text-[11px] font-semibold text-violet-700">-RoT</div>';
                         }
 
                         return html;
@@ -4868,7 +4865,14 @@
     // The five tables the cascade purges, plus the old-file-number ledger this screen's
     // own Edit modal writes — it used to survive the delete and keep naming a file that
     // no longer existed.
-    const MLSF_CASCADE_TABLES = ['MlsfileNo', 'fileNumber', 'Entity Table', 'Customers', 'File Indexings', 'Old File Numbers'];
+    const MLSF_CASCADE_TABLES = [
+        'MlsfileNo', 'fileNumber', 'Entity Table', 'Customers', 'File Indexings',
+        'Old File Numbers',
+        // Commissioning publishes the file to the OSS applications list and opens a
+        // tracking request; both used to survive the delete, so a purged file kept
+        // appearing on /lands-one-stop-shop/applications and in File Tracking.
+        'OSS Applications', 'File Tracking',
+    ];
 
     function mlsfCascadeTableList() {
         return `<div class="inline-block text-left bg-slate-50 p-4 rounded-xl border border-slate-200/80 w-full max-w-md mx-auto shadow-inner">
@@ -5167,7 +5171,7 @@
                 Swal.fire({
                     icon: notDeleted.length ? 'warning' : 'success',
                     title: notDeleted.length ? 'Partially deleted' : 'Deleted!',
-                    html: `${json.message || ''}<br><small class="text-gray-500">Cascade totals — fileNumber: ${json.totals?.fileNumber ?? 0}, mls_file_no: ${json.totals?.mls_file_no ?? 0}, entities: ${json.totals?.entities_staging ?? 0}, customers: ${json.totals?.customers_staging ?? 0}, indexings: ${json.totals?.file_indexings ?? 0}, old file numbers: ${json.totals?.old_file_numbers ?? 0}</small>${warning}`,
+                    html: `${json.message || ''}<br><small class="text-gray-500">Cascade totals — fileNumber: ${json.totals?.fileNumber ?? 0}, mls_file_no: ${json.totals?.mls_file_no ?? 0}, entities: ${json.totals?.entities_staging ?? 0}, customers: ${json.totals?.customers_staging ?? 0}, indexings: ${json.totals?.file_indexings ?? 0}, old file numbers: ${json.totals?.old_file_numbers ?? 0}, OSS applications: ${json.totals?.oss_applications ?? 0}, file tracking: ${json.totals?.file_tracking ?? 0}</small>${warning}`,
                     confirmButtonColor: '#10b981'
                 });
                 window.mlsfSelectedIds.clear();

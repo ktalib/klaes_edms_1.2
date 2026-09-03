@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\FileNumber;
 
+use App\Http\Controllers\FileNumberController;
 use App\Models\User;
 use App\Support\MlsRowTarget;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +30,18 @@ use Tests\TestCase;
  */
 class MlsFcListAndDeleteGuardTest extends TestCase
 {
+    /** @test */
+    public function root_of_title_marker_follows_the_legal_search_commissioning_rules(): void
+    {
+        $method = new \ReflectionMethod(FileNumberController::class, 'isRootOfTitleFile');
+        $controller = app(FileNumberController::class);
+
+        $this->assertTrue($method->invoke($controller, 'Direct Allocation', null));
+        $this->assertTrue($method->invoke($controller, 'OP Direct Allocation', null));
+        $this->assertTrue($method->invoke($controller, 'Re-grant', 'Customary Right of Occupancy'));
+        $this->assertFalse($method->invoke($controller, 'Re-grant', null));
+    }
+
     private function admin(): ?User
     {
         // The delete guard is Supper Admin only; without one we cannot reach the entity
@@ -63,6 +76,7 @@ class MlsFcListAndDeleteGuardTest extends TestCase
         foreach ($rows as $row) {
             $this->assertArrayHasKey('passport_url', $row, 'Passport column missing from the row payload');
             $this->assertArrayHasKey('root_of_title', $row, 'RoT column missing from the row payload');
+            $this->assertArrayHasKey('is_root_of_title', $row, 'RoT marker missing from the row payload');
             $this->assertArrayHasKey('related_old_fileno', $row, 'Related/Old File No column missing from the row payload');
 
             // passport_url is a URL or null — the renderer branches on falsiness.
@@ -106,7 +120,7 @@ class MlsFcListAndDeleteGuardTest extends TestCase
         }
 
         foreach ($byType as $type => $row) {
-            foreach (['passport_url', 'root_of_title', 'related_old_fileno'] as $key) {
+            foreach (['passport_url', 'root_of_title', 'is_root_of_title', 'related_old_fileno'] as $key) {
                 $this->assertArrayHasKey($key, $row, "Row type '{$type}' is missing '{$key}'");
             }
         }
@@ -272,6 +286,60 @@ class MlsFcListAndDeleteGuardTest extends TestCase
             substr_count($view, "rec.passport_url ? 'Yes' : 'No',"),
             'Both exports should emit the passport flag in the matching position'
         );
+    }
+
+    /** @test */
+    public function the_cascade_purges_the_oss_listing_and_the_tracking_request(): void
+    {
+        // Commissioning does two things beyond the file-number registers: it publishes the
+        // file into `oss_applications` (what /lands-one-stop-shop/applications?type=no-change-of-name
+        // lists) and opens a `file_tracker` request. Neither was purged, so a master-deleted
+        // file kept appearing on the applications page and as an ACTIVE tracking request —
+        // IND-2026-272 was gone from all six original tables and still listed in both.
+        $controller = file_get_contents(app_path('Http/Controllers/FileNumberController.php'));
+
+        $start = strpos($controller, 'private function cascadeDeleteFileRecord(');
+        $this->assertNotFalse($start, 'The cascade is missing');
+
+        $end = strpos($controller, 'private function forgetFileNumberCaches(', $start);
+        $cascade = substr($controller, $start, $end - $start);
+
+        foreach (['oss_applications', 'file_tracker', 'rds_tracking', 'digital_file_tracking_requests'] as $table) {
+            $this->assertStringContainsString(
+                "table('{$table}')",
+                $cascade,
+                "The cascade does not purge {$table}"
+            );
+        }
+
+        // file_tracker's children are keyed on the tracker id, so they must be resolved
+        // before the parent row goes.
+        $this->assertStringContainsString('kangis_checkout_approvals', $cascade);
+        $this->assertStringContainsString('file_tracker_department_backfill', $cascade);
+
+        // An indexing_duplicates row documents indexing, not the tracking request — its
+        // pointer is cleared rather than the row deleted.
+        $this->assertMatchesRegularExpression(
+            "/table\('indexing_duplicates'\)[\s\S]{0,200}->update\(\['file_tracker_id' => null\]\)/",
+            $cascade,
+            'indexing_duplicates should have its pointer cleared, not be deleted'
+        );
+
+        // Both counts must reach the caller, or the dialog under-reports what it removed.
+        $this->assertStringContainsString("'oss_applications' => \$deletedOssApplications", $cascade);
+        $this->assertStringContainsString("'file_tracking' => \$deletedTracking", $cascade);
+    }
+
+    /** @test */
+    public function the_delete_dialog_lists_every_table_the_cascade_touches(): void
+    {
+        // The confirmation names the tables it will purge; leaving the two new ones out
+        // would understate what the button does.
+        $js = file_get_contents(resource_path('views/generate_fileno/mls_js.blade.php'));
+
+        $this->assertStringContainsString("'OSS Applications', 'File Tracking',", $js);
+        $this->assertStringContainsString('json.totals?.oss_applications', $js);
+        $this->assertStringContainsString('json.totals?.file_tracking', $js);
     }
 
     /** @test */

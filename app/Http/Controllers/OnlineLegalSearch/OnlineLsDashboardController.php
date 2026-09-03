@@ -414,7 +414,17 @@ class OnlineLsDashboardController extends Controller
         // that was already opened for it rather than opening a second one.
         $existing = LegalSearchOnlinePayment::where('reference', $reference)->first();
         if ($existing && $existing->isPaid()) {
+            // This branch fires on a re-verify of an already-paid reference — a
+            // page refresh, a retried Paystack callback, a double-click on Pay.
+            // Without linking here too, a verification that only ever went
+            // through THIS branch would keep payment_id null forever: the admin
+            // "View IYC" screen and the applicant's read-only summary both
+            // resolve the verification via payment_id, so an unlinked row is
+            // invisible to both even though the payment succeeded.
+            $this->linkVerificationToPayment($verification, $existing);
+
             $opened = $this->openApprovalRequests($existing, $request, $purpose, $verification);
+            $this->linkVerificationToRequest($verification, $opened[0] ?? null);
 
             return response()->json([
                 'success'      => true,
@@ -478,10 +488,7 @@ class OnlineLsDashboardController extends Controller
 
         // Attach the verification to the payment it unlocked. One applicant, one
         // row: the identification is not re-recorded alongside the payment.
-        if ($verification && $verification->payment_id !== $payment->id) {
-            $verification->payment_id = $payment->id;
-            $verification->save();
-        }
+        $this->linkVerificationToPayment($verification, $payment);
 
         // Assign a back-office tracking id (USER-0001) once, derived from the
         // payment's own id so it is unique and sequential.
@@ -495,19 +502,7 @@ class OnlineLsDashboardController extends Controller
         $opened = $this->openApprovalRequests($payment, $request, $purpose, $verification);
         $searchRequest = $opened[0] ?? null;
 
-        // Best-effort back-link so a reviewer opening the request can reach the
-        // identification behind it. Never allowed to fail the payment response.
-        if ($verification && $searchRequest && $verification->request_id !== $searchRequest->id) {
-            try {
-                $verification->request_id = $searchRequest->id;
-                $verification->save();
-            } catch (\Throwable $e) {
-                Log::warning('Could not link verification to approval request', [
-                    'payment_id' => $payment->id,
-                    'error'      => $e->getMessage(),
-                ]);
-            }
-        }
+        $this->linkVerificationToRequest($verification, $searchRequest);
 
         return response()->json([
             'success'     => true,
@@ -554,6 +549,62 @@ class OnlineLsDashboardController extends Controller
      *
      * @return array<int, string>
      */
+    /**
+     * Point a verification at the payment it unlocked, idempotently.
+     *
+     * Called from BOTH branches of verifyPayment() — the fresh payment and the
+     * "already paid" re-verify — because either can be the one that actually
+     * runs to completion (a refreshed page, a retried Paystack callback, or a
+     * double-clicked Pay button all land on the second branch). Before this was
+     * unified, a verification that only ever went through that branch kept
+     * payment_id null forever, which made it invisible to both the admin
+     * "View IYC" screen and the applicant's own read-only summary — both resolve
+     * the verification by payment_id, not by session.
+     */
+    protected function linkVerificationToPayment(
+        ?LegalSearchOnlineVerification $verification,
+        LegalSearchOnlinePayment $payment
+    ): void {
+        if (!$verification || $verification->payment_id === $payment->id) {
+            return;
+        }
+
+        try {
+            $verification->payment_id = $payment->id;
+            $verification->save();
+        } catch (\Throwable $e) {
+            Log::warning('Could not link verification to payment', [
+                'payment_id' => $payment->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Best-effort back-link so a reviewer opening the (first) request can reach
+     * the identification behind it directly. Never allowed to fail the payment
+     * response — this is a convenience pointer, not the source of truth (that is
+     * payment_id, resolved via basketSiblings() everywhere else).
+     */
+    protected function linkVerificationToRequest(
+        ?LegalSearchOnlineVerification $verification,
+        ?LegalSearchOnlineRequest $searchRequest
+    ): void {
+        if (!$verification || !$searchRequest || $verification->request_id === $searchRequest->id) {
+            return;
+        }
+
+        try {
+            $verification->request_id = $searchRequest->id;
+            $verification->save();
+        } catch (\Throwable $e) {
+            Log::warning('Could not link verification to approval request', [
+                'request_id' => $searchRequest->id,
+                'error'      => $e->getMessage(),
+            ]);
+        }
+    }
+
     protected function resolveRequestedFiles(Request $request): array
     {
         $candidates = $request->input('files');

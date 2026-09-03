@@ -111,15 +111,21 @@
                 <div class="p-5 space-y-3">
                     @if($verification->id_front_path)
                         {{-- Streamed through the approver-gated route; the storage path is
-                             never rendered. --}}
-                        <a href="{{ route('legal-search-online.admin.verifications.document', ['id' => $verification->id, 'side' => 'front']) }}"
-                           target="_blank" rel="noopener"
-                           class="block overflow-hidden rounded-lg border border-slate-200 hover:ring-2 hover:ring-blue-300">
-                            <img src="{{ route('legal-search-online.admin.verifications.document', ['id' => $verification->id, 'side' => 'front']) }}"
-                                 alt="Uploaded identification"
-                                 class="w-full h-auto object-contain bg-slate-50">
-                        </a>
-                        <p class="text-xs text-slate-500">Click to open full size in a new tab.</p>
+                             never rendered. A plain broken-image icon on failure tells nobody
+                             anything useful, so a JS probe fetches the same URL first and shows
+                             the real HTTP status (403 not-an-approver, 404 file gone, 500 disk
+                             misconfigured) instead of leaving this silent. --}}
+                        <div id="idDocFront" data-doc-url="{{ route('legal-search-online.admin.verifications.document', ['id' => $verification->id, 'side' => 'front']) }}">
+                            <a href="{{ route('legal-search-online.admin.verifications.document', ['id' => $verification->id, 'side' => 'front']) }}"
+                               target="_blank" rel="noopener"
+                               class="block overflow-hidden rounded-lg border border-slate-200 hover:ring-2 hover:ring-blue-300">
+                                <img src="{{ route('legal-search-online.admin.verifications.document', ['id' => $verification->id, 'side' => 'front']) }}"
+                                     alt="Uploaded identification"
+                                     class="w-full h-auto object-contain bg-slate-50">
+                            </a>
+                            <p class="text-xs text-slate-500 mt-1">Click to open full size in a new tab.</p>
+                        </div>
+                        <div id="idDocFrontError" class="hidden rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800"></div>
                     @else
                         <p class="text-sm text-slate-500">No document is on file for this request.</p>
                     @endif
@@ -177,4 +183,44 @@
         @endif
     </div>
 </div>
+
+@push('scripts')
+<script>
+(function () {
+    var wrap = document.getElementById('idDocFront');
+    if (!wrap) { return; }
+
+    var url = wrap.getAttribute('data-doc-url');
+    var errorBox = document.getElementById('idDocFrontError');
+
+    // A bare <img> gives no way to tell "not authorised" from "file missing" from
+    // "server misconfigured" apart from a generic broken-image icon. Fetching the
+    // same URL directly surfaces the actual HTTP status, which is what actually
+    // needs diagnosing when this fails.
+    fetch(url, { credentials: 'same-origin' }).then(function (res) {
+        if (res.ok) { return; }
+
+        wrap.classList.add('hidden');
+        errorBox.classList.remove('hidden');
+
+        var reason;
+        if (res.status === 401) {
+            reason = 'You are not signed in, or your session has expired. Reload this page after signing in again.';
+        } else if (res.status === 403) {
+            reason = 'Your account is not recognised as a Director / Deputy Director (or Super Admin), so viewing identification documents is blocked for you specifically — the rest of this page loaded because that check is separate. Ask an administrator to confirm your account's rank/role.';
+        } else if (res.status === 404) {
+            reason = 'The document could not be found on the server. It may have been removed, or the stored path no longer matches a file on disk.';
+        } else {
+            reason = 'The server returned an unexpected error (HTTP ' + res.status + ') while loading this document. Check storage/logs/laravel.log for the underlying exception.';
+        }
+
+        errorBox.innerHTML = '<strong>Could not load this document (HTTP ' + res.status + ').</strong><br>' + reason;
+    }).catch(function () {
+        wrap.classList.add('hidden');
+        errorBox.classList.remove('hidden');
+        errorBox.innerHTML = '<strong>Could not reach the server to load this document.</strong> Check your network connection and try again.';
+    });
+})();
+</script>
+@endpush
 @endsection

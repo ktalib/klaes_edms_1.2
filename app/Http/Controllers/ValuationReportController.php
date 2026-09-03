@@ -17,10 +17,28 @@ class ValuationReportController extends Controller
      *
      * @return \Illuminate\Contracts\View\View
      */
-    public function index()
+    public function index(Request $request)
     {
-        $reports = ValuationReport::orderBy('created_at', 'desc')->get();
+        $search = trim((string) $request->query('search', ''));
+
+        $query = ValuationReport::query();
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('file_number', 'LIKE', "%{$search}%")
+                    ->orWhere('full_name', 'LIKE', "%{$search}%");
+            });
+        }
+
+        // Paginated so the page renders a fixed number of rows instead of the
+        // whole table at once, which was making this page slow to load.
+        $reports = $query->orderBy('created_at', 'desc')->paginate(25)->withQueryString();
+
+        // Stat cards always describe the whole register, not just the current
+        // search/page, so they are counted separately from the listing query.
         $todayCount = ValuationReport::whereDate('created_at', \Carbon\Carbon::today())->count();
+        $totalCount = ValuationReport::count();
+        $printedCount = ValuationReport::where('print_count', '>', 0)->count();
+        $unprintedCount = ValuationReport::where('print_count', 0)->count();
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
         $lgas = DB::connection('sqlsrv')->table('StatLGAs')
             ->join('States', 'StatLGAs.StateID', '=', 'States.StateID')
@@ -32,7 +50,7 @@ class ValuationReportController extends Controller
         $landUses = \App\Models\LandUse::with('purposes')->get();
         $valuationOfficers = ValuationOfficer::orderBy('name')->get(['name', 'rank']);
 
-        return view('valuation_reports.index', compact('reports', 'todayCount', 'states', 'lgas', 'districts', 'streetNames', 'landUses', 'valuationOfficers'));
+        return view('valuation_reports.index', compact('reports', 'todayCount', 'totalCount', 'printedCount', 'unprintedCount', 'search', 'states', 'lgas', 'districts', 'streetNames', 'landUses', 'valuationOfficers'));
     }
 
     /**

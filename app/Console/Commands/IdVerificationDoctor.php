@@ -2,6 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Models\LegalSearchOnlineVerification;
+use App\Models\User;
+use App\Services\LegalSearchApprovalService;
 use App\Services\Ocr\OcrException;
 use App\Services\Ocr\OcrReader;
 use Illuminate\Console\Command;
@@ -20,7 +23,9 @@ use Illuminate\Support\Facades\Storage;
  */
 class IdVerificationDoctor extends Command
 {
-    protected $signature = 'ols:id-verification-doctor {--image= : Also OCR this image file and print what was read}';
+    protected $signature = 'ols:id-verification-doctor
+        {--image= : Also OCR this image file and print what was read}
+        {--user= : Check whether this user (id or email) can view submitted identification / previews, and explain why not}';
 
     protected $description = 'Check why Online Legal Search ID name verification is or is not working on this machine';
 
@@ -31,6 +36,8 @@ class IdVerificationDoctor extends Command
         $this->newLine();
 
         $ok = true;
+        $approverChecked = false;
+        $approverOk = true;
 
         // 1. The PHP package. Present after `composer require`, absent if vendor/
         //    was not redeployed with the code.
@@ -174,14 +181,99 @@ class IdVerificationDoctor extends Command
             }
         }
 
+        // 8. Read back a REAL stored document, the same way the admin "View IYC"
+        //    screen and the report preview do. The synthetic write/read probe above
+        //    only proves the disk is writable in general - this proves an actual
+        //    applicant's image can be opened, which is what "the uploaded image is
+        //    not displaying" is actually reporting.
         $this->newLine();
-        if ($ok) {
+        $this->line('8. Reading back a real submitted identification image');
+        $recent = LegalSearchOnlineVerification::whereNotNull('id_front_path')
+            ->orderByDesc('id')
+            ->first();
+
+        if (!$recent) {
+            $this->line('   <fg=yellow>no stored identification found</> - nobody has submitted the IYC form on this database yet.');
+        } else {
+            $disk = Storage::disk((string) config('id_verification.uploads.disk'));
+
+            if (!$disk->exists($recent->id_front_path)) {
+                $this->error('   -> verification #' . $recent->id . ' points at a file that is not on this disk:');
+                $this->line('     ' . $recent->id_front_path);
+                $this->line('     Either the disk root does not match where it was written, or the file was removed.');
+                $ok = false;
+            } else {
+                try {
+                    // Exactly OnlineLsIdVerificationController::document()'s read path.
+                    $disk->response($recent->id_front_path, 'doctor-check', ['Content-Disposition' => 'inline']);
+                    $this->line('   <fg=green>verification #' . $recent->id . ' streams successfully</> - the storage/read path itself is sound.');
+                } catch (\Throwable $e) {
+                    $this->error('   -> Could not stream it: ' . $e->getMessage());
+                    $ok = false;
+                }
+            }
+        }
+
+        // 9. --user=: is THIS account allowed through the approver gate that guards
+        //    the image route, the report preview and the correct/edit screen? A
+        //    working dashboard with a broken preview and a broken image is the
+        //    exact symptom of an account that fails this check while everything
+        //    else (the queue list, the KPI dashboard) does not require it.
+        if ($userOption = $this->option('user')) {
+            $this->newLine();
+            $this->line('9. Approver access for --user=' . $userOption);
+
+            $user = is_numeric($userOption)
+                ? User::find((int) $userOption)
+                : User::where('email', $userOption)->first();
+
+            if (!$user) {
+                $this->error('   -> No user found matching "' . $userOption . '".');
+                $approverChecked = true;
+                $approverOk = false;
+            } else {
+                $isApprover = app(LegalSearchApprovalService::class)->isApprover($user);
+                $cfg = config('legal_search.online_approval');
+
+                $this->line('   name         : ' . ($user->name ?: $user->username ?: '-'));
+                $this->line('   assign_role  : ' . ($user->assign_role ?: '(empty)'));
+                $this->line('   rank         : ' . ($user->rank ?: '(empty)'));
+
+                $approverChecked = true;
+
+                if ($isApprover) {
+                    $this->line('   <fg=green>PASSES the approver check</> - this account should see the preview and the identification image.');
+                } else {
+                    $approverOk = false;
+                    $this->error('   -> FAILS the approver check - this account will get 403 on:');
+                    $this->line('       the identification image, the report preview, and the correct/edit screen');
+                    $this->line('     but NOT on the requests queue or the admin dashboard, since those do not require it.');
+                    $this->line("     To pass, assign_role must be 'Supper Admin' (note the app's existing spelling), OR");
+                    $this->line('     rank must exactly match, or start with, one of:');
+                    foreach ((array) ($cfg['approver_ranks'] ?? []) as $allowed) {
+                        $this->line('       - ' . $allowed);
+                    }
+                    foreach ((array) ($cfg['approver_rank_prefixes'] ?? []) as $prefix) {
+                        $this->line('       - (prefix) ' . $prefix . '*');
+                    }
+                }
+            }
+        }
+
+        $this->newLine();
+        if ($ok && $approverOk) {
             $this->info('All checks passed. ID name verification should work on this machine.');
 
             return self::SUCCESS;
         }
 
-        $this->error('One or more checks failed — every applicant will see "we could not read the uploaded identification" until they are fixed.');
+        if (!$ok) {
+            $this->error('One or more OCR checks failed — every applicant will see "we could not read the uploaded identification" until they are fixed.');
+        }
+
+        if ($approverChecked && !$approverOk) {
+            $this->error('The --user account fails the approver check — OCR itself may be fine, but that account specifically cannot open the identification image, the report preview, or the correct/edit screen.');
+        }
 
         return self::FAILURE;
     }

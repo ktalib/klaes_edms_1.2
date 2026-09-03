@@ -580,6 +580,39 @@ save that has already succeeded on the registers.
 The drift was visible in live data: `IND-2026-230` reads *MAKA ADO* on `fileNumber` and
 *MAKA ADO ALI* on its OSS row.
 
+### Cascade extended to OSS and File Tracking (2026-09-03)
+
+Reported from live use: `IND-2026-272` was master-deleted, vanished from all six cascade
+tables — and still appeared on `/lands-one-stop-shop/applications?type=no-change-of-name`
+and in File Tracking.
+
+Commissioning does two things beyond the file-number registers: it **publishes** the file
+into `oss_applications`, and it opens a **`file_tracker`** request. Neither was purged.
+
+The cascade now covers both, taking it from 6 tables to 8:
+
+| Added | Keyed on | Notes |
+|---|---|---|
+| `oss_applications` | `file_no` | the applications listing |
+| `file_tracker` | `file_number` | orphans survived as **ACTIVE** requests sitting in a department |
+| `rds_tracking` | `file_number` | |
+| `digital_file_tracking_requests` | `file_no` | |
+
+`file_tracker`'s children are resolved first (`kangis_checkout_approvals`,
+`file_tracker_department_backfill`). `indexing_duplicates` has its `file_tracker_id`
+**cleared rather than the row deleted** — it documents indexing, not the tracking request.
+There are no FK constraints on either table, so the ordering is ours to choose.
+
+Both dialogs and the audit line now name all 8.
+
+**Existing orphans** are repaired by `php artisan mls:purge-delete-orphans` — reports by
+default, `--force` to apply, `--file=` to scope to one number. Candidates come from the
+master-delete audit trail, never a blanket predicate, and any number that is **live again**
+is skipped: re-issue is real (CON-COM-2026-333 was deleted at 12:09 and re-commissioned at
+12:45 the same day), and purging then would destroy the new file's records. As at
+2026-09-03 the dry run reports **18 orphaned files — 18 `oss_applications` rows and 9
+`file_tracker` rows** — with 6 numbers skipped as re-issued.
+
 ### Deliberately not done
 
 * **F-5** — the blanket `fileNumber` delete by `mlsfNo` is untouched, pending a ruling on whether one MLS number may legitimately have several rows.

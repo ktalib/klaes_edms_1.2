@@ -184,16 +184,13 @@
                 // thing that tells two otherwise identical OP rows apart — both read
                 // "Occupancy Permit (OP)" from "Kano State Government", and only the
                 // plot shows that two separate properties are being combined.
-                var plot = r.plot_no
-                    ? '<span class="ml-2 align-middle rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ' + esc(r.plot_no) + '</span>'
-                    : '';
 
                 return ''
                     + '<li class="relative pl-6 pb-3 last:pb-0">'
                     +   '<span class="absolute left-0 top-1.5 h-2.5 w-2.5 rounded-full ' + ((r.is_op && needsTot) ? 'bg-rose-500' : ((r.is_op && isMatched) ? 'bg-emerald-500' : (r.is_op ? 'bg-amber-500' : (r.is_tot ? 'bg-blue-500' : 'bg-slate-300')))) + '"></span>'
                     +   '<div class="rounded-lg border ' + tone + ' px-3 py-2">'
                     +     '<div class="flex items-center justify-between gap-3">'
-                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + rot + plot + source + sysgen + '</span>'
+                    +       '<span class="text-xs font-bold text-slate-800">' + esc(r.type) + rot + source + sysgen + '</span>'
                     +       '<span class="text-[10px] text-slate-500 whitespace-nowrap">' + esc(r.date || '—') + '</span>'
                     +     '</div>'
                     +     '<div class="mt-1 text-[11px] text-slate-600">'
@@ -327,19 +324,15 @@
             // just because the transfer combining them now exists. state.roots carries
             // them in every state, from the same pra rows the merger is built from.
             var rootList = merger ? merger.grants : (state.roots || []);
+            var rootNames = rootList.map(function (g) { return g.holder || '—'; });
+            var rootNamesText = rootNames.length > 1
+                ? rootNames.slice(0, -1).join(', ') + ' and ' + rootNames[rootNames.length - 1]
+                : (rootNames[0] || '—');
 
             var rootBox = (rootList.length > 1)
                 ? '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'
                 +   '<div class="text-[10px] font-bold uppercase tracking-wider text-amber-700">Roots of title (' + rootList.length + ' Occupancy Permits)</div>'
-                +   '<div class="mt-1 flex flex-col gap-1">'
-                +     rootList.map(function (g) {
-                            return '<div class="flex items-center gap-2">'
-                                + (g.plot_no
-                                    ? '<span class="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide bg-violet-100 text-violet-700 border border-violet-200">Plot ' + esc(g.plot_no) + '</span>'
-                                    : '')
-                                + '<span class="text-xs font-bold text-amber-950">' + esc(g.holder || '—') + '</span>'
-                                + '</div>';
-                        }).join('')
+                +   '<div class="mt-1 text-xs font-bold leading-relaxed text-amber-950">' + esc(rootNamesText)
                 +   '</div>'
                 + '</div>'
                 : '<div class="flex-1 rounded-lg border border-amber-300 bg-amber-100/70 px-3 py-2">'

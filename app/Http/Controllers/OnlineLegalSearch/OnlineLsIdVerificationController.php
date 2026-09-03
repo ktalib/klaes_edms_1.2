@@ -17,7 +17,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Http\Response;
 
 /**
  * ID NAME verification for the public Online Legal Search payment card.
@@ -188,7 +188,7 @@ class OnlineLsIdVerificationController extends Controller
         int $id,
         string $side,
         LegalSearchApprovalService $approvalService
-    ): StreamedResponse {
+    ): Response {
         abort_unless(
             $approvalService->isApprover($request->user()),
             403,
@@ -207,10 +207,38 @@ class OnlineLsIdVerificationController extends Controller
         $disk = Storage::disk($this->disk());
         abort_unless($disk->exists($path), 404, 'The stored document is no longer available.');
 
-        // Inline, never as a download with the applicant's own filename.
-        return $disk->response($path, 'identification-' . $verification->id . '-' . $side, [
-            'Content-Disposition' => 'inline',
+        // Read the bytes and return a plain buffered response rather than
+        // Storage::response()'s StreamedResponse.
+        //
+        // WHY NOT STREAM: a StreamedResponse defers writing the body until after
+        // the framework has finished, which puts the raw bytes at the mercy of
+        // whatever sits between PHP and the browser - the built-in dev server
+        // used by `artisan serve`, output buffering, gzip filters, proxies. The
+        // body arrived byte-perfect inside the framework and still reached the
+        // browser as an undecodable image. A buffered response hands Symfony the
+        // complete body up front and removes that entire class of failure.
+        //
+        // WHY NOT A PUBLIC ASSET: these are government ID documents. Anything
+        // under public/ (or reachable via the storage:link symlink and asset())
+        // is served straight off disk by the web server, with no PHP and
+        // therefore no authorisation - the URL alone would be enough for anyone
+        // to read someone's NIN slip. That is exactly what the private disk and
+        // this approver-gated route exist to prevent, so serving these as assets
+        // is not an option regardless of how much simpler it would be.
+        //
+        // Memory is a non-issue: uploads are capped at 5MB by validation.
+        $contents = $disk->get($path);
+
+        abort_if($contents === null, 404, 'The stored document could not be read.');
+
+        return response($contents, 200, [
+            'Content-Type'           => $disk->mimeType($path) ?: 'application/octet-stream',
+            'Content-Length'         => (string) strlen($contents),
+            // Inline, and never under the applicant's own uploaded filename.
+            'Content-Disposition'    => 'inline; filename="identification-' . $verification->id . '-' . $side . '"',
             'X-Content-Type-Options' => 'nosniff',
+            // Private: a shared cache must never hold someone's ID document.
+            'Cache-Control'          => 'private, max-age=0, no-store',
         ]);
     }
 

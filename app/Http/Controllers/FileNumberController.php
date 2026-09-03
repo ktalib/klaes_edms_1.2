@@ -639,6 +639,10 @@ class FileNumberController extends Controller
                     'passport_url' => app(\App\Services\FilePassportService::class)
                         ->resolve($row->mlsfNo ?? $row->kangisFileNo ?? $row->NewKANGISFileNo ?? null)['url'] ?? null,
                     'root_of_title' => trim((string) ($row->derived_root_of_title ?? '')) ?: 'N/A',
+                    'is_root_of_title' => $this->isRootOfTitleFile(
+                        $row->derived_source ?? null,
+                        $row->derived_root_of_title ?? null
+                    ),
                     'related_old_fileno' => $this->formatRelatedOrOldFileNo(
                         $row->derived_related_fileno ?? null,
                         $row->derived_old_fileno ?? null
@@ -752,6 +756,10 @@ class FileNumberController extends Controller
                         'type'                        => 'Temporary',
                         'passport_url'                => $passportService->resolve($fileNo)['url'] ?? null,
                         'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
+                        'is_root_of_title'            => $this->isRootOfTitleFile(
+                            $row->source ?? null,
+                            $row->root_of_title ?? null
+                        ),
                         'related_old_fileno'          => $this->formatRelatedOrOldFileNo(null, $row->old_fileno ?? null),
                         'created_by'                  => trim($row->created_by ?? '') ?: 'System',
                         'source'                      => trim($row->source ?? '') ?: 'Temporary File',
@@ -824,6 +832,24 @@ class FileNumberController extends Controller
         }
 
         return number_format((float) $value, 6, '.', '');
+    }
+
+    /**
+     * Match the Root of Title decision used by Legal Search for commissioned files.
+     */
+    private function isRootOfTitleFile(?string $commissioningSource, ?string $indexedRoot): bool
+    {
+        if (trim((string) $indexedRoot) !== '') {
+            return true;
+        }
+
+        $source = strtolower(trim((string) preg_replace('/\s+/', ' ', (string) $commissioningSource)));
+
+        return $source === 'direct allocation'
+            || $source === 'allocation list'
+            || $source === 'op'
+            || str_starts_with($source, 'op ')
+            || str_contains($source, 'occupancy permit');
     }
 
     /**
@@ -906,6 +932,10 @@ class FileNumberController extends Controller
                 'type'                        => 'Plot Extension',
                 'passport_url'                => $passportService->resolve($fileNo)['url'] ?? null,
                 'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
+                'is_root_of_title'            => $this->isRootOfTitleFile(
+                    'Plot Extension',
+                    $row->root_of_title ?? null
+                ),
                 'related_old_fileno'          => ['value' => 'N/A', 'kind' => 'none'],
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
                 'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
@@ -2640,7 +2670,7 @@ class FileNumberController extends Controller
         DB::connection('sqlsrv')->beginTransaction();
         try {
             $totals = array_fill_keys(
-                ['fileNumber', 'mls_file_no', 'entities_staging', 'customers_staging', 'file_indexings', 'old_file_numbers'],
+                ['fileNumber', 'mls_file_no', 'entities_staging', 'customers_staging', 'file_indexings', 'old_file_numbers', 'oss_applications', 'file_tracking'],
                 0
             );
 
@@ -2661,8 +2691,8 @@ class FileNumberController extends Controller
                 'deleted_count' => $records->count(),
                 'batch_no' => $batchNo ?: null,
                 'message' => $records->count() > 1
-                    ? "Batch {$batchNo} deleted — {$records->count()} files purged from all 6 systems."
-                    : 'MLS record and all associated staging/indexing records deleted successfully from all 6 systems.',
+                    ? "Batch {$batchNo} deleted — {$records->count()} files purged from all 8 systems."
+                    : 'MLS record and all associated staging/indexing records deleted successfully from all 8 systems.',
                 'details' => [
                     'fileNumber_deleted' => $totals['fileNumber'],
                     'mls_file_no_deleted' => $totals['mls_file_no'],
@@ -2670,6 +2700,8 @@ class FileNumberController extends Controller
                     'customers_staging_deleted' => $totals['customers_staging'],
                     'file_indexings_deleted' => $totals['file_indexings'],
                     'old_file_numbers_deleted' => $totals['old_file_numbers'],
+                    'oss_applications_deleted' => $totals['oss_applications'],
+                    'file_tracking_deleted' => $totals['file_tracking'],
                 ]
             ]);
         } catch (\Exception $e) {
@@ -2809,6 +2841,7 @@ class FileNumberController extends Controller
             $totals = [
                 'fileNumber' => 0, 'mls_file_no' => 0, 'entities_staging' => 0,
                 'customers_staging' => 0, 'file_indexings' => 0, 'old_file_numbers' => 0,
+                'oss_applications' => 0, 'file_tracking' => 0,
             ];
             $perRecord = [];
 
@@ -2829,7 +2862,7 @@ class FileNumberController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => count($records) . ' file(s) deleted successfully across all 6 systems.',
+                'message' => count($records) . ' file(s) deleted successfully across all 8 systems.',
                 'deleted_count' => count($records),
                 'missing_ids' => $missingIds,
                 'skipped' => $skipped,
@@ -2928,7 +2961,79 @@ class FileNumberController extends Controller
             }
         }
 
-        // 6. fileNumber
+        // 6. oss_applications — commissioning PUBLISHES every MLS file here
+        // (MlsCommissioningOssApplicationService), and this table is what
+        // /lands-one-stop-shop/applications?type=no-change-of-name lists. Left behind, a
+        // master-deleted file kept appearing on that page with no record anywhere else:
+        // IND-2026-272 was purged from all six original tables and still showed there.
+        $deletedOssApplications = 0;
+        if (!empty($fileNumbersForStaging)) {
+            try {
+                $deletedOssApplications = DB::connection('sqlsrv')->table('oss_applications')
+                    ->whereIn('file_no', $fileNumbersForStaging)->delete();
+            } catch (\Exception $e) {
+                Log::warning('Could not purge oss_applications during master delete', [
+                    'fileNumber_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // 7. File tracking. `file_tracker` is keyed on the file number, and its rows survive
+        // as ACTIVE requests for a file that no longer exists — the five IND-2026-25x
+        // deletions each left one sitting in the SLTR department. Children are keyed on the
+        // tracker id, so they are resolved first; there are no FK constraints, so the order
+        // here is ours to choose rather than the database's.
+        $deletedTracking = 0;
+        if (!empty($fileNumbersForStaging)) {
+            try {
+                $trackerIds = DB::connection('sqlsrv')->table('file_tracker')
+                    ->whereIn('file_number', $fileNumbersForStaging)->pluck('id')->all();
+
+                if (!empty($trackerIds)) {
+                    foreach (['kangis_checkout_approvals', 'file_tracker_department_backfill'] as $childTable) {
+                        try {
+                            DB::connection('sqlsrv')->table($childTable)
+                                ->whereIn('file_tracker_id', $trackerIds)->delete();
+                        } catch (\Exception $e) {
+                            Log::warning("Could not purge {$childTable} during master delete", [
+                                'fileNumber_id' => $id,
+                                'error' => $e->getMessage(),
+                            ]);
+                        }
+                    }
+
+                    // An indexing_duplicates row is a record about INDEXING, not about the
+                    // tracking request, so the pointer is cleared rather than the row deleted.
+                    try {
+                        DB::connection('sqlsrv')->table('indexing_duplicates')
+                            ->whereIn('file_tracker_id', $trackerIds)
+                            ->update(['file_tracker_id' => null]);
+                    } catch (\Exception $e) {
+                        Log::warning('Could not clear indexing_duplicates.file_tracker_id during master delete', [
+                            'fileNumber_id' => $id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+
+                    $deletedTracking += DB::connection('sqlsrv')->table('file_tracker')
+                        ->whereIn('id', $trackerIds)->delete();
+                }
+
+                // Both are keyed on the file number directly and carry no children.
+                $deletedTracking += DB::connection('sqlsrv')->table('rds_tracking')
+                    ->whereIn('file_number', $fileNumbersForStaging)->delete();
+                $deletedTracking += DB::connection('sqlsrv')->table('digital_file_tracking_requests')
+                    ->whereIn('file_no', $fileNumbersForStaging)->delete();
+            } catch (\Exception $e) {
+                Log::warning('Could not purge file tracking during master delete', [
+                    'fileNumber_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // 8. fileNumber
         $deletedFileNumbers = DB::connection('sqlsrv')->table('fileNumber')
             ->where('id', $id)->delete();
         if ($mlsfNo !== '') {
@@ -2953,6 +3058,8 @@ class FileNumberController extends Controller
                 'customers_staging' => $deletedCustomers,
                 'file_indexings' => $deletedIndexings,
                 'old_file_numbers' => $deletedOldFileNumbers,
+                'oss_applications' => $deletedOssApplications,
+                'file_tracking' => $deletedTracking,
             ],
         ];
     }
@@ -2976,7 +3083,7 @@ class FileNumberController extends Controller
                 $id,
                 $result['snapshot'],
                 null,
-                "{$prefix} executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$c['fileNumber']} rows), mls_file_no ({$c['mls_file_no']} rows), entities_staging ({$c['entities_staging']} rows), customers_staging ({$c['customers_staging']} rows), file_indexings ({$c['file_indexings']} rows), old_file_numbers ({$c['old_file_numbers']} rows)."
+                "{$prefix} executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$c['fileNumber']} rows), mls_file_no ({$c['mls_file_no']} rows), entities_staging ({$c['entities_staging']} rows), customers_staging ({$c['customers_staging']} rows), file_indexings ({$c['file_indexings']} rows), old_file_numbers ({$c['old_file_numbers']} rows), oss_applications ({$c['oss_applications']} rows), file tracking ({$c['file_tracking']} rows)."
             );
         } catch (\Exception $auditEx) {
             \Log::warning("AuditLog failed during MLS master delete: " . $auditEx->getMessage());

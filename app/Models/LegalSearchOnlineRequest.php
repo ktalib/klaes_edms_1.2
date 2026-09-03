@@ -61,6 +61,41 @@ class LegalSearchOnlineRequest extends Model
         return $this->belongsTo(LegalSearchOnlinePayment::class, 'payment_id');
     }
 
+    /**
+     * Every request opened by the same payment, primary file first — i.e. the
+     * whole multi-file basket this request belongs to, itself included.
+     *
+     * A payment covering N files opens N of these rows (see
+     * LegalSearchApprovalService::openRequest — idempotent per payment+file, not
+     * per payment), each with its own report and its own approve/reject
+     * lifecycle. This is what lets an email or an admin screen say "file 2 of 3"
+     * instead of reading as an unexplained duplicate.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, self>
+     */
+    public function basketSiblings(): \Illuminate\Database\Eloquent\Collection
+    {
+        if (empty($this->payment_id)) {
+            return new \Illuminate\Database\Eloquent\Collection([$this]);
+        }
+
+        return static::where('payment_id', $this->payment_id)->orderBy('id')->get();
+    }
+
+    /** How many files the payment behind this request covers. */
+    public function basketSize(): int
+    {
+        return $this->basketSiblings()->count();
+    }
+
+    /** This request's position in its basket (1-based), for "file 2 of 3" wording. */
+    public function basketPosition(): int
+    {
+        $position = $this->basketSiblings()->search(fn ($r) => $r->id === $this->id);
+
+        return $position === false ? 1 : $position + 1;
+    }
+
     public function searchPurpose(): BelongsTo
     {
         return $this->belongsTo(OnlineLsSearchPurpose::class, 'purpose_id');

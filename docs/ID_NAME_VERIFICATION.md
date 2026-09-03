@@ -397,6 +397,35 @@ it with a better photo) from "OCR itself broke" (they cannot).
 
 ---
 
+## "The uploaded image / report preview isn't displaying" in admin
+
+Both the identification image (`legal-search-online.admin.verifications.document`) and
+the report preview (`legal-search-online.admin.requests.preview`, opened via "Preview
+report" on the correct/edit screen) are gated by the same
+`LegalSearchApprovalService::isApprover()` check that guards approve/decline. The
+requests **queue** and the admin **dashboard** are not — anyone signed in can see those,
+with a banner noting they cannot approve. That split is exactly the symptom of an account
+that can see everything else but gets a blank image or a 403 on these two screens
+specifically: their `assign_role`/`rank` doesn't satisfy `config('legal_search.online_approval')`.
+
+Diagnose directly rather than guessing:
+
+```bash
+php artisan ols:id-verification-doctor --user=<id-or-email>
+```
+
+Step 9 prints that account's `assign_role` and `rank` and states plainly whether it
+passes, and step 8 separately proves the storage read path itself works by streaming
+back the most recently submitted identification image the same way `document()` does —
+so a failure there points at storage/disk configuration instead, not authorization.
+
+The identification page (`identification.blade.php`) also probes its own `<img>` with a
+JS `fetch()` on load and replaces a silent broken-image icon with the actual HTTP status
+and a plain-English reason (401 / 403 / 404 / 500) — open the browser console or just
+read the page if this ever recurs.
+
+---
+
 ## Tests
 
 ```bash

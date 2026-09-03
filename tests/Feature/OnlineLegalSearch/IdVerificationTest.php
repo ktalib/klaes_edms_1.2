@@ -480,6 +480,64 @@ class IdVerificationTest extends TestCase
     }
 
     /**
+     * A second call to /payment/verify for a reference already marked paid takes
+     * the idempotent "already_paid" branch, which is a genuinely different code
+     * path from the fresh-payment branch above (a refreshed page, a retried
+     * Paystack callback, or a double-clicked Pay button all land here). Before
+     * this was fixed, that branch never linked payment_id — a verification whose
+     * ONLY successful verify call went through it stayed unlinked forever, making
+     * it invisible to both the admin "View IYC" screen and the applicant's own
+     * read-only summary, which both resolve the verification via payment_id.
+     */
+    public function test_verification_is_linked_to_payment_even_via_the_already_paid_branch(): void
+    {
+        $purpose = OnlineLsSearchPurpose::active()->first();
+
+        if (!$purpose) {
+            $this->markTestSkipped('No active Online Legal Search purpose is configured in this database.');
+        }
+
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+        $this->submit()->assertOk()->assertJson(['status' => 'verified']);
+
+        Http::fake([
+            '*/transaction/verify/*' => Http::response([
+                'status' => true,
+                'data'   => [
+                    'status'   => 'success',
+                    'amount'   => 1000000,
+                    'customer' => ['email' => 'applicant@example.com'],
+                ],
+            ], 200),
+        ]);
+
+        $reference = 'test-ref-already-paid-' . uniqid();
+        $payload = [
+            'reference'   => $reference,
+            'email'       => 'applicant@example.com',
+            'purpose_id'  => $purpose->id,
+            'file_number' => self::FILE_NUMBER,
+        ];
+
+        // First call: fresh payment, marks it paid.
+        $this->postJson(route('ols.payment.verify'), $payload)->assertOk();
+
+        // Second call, same reference: the idempotent "already_paid" branch.
+        $this->postJson(route('ols.payment.verify'), $payload)
+            ->assertOk()
+            ->assertJson(['success' => true, 'already_paid' => true]);
+
+        $payment = LegalSearchOnlinePayment::where('reference', $reference)->firstOrFail();
+        $verification = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+
+        $this->assertSame(
+            (int) $payment->id,
+            (int) $verification->payment_id,
+            'The already-paid branch must link the verification to the payment too, not only the fresh-payment branch.'
+        );
+    }
+
+    /**
      * A signed-in user who is not an approver cannot read a submitted document.
      *
      * This is the "one applicant cannot reach another applicant's ID" guarantee:
@@ -509,6 +567,56 @@ class IdVerificationTest extends TestCase
                 'id' => $row->id, 'side' => 'front',
             ]))
             ->assertForbidden();
+    }
+
+    /**
+     * An approver gets back bytes a browser can actually decode.
+     *
+     * Asserting only the status code is not enough here: the bug this guards
+     * returned a perfectly good 200 with an image content-type whose body did not
+     * survive the trip to the browser, so the image rendered as a broken icon. The
+     * JPEG magic number at both ends is what proves the body is intact and
+     * complete, which is the part that actually regressed.
+     */
+    public function test_an_approver_receives_intact_image_bytes(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+        $this->submit()->assertOk();
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+
+        $approver = User::where('assign_role', 'Supper Admin')->first();
+
+        if (!$approver) {
+            $this->markTestSkipped('No approver account is available in this database.');
+        }
+
+        $response = $this->actingAs($approver)
+            ->get(route('legal-search-online.admin.verifications.document', [
+                'id' => $row->id, 'side' => 'front',
+            ]));
+
+        $response->assertOk();
+        $this->assertStringStartsWith('image/', (string) $response->headers->get('Content-Type'));
+
+        $body = $response->getContent();
+
+        $this->assertNotSame('', $body, 'The document response body must not be empty.');
+        $this->assertSame(
+            "\xFF\xD8",
+            substr($body, 0, 2),
+            'The body must start with the JPEG start-of-image marker — a truncated or wrapped body will not render.'
+        );
+        $this->assertSame(
+            "\xFF\xD9",
+            substr($body, -2),
+            'The body must end with the JPEG end-of-image marker, proving nothing was appended or cut off.'
+        );
+        $this->assertSame(
+            strlen($body),
+            (int) $response->headers->get('Content-Length'),
+            'Content-Length must match the bytes actually sent.'
+        );
     }
 
     // ---- Customer type & Call-to-Bar ---------------------------------------

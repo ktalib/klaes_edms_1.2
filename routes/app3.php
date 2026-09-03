@@ -1253,6 +1253,24 @@ Route::middleware(['auth'])->group(function () {
     Route::post('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'store'])->name('land-recommendations.batch-document.store');
     Route::get('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'show'])->name('land-recommendations.batch-document.show');
     Route::delete('land-recommendations/batch/{batchId}/document', [\App\Http\Controllers\LandRecommendationBatchDocumentController::class, 'destroy'])->name('land-recommendations.batch-document.destroy');
+    // OP → File Property ID Matching. The FILE is the control record: the officer
+    // loads its Property ID on the left, finds the Occupancy Permits that belong to it
+    // on the right (by serial, because that is what is printed on the permit), and
+    // Batch Match moves every ticked permit onto the file's Property ID. Separate from
+    // the OP-holder Match below, which is about a missing transfer, not a scattered
+    // parcel id. Every write is recorded in op_propid_matches so a batch can be undone.
+    Route::prefix('op-propid-match')->name('op-propid-match.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\OpPropIdMatchController::class, 'index'])->name('index');
+        // The file itself is chosen through the shared Global File Number Selector, so
+        // this page has no file-search endpoint of its own — only the load of the one
+        // the picker returned.
+        Route::get('/file', [\App\Http\Controllers\OpPropIdMatchController::class, 'fileTarget'])->name('file');
+        Route::get('/ops', [\App\Http\Controllers\OpPropIdMatchController::class, 'searchOps'])->name('ops');
+        Route::post('/batch', [\App\Http\Controllers\OpPropIdMatchController::class, 'batchMatch'])->name('batch');
+        Route::get('/batches', [\App\Http\Controllers\OpPropIdMatchController::class, 'recentBatches'])->name('batches');
+        Route::post('/undo', [\App\Http\Controllers\OpPropIdMatchController::class, 'undoBatch'])->name('undo');
+    });
+
     // OP-holder Match. A file whose Occupancy Permit names one holder while File
     // Indexing names another, with no transfer explaining the change, is offered a
     // Match on the capture form: it writes the missing Transfer of Title, and the

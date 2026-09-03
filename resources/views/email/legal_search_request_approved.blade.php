@@ -7,6 +7,23 @@
         <strong>Approved.</strong> Your Online Legal Search request has been approved and the report is attached to this email as a PDF.
     </div>
 
+    @if($searchRequest->basketSize() > 1)
+        <div class="info-box" style="background:#eff6ff;border:1px solid #bfdbfe;">
+            <strong>This is file {{ $searchRequest->basketPosition() }} of {{ $searchRequest->basketSize() }} from your request.</strong>
+            You paid for {{ $searchRequest->basketSize() }} files in one transaction; each is approved and emailed separately, so this
+            attachment covers <strong>only {{ $searchRequest->file_number ?: 'this file' }}</strong>.
+            <table class="details" style="margin-top:10px;">
+                @foreach($searchRequest->basketSiblings() as $sibling)
+                    <tr>
+                        <td>{{ $sibling->file_number ?: '—' }}</td>
+                        <td><strong>{{ $sibling->request_no }}</strong>@if($sibling->id === $searchRequest->id) &nbsp;(this email) @endif</td>
+                        <td style="text-transform:capitalize;">{{ $sibling->status }}</td>
+                    </tr>
+                @endforeach
+            </table>
+        </div>
+    @endif
+
     <h3>Request Details</h3>
     <table class="details">
         <tr>
