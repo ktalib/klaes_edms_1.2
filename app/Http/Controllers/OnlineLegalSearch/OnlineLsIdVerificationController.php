@@ -5,6 +5,7 @@ namespace App\Http\Controllers\OnlineLegalSearch;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\OnlineLegalSearch\StoreIdVerificationRequest;
 use App\Models\LegalSearchOnlineVerification;
+use App\Services\CallToBarVerificationService;
 use App\Services\IdNameVerificationService;
 use App\Services\LegalSearchApprovalService;
 use App\Services\Ocr\OcrException;
@@ -37,6 +38,7 @@ class OnlineLsIdVerificationController extends Controller
 {
     public function __construct(
         private readonly IdNameVerificationService $nameVerification,
+        private readonly CallToBarVerificationService $barVerification,
         private readonly OcrReader $ocr,
         private readonly OcrImagePreprocessor $preprocessor,
     ) {
@@ -96,7 +98,7 @@ class OnlineLsIdVerificationController extends Controller
                 'status' => LegalSearchOnlineVerification::STATUS_PENDING,
                 'score'  => 0,
                 'extracted_text' => '',
-            ], $request);
+            ], $this->barVerification->check($data['call_to_bar_number'] ?? null, '', ''), $request);
 
             return $this->outcome(
                 LegalSearchOnlineVerification::STATUS_PENDING,
@@ -112,7 +114,7 @@ class OnlineLsIdVerificationController extends Controller
                 'status' => LegalSearchOnlineVerification::STATUS_FAILED,
                 'score'  => 0,
                 'extracted_text' => '',
-            ], $request);
+            ], $this->barVerification->check($data['call_to_bar_number'] ?? null, '', ''), $request);
 
             return $this->outcome(
                 LegalSearchOnlineVerification::STATUS_FAILED,
@@ -123,13 +125,53 @@ class OnlineLsIdVerificationController extends Controller
 
         $result = $this->nameVerification->compare($data['applicant_full_name'], $extractedText);
 
-        $this->persist($verification, $data, $frontPath, $result, $request);
+        // A lawyer's Call-to-Bar number is checked against the same OCR text, and
+        // against a roll of practitioners if one is configured. For an individual
+        // there is no number and this returns `not_applicable`.
+        $bar = $this->barVerification->check(
+            $data['call_to_bar_number'] ?? null,
+            $extractedText,
+            $data['applicant_full_name']
+        );
+
+        // A number the roll positively REJECTS pulls a passing name match down to
+        // `review` — a human decides. Nothing else about the bar number moves the
+        // status: `unconfirmed` is the ordinary outcome for a genuine lawyer whose
+        // ID simply does not print the number, and failing on it would stop every
+        // lawyer from completing a search.
+        if ($bar['status'] === CallToBarVerificationService::STATUS_REJECTED
+            && $result['status'] === LegalSearchOnlineVerification::STATUS_VERIFIED) {
+            $result['status'] = LegalSearchOnlineVerification::STATUS_REVIEW;
+        }
+
+        $this->persist($verification, $data, $frontPath, $result, $bar, $request);
 
         return $this->outcome(
             $result['status'],
             $result['score'],
-            (string) config('id_verification.messages.' . $result['status'], config('id_verification.messages.failed'))
+            $this->messageFor($result['status'], $bar)
         );
+    }
+
+    /**
+     * The applicant-facing sentence, with the lawyer's bar-number outcome appended
+     * where there is something worth saying about it.
+     */
+    private function messageFor(string $status, array $bar): string
+    {
+        $message = (string) config(
+            'id_verification.messages.' . $status,
+            config('id_verification.messages.failed')
+        );
+
+        $suffix = match ($bar['status']) {
+            CallToBarVerificationService::STATUS_MATCHED     => config('id_verification.messages.bar_matched'),
+            CallToBarVerificationService::STATUS_UNCONFIRMED => config('id_verification.messages.bar_unconfirmed'),
+            CallToBarVerificationService::STATUS_REJECTED    => config('id_verification.messages.bar_rejected'),
+            default => null,
+        };
+
+        return $suffix ? trim($message . ' ' . $suffix) : $message;
     }
 
     /**
@@ -247,6 +289,7 @@ class OnlineLsIdVerificationController extends Controller
         array $data,
         string $frontPath,
         array $result,
+        array $bar,
         Request $request
     ): LegalSearchOnlineVerification {
         $verified = $result['status'] === LegalSearchOnlineVerification::STATUS_VERIFIED;
@@ -259,6 +302,11 @@ class OnlineLsIdVerificationController extends Controller
             'file_number'               => $data['file_number'],
             'requester_email'           => $data['email'],
             'session_token'             => $token,
+            'customer_type'             => $data['customer_type'],
+            // Stored normalised, so "SCN 123456" and "scn-123456" are one value on
+            // the record and a reviewer is not comparing formatting.
+            'call_to_bar_number'        => $bar['normalized'] !== '' ? $bar['normalized'] : null,
+            'bar_number_status'         => $bar['status'],
             'applicant_full_name'       => $data['applicant_full_name'],
             'applicant_phone'           => $data['applicant_phone'],
             'applicant_address'         => $data['applicant_address'],

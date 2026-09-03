@@ -76,6 +76,23 @@ class LegalSearchOnlineRequest extends Model
         return $query->where('status', self::STATUS_PENDING);
     }
 
+    /**
+     * The identification behind this request.
+     *
+     * Resolved through the PAYMENT, not through request_id: a multi-file payment
+     * opens several requests but carries one identification, and only the first
+     * request gets the direct back-link. Going via the payment means every file in
+     * the basket resolves to the same, correct record.
+     */
+    public function verification(): ?LegalSearchOnlineVerification
+    {
+        if (empty($this->payment_id)) {
+            return null;
+        }
+
+        return LegalSearchOnlineVerification::where('payment_id', $this->payment_id)->first();
+    }
+
     public function isPending(): bool
     {
         return $this->status === self::STATUS_PENDING;

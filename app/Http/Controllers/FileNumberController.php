@@ -471,6 +471,13 @@ class FileNumberController extends Controller
                     fn.id, fn.kangisFileNo, fn.mlsfNo, fn.NewKANGISFileNo, fn.FileName,
                     fn.st_file_no, fn.plot_no, fn.tp_no, fn.location, fn.tracking_id,
                     fn.type, fn.created_at, fn.SOURCE,
+                    -- The Edit modal's file-number field lands in one of two places
+                    -- depending on its \"Old File Number\" checkbox, so the column has to
+                    -- read both: related_fileno is a JSON array on fileNumber, old_fileno
+                    -- a plain string on mls_file_no.
+                    fn.related_fileno                         AS derived_related_fileno,
+                    mls.old_fileno                            AS derived_old_fileno,
+                    rot.root_of_title                         AS derived_root_of_title,
                     mls.batch_no                              AS derived_batch_no,
                     mls.land_use                              AS derived_land_use,
                     mls.customer_type                         AS derived_customer_type,
@@ -494,7 +501,8 @@ class FileNumberController extends Controller
                 OUTER APPLY (
                     SELECT TOP 1
                         m.batch_no, m.land_use, m.customer_type, m.commissioning_date, m.created_at,
-                        m.source, m.source_instrument_capture_id, m.lga, m.district, m.created_by, m.purpose_id
+                        m.source, m.source_instrument_capture_id, m.lga, m.district, m.created_by, m.purpose_id,
+                        m.old_fileno
                     FROM mls_file_no m
                     WHERE m.full_file_number = fn.mlsfNo
                     ORDER BY m.id DESC
@@ -522,6 +530,18 @@ class FileNumberController extends Controller
                       AND fi.latitude IS NOT NULL AND fi.longitude IS NOT NULL
                     ORDER BY fi.id DESC
                 ) AS geo
+                -- Root of Title. Hand-keyed on the File Indexing form and held only on
+                -- file_indexings, so it has to be read across every number the file may be
+                -- indexed under. Rows that carry no value are skipped rather than winning
+                -- the TOP 1 with a NULL.
+                OUTER APPLY (
+                    SELECT TOP 1 fi.root_of_title
+                    FROM file_indexings fi
+                    WHERE fi.file_number IN (fn.mlsfNo, fn.kangisFileNo, fn.NewKANGISFileNo, fn.st_file_no)
+                      AND fi.root_of_title IS NOT NULL
+                      AND LTRIM(RTRIM(fi.root_of_title)) != ''
+                    ORDER BY fi.id DESC
+                ) AS rot
                 OUTER APPLY (
                     SELECT STUFF((
                         SELECT ', ' + dl.related_file_number
@@ -569,6 +589,23 @@ class FileNumberController extends Controller
                 }
             }
 
+            // Passports are stored as `scannings` rows joined through file_indexings, so
+            // resolving one per row would be a query per row. prime() reads the whole page
+            // in one go and fills the service's cache; resolve() below is then free.
+            try {
+                app(\App\Services\FilePassportService::class)->prime(
+                    collect($fileRows)
+                        ->flatMap(fn ($r) => [$r->mlsfNo ?? null, $r->kangisFileNo ?? null, $r->NewKANGISFileNo ?? null])
+                        ->filter(fn ($v) => trim((string) $v) !== '')
+                        ->unique()
+                        ->values()
+                        ->all()
+                );
+            } catch (\Throwable $e) {
+                // A missing photo must never take the listing down.
+                Log::warning('Could not prime passports for the file-number list', ['error' => $e->getMessage()]);
+            }
+
             // ── Format F rows into a map keyed by fileNumber.id ──
             $fileMap = collect($fileRows)->map(function ($row) {
                 // Build primaryFileNo: first non-empty of mlsfNo, kangisFileNo, NewKANGISFileNo, st_file_no
@@ -597,6 +634,15 @@ class FileNumberController extends Controller
 
                 return [
                     'id' => $row->id,
+                    // Passport, Root of Title and the Related/Old file number, as shown on
+                    // the Edit modal. Resolved from the page-wide cache primed above.
+                    'passport_url' => app(\App\Services\FilePassportService::class)
+                        ->resolve($row->mlsfNo ?? $row->kangisFileNo ?? $row->NewKANGISFileNo ?? null)['url'] ?? null,
+                    'root_of_title' => trim((string) ($row->derived_root_of_title ?? '')) ?: 'N/A',
+                    'related_old_fileno' => $this->formatRelatedOrOldFileNo(
+                        $row->derived_related_fileno ?? null,
+                        $row->derived_old_fileno ?? null
+                    ),
                     'primaryFileNo' => $primaryFileNo,
                     'relatedFileNo' => $relatedFileNo,
                     'mlsfNo' => trim($row->mlsfNo ?? '') ?: 'N/A',
@@ -642,10 +688,19 @@ class FileNumberController extends Controller
                     "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
                             m.plot_no, m.tp_no, m.location, m.lga, m.district, m.tracking_id,
                             m.created_by, m.commissioning_date, m.created_at, m.source,
-                            m.batch_no, p.name AS purpose_name,
+                            m.batch_no, m.old_fileno, p.name AS purpose_name,
+                            rot.root_of_title,
                             geo.latitude, geo.longitude
                      FROM mls_file_no m
                      LEFT JOIN purposes p ON p.id = m.purpose_id
+                     OUTER APPLY (
+                         SELECT TOP 1 fi.root_of_title
+                         FROM file_indexings fi
+                         WHERE fi.file_number = m.full_file_number
+                           AND fi.root_of_title IS NOT NULL
+                           AND LTRIM(RTRIM(fi.root_of_title)) != ''
+                         ORDER BY fi.id DESC
+                     ) AS rot
                      OUTER APPLY (
                          SELECT TOP 1 fi.latitude, fi.longitude
                          FROM file_indexings fi
@@ -655,6 +710,9 @@ class FileNumberController extends Controller
                      ) AS geo
                      WHERE m.id IN ({$tempInList})"
                 );
+
+                $passportService = app(\App\Services\FilePassportService::class);
+                $passportService->prime(collect($tempRows)->pluck('full_file_number')->filter()->all());
 
                 foreach ($tempRows as $row) {
                     $fileNo = trim($row->full_file_number ?? '');
@@ -666,7 +724,7 @@ class FileNumberController extends Controller
                             <i data-lucide="more-horizontal" class="w-5 h-5 text-slate-500"></i>
                         </button>
                         <div class="action-dropdown-menu"><div class="py-1">
-                            <button onclick="editRecord(' . $id . ')" class="w-full text-left px-4 py-2.5 text-sm flex items-center space-x-3 text-slate-700 hover:bg-slate-50">
+                            <button onclick="editRecord(' . $id . ', \'Temporary\')" class="w-full text-left px-4 py-2.5 text-sm flex items-center space-x-3 text-slate-700 hover:bg-slate-50">
                                 <i data-lucide="pencil" class="w-4 h-4 text-slate-500"></i>
                                 <span class="font-medium">Edit Record</span>
                             </button>
@@ -692,6 +750,9 @@ class FileNumberController extends Controller
                         'district'                    => trim($row->district ?? '') ?: 'N/A',
                         'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
                         'type'                        => 'Temporary',
+                        'passport_url'                => $passportService->resolve($fileNo)['url'] ?? null,
+                        'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
+                        'related_old_fileno'          => $this->formatRelatedOrOldFileNo(null, $row->old_fileno ?? null),
                         'created_by'                  => trim($row->created_by ?? '') ?: 'System',
                         'source'                      => trim($row->source ?? '') ?: 'Temporary File',
                         'source_instrument_capture_id'=> null,
@@ -792,9 +853,18 @@ class FileNumberController extends Controller
             "SELECT pe.id, pe.original_file_no, pe.file_name, pe.land_use, pe.customer_type,
                     pe.plot_no, pe.tp_no, pe.location, pe.lga, pe.district, pe.tracking_id,
                     pe.created_by, pe.created_at, p.name AS purpose_name,
+                    rot.root_of_title,
                     geo.latitude, geo.longitude
              FROM plot_extensions pe
              LEFT JOIN purposes p ON p.id = pe.purpose_id
+             OUTER APPLY (
+                 SELECT TOP 1 fi.root_of_title
+                 FROM file_indexings fi
+                 WHERE fi.file_number = pe.original_file_no
+                   AND fi.root_of_title IS NOT NULL
+                   AND LTRIM(RTRIM(fi.root_of_title)) != ''
+                 ORDER BY fi.id DESC
+             ) AS rot
              OUTER APPLY (
                  SELECT TOP 1 fi.latitude, fi.longitude
                  FROM file_indexings fi
@@ -808,7 +878,10 @@ class FileNumberController extends Controller
             $bindings
         );
 
-        return collect($rows)->map(function ($row) {
+        $passportService = app(\App\Services\FilePassportService::class);
+        $passportService->prime(collect($rows)->pluck('original_file_no')->filter()->all());
+
+        return collect($rows)->map(function ($row) use ($passportService) {
             $fileNo = trim($row->original_file_no ?? '');
             $actionHtml = '<span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800" title="Plot Extension transaction">Plot Extension</span>';
 
@@ -831,6 +904,9 @@ class FileNumberController extends Controller
                 'district'                    => trim($row->district ?? '') ?: 'N/A',
                 'tracking_id'                 => trim($row->tracking_id ?? '') ?: 'N/A',
                 'type'                        => 'Plot Extension',
+                'passport_url'                => $passportService->resolve($fileNo)['url'] ?? null,
+                'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
+                'related_old_fileno'          => ['value' => 'N/A', 'kind' => 'none'],
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
                 'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
                 'created_by'                  => trim($row->created_by ?? '') ?: 'System',
@@ -1540,6 +1616,54 @@ class FileNumberController extends Controller
                 ]);
             }
 
+            // Temporary files exist ONLY in mls_file_no — the list's "T" branch takes its
+            // id straight from that table, and those ids collide with fileNumber's. Left
+            // unhandled, a temporary row loaded a different file into the edit form and
+            // then saved over it: temporary RES-1993-2644(T) is mls_file_no id 1166, and
+            // fileNumber 1166 is the unrelated live file CON-AG-1987-57.
+            if (\App\Support\MlsRowTarget::entity($request->query('entity')) === \App\Support\MlsRowTarget::TEMPORARY) {
+                $temp = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->where('id', $id)
+                    ->where(function ($q) {
+                        $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                    })
+                    ->first();
+
+                if (!$temp) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Record not found'
+                    ], 404);
+                }
+
+                return response()->json([
+                    'id'             => $temp->id,
+                    'entity'         => \App\Support\MlsRowTarget::TEMPORARY,
+                    'mlsfNo'         => $temp->full_file_number,
+                    'kangisFileNo'   => null,
+                    'FileName'       => $temp->file_name,
+                    'plot_no'        => $temp->plot_no,
+                    'tp_no'          => $temp->tp_no,
+                    'location'       => $temp->location,
+                    'lga'            => $temp->lga,
+                    'district'       => $temp->district,
+                    'customer_type'  => $temp->customer_type,
+                    'purpose_id'     => $temp->purpose_id,
+                    'phone_no'       => $temp->phone_no,
+                    'address'        => $temp->address,
+                    'rep_phone_no'   => $temp->rep_phone_no,
+                    'rep_address'    => $temp->rep_address,
+                    'related_fileno' => null,
+                    'old_fileno'     => $temp->old_fileno,
+                    // A temporary file is never batched — it has no fileNumber row to group.
+                    'batch_no'       => null,
+                    'batch_count'    => 1,
+                    'passport_url'   => app(\App\Services\FilePassportService::class)
+                        ->resolve($temp->full_file_number ?? null)['url'] ?? null,
+                ]);
+            }
+
             $record = DB::connection('sqlsrv')
                 ->table('fileNumber')
                 ->leftJoin('mls_file_no', 'fileNumber.mlsfNo', '=', 'mls_file_no.full_file_number')
@@ -1605,6 +1729,21 @@ class FileNumberController extends Controller
                 }
             }
 
+            // The list draws a whole batch as ONE row labelled with a range, so the edit
+            // form has to say which single file it is about to write and offer to cover
+            // the rest. Without this the user edits COM-2026-84 believing they edited
+            // COM-2026-78 … COM-2026-84.
+            $batchService = app(\App\Services\FileNumber\BatchExpansionService::class);
+            $batchNo = $batchService->batchNoFor($record);
+            $batchMembers = $batchNo !== '' ? $batchService->members($batchNo) : collect();
+
+            $record->entity = \App\Support\MlsRowTarget::FILE_NUMBER;
+            $record->batch_no = $batchNo ?: null;
+            $record->batch_count = max(1, $batchMembers->count());
+            $record->batch_range = $batchMembers->count() > 1
+                ? $batchService->describeRange($batchMembers)
+                : null;
+
             return response()->json($record);
 
         } catch (\Exception $e) {
@@ -1637,6 +1776,13 @@ class FileNumberController extends Controller
             'rep_address' => 'nullable|string|max:255',
             'related_fileno' => 'nullable|string|max:255',
             'is_old_fileno' => 'nullable|boolean',
+            // Batch scope. A batch row stands for N files; `apply_to_batch` opts into
+            // writing all of them, and `batch_no` is verified against the record itself
+            // before it is expanded (see BatchExpansionService::resolveFor).
+            'batch_no' => 'nullable|string|max:100',
+            'apply_to_batch' => 'nullable|boolean',
+            'confirm_batch_divergence' => 'nullable|boolean',
+            'confirm_transaction_change' => 'nullable|boolean',
             // Replacement passport photograph. Optional on edit — an edit that does not
             // touch the photo leaves whatever is already filed untouched. Same limits as
             // the commissioning form so a photo accepted there is accepted here.
@@ -1652,10 +1798,19 @@ class FileNumberController extends Controller
         }
 
         try {
+            $entity = \App\Support\MlsRowTarget::entity($request->input('entity'));
+
+            // Temporary files live only in mls_file_no and their ids collide with
+            // fileNumber's, so they get their own save path for the same reason plot
+            // extensions do — see updateTemporaryFile().
+            if ($entity === \App\Support\MlsRowTarget::TEMPORARY) {
+                return $this->updateTemporaryFile($request, $id);
+            }
+
             // Plot Extension rows are stored in their own table with colliding ids.
             // Route the update to plot_extensions so the edit modal saves back to the
             // correct record instead of a same-id fileNumber row.
-            if ($request->input('entity') === 'plot_extension') {
+            if ($entity === \App\Support\MlsRowTarget::PLOT_EXTENSION) {
                 $pe = DB::connection('sqlsrv')
                     ->table('plot_extensions')
                     ->where('id', $id)
@@ -1742,12 +1897,239 @@ class FileNumberController extends Controller
                 ], 404);
             }
 
-            // Prepare update data
-            $updateData = [
-                'FileName' => $request->file_name,
-                'updated_by' => Auth::user()->name ?? Auth::user()->email ?? 'System',
-                'updated_at' => now()
-            ];
+            // ── Which files does this save cover? ──
+            //
+            // The list collapses a batch into ONE row carrying the id of its newest
+            // member, so "edit the batch" and "edit this file" look identical on screen.
+            // Default to the single clicked file — an unwanted single edit is easy to
+            // undo, an unwanted batch-wide one is not — and let the user opt in.
+            $applyToBatch = $request->boolean('apply_to_batch');
+            $targets = collect([$record]);
+            $batchNo = '';
+
+            if ($applyToBatch) {
+                $batchService = app(\App\Services\FileNumber\BatchExpansionService::class);
+                $resolved = $batchService->resolveFor($record, $request->input('batch_no'));
+
+                if (!$resolved['ok']) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => $resolved['message'],
+                    ], 422);
+                }
+
+                $targets = $resolved['members'];
+                $batchNo = $batchService->batchNoFor($record);
+
+                // Most batches are one allocation and agree on every field, but ~1 in 5
+                // genuinely differ per file. Flattening those is silent and irreversible,
+                // so show the competing values and make the user say yes.
+                if (!$request->boolean('confirm_batch_divergence')) {
+                    $divergent = \App\Support\BatchDivergence::detect(
+                        $targets,
+                        $this->submittedWatchedFields($request),
+                        self::BATCH_COLUMN_MAP
+                    );
+
+                    if (!empty($divergent)) {
+                        return response()->json([
+                            'success' => false,
+                            'requires_batch_confirmation' => true,
+                            'divergent' => $divergent,
+                            'batch_count' => $targets->count(),
+                            'message' => \App\Support\BatchDivergence::summarise($divergent, $targets->count()),
+                        ], 409);
+                    }
+                }
+            }
+
+            // ── Does the name change need confirming? ──
+            //
+            // A name is not just a label on this screen: it is mirrored onto the customer,
+            // entity and indexing records below. On a file that already has transactions
+            // that is a consequential rewrite, so it is gated — the front end already
+            // knows how to answer this (submitEditForm re-posts with the flag).
+            $newName = trim((string) $request->file_name);
+            $nameChangedAnywhere = $targets->contains(
+                fn ($t) => trim((string) ($t->FileName ?? '')) !== $newName
+            );
+
+            if ($nameChangedAnywhere && !$request->boolean('confirm_transaction_change')) {
+                if ($this->targetsHaveTransactions($targets)) {
+                    return response()->json([
+                        'success' => false,
+                        'requires_confirmation' => true,
+                        'message' => $targets->count() > 1
+                            ? "This batch has recorded transactions. Changing the name will also update the name on the linked customer, entity and file indexing records for all {$targets->count()} files. Do you want to continue?"
+                            : 'This file has recorded transactions. Changing the name will also update the name on the linked customer, entity and file indexing records. Do you want to continue?',
+                    ], 409);
+                }
+            }
+
+            // Every file in the batch moves together or not at all.
+            $connection = DB::connection('sqlsrv');
+            $connection->beginTransaction();
+
+            try {
+                foreach ($targets as $target) {
+                    $this->applyFileNumberEdit($request, $target, (int) $target->id === (int) $record->id);
+                }
+
+                $connection->commit();
+            } catch (\Exception $e) {
+                $connection->rollBack();
+                throw $e;
+            }
+
+            // The photograph belongs to the file that was opened, not to its batch
+            // siblings — a batch shares an allocation, not an applicant's passport.
+            $passportUpload = $this->storePassportIfSent(
+                $request,
+                $record->mlsfNo ?? $record->kangisFileNo ?? $record->NewKANGISFileNo ?? null
+            );
+
+            $this->forgetFileNumberCaches();
+
+            return response()->json([
+                'success' => true,
+                'message' => $targets->count() > 1
+                    ? "Batch updated successfully — {$targets->count()} files in {$batchNo} were changed."
+                    : 'Record updated successfully',
+                'updated_count' => $targets->count(),
+                'batch_no' => $batchNo ?: null,
+                'passport_url' => $passportUpload['url'] ?? null,
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating record: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Render the file's related OR old file number for the list.
+     *
+     * These are the two halves of a single field on the Edit modal: an "Old File Number"
+     * tick sends the value to mls_file_no.old_fileno, an untick to fileNumber.related_fileno
+     * as a JSON array. Only one is ever populated, so the column shows whichever it is and
+     * labels it, rather than pretending they are the same thing.
+     *
+     * @return array{value: string, kind: string}
+     */
+    private function formatRelatedOrOldFileNo($relatedJson, $oldFileNo): array
+    {
+        $old = trim((string) ($oldFileNo ?? ''));
+        if ($old !== '') {
+            return ['value' => $old, 'kind' => 'old'];
+        }
+
+        $raw = trim((string) ($relatedJson ?? ''));
+        if ($raw === '') {
+            return ['value' => 'N/A', 'kind' => 'none'];
+        }
+
+        // Written as a JSON array, but rows predating that are plain comma-separated text.
+        $decoded = json_decode($raw, true);
+        $parts = (json_last_error() === JSON_ERROR_NONE && is_array($decoded))
+            ? $decoded
+            : explode(',', $raw);
+
+        $parts = array_values(array_filter(
+            array_map(fn ($v) => trim((string) $v), $parts),
+            fn ($v) => $v !== ''
+        ));
+
+        return empty($parts)
+            ? ['value' => 'N/A', 'kind' => 'none']
+            : ['value' => implode(', ', $parts), 'kind' => 'related'];
+    }
+
+    /**
+     * Form field -> the column holding it on a `fileNumber` row, for divergence checks.
+     */
+    private const BATCH_COLUMN_MAP = [
+        'file_name' => 'FileName',
+        'plot_no'   => 'plot_no',
+        'tp_no'     => 'tp_no',
+        'district'  => 'district',
+        'lga'       => 'lga',
+        'location'  => 'location',
+    ];
+
+    /**
+     * The watched fields this request is actually writing, for the batch divergence check.
+     *
+     * @return array<string, mixed>
+     */
+    private function submittedWatchedFields(Request $request): array
+    {
+        $submitted = [];
+
+        foreach (array_keys(\App\Support\BatchDivergence::WATCHED) as $field) {
+            if ($request->has($field)) {
+                $submitted[$field] = $request->input($field);
+            }
+        }
+
+        return $submitted;
+    }
+
+    /**
+     * Does any of these files already carry a recorded transaction?
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $targets
+     */
+    private function targetsHaveTransactions($targets): bool
+    {
+        $fileNumbers = $targets
+            ->flatMap(fn ($t) => [$t->mlsfNo ?? null, $t->kangisFileNo ?? null, $t->NewKANGISFileNo ?? null])
+            ->filter(fn ($v) => trim((string) $v) !== '')
+            ->unique()
+            ->values();
+
+        if ($fileNumbers->isEmpty()) {
+            return false;
+        }
+
+        try {
+            return DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->whereIn('file_number', $fileNumbers->all())
+                ->where('has_transaction', 1)
+                ->exists();
+        } catch (\Exception $e) {
+            Log::warning('Could not check has_transaction before a file-number edit', [
+                'error' => $e->getMessage(),
+            ]);
+
+            // Unable to tell — do not block the edit on an infrastructure failure.
+            return false;
+        }
+    }
+
+    /**
+     * Write one file's edit across fileNumber, mls_file_no, file_indexings and the
+     * customer / entity mirrors.
+     *
+     * Extracted so a batch save is a loop over the same code a single save runs, rather
+     * than a second implementation that can drift away from it.
+     *
+     * @param  bool  $isPrimary  true for the file whose row was actually clicked. The
+     *                           old/related file number and the passport belong to that
+     *                           one file, never to its batch siblings.
+     */
+    private function applyFileNumberEdit(Request $request, $record, bool $isPrimary): void
+    {
+        $id = $record->id;
+
+        // Prepare update data
+        $updateData = [
+            'FileName' => $request->file_name,
+            'updated_by' => Auth::user()->name ?? Auth::user()->email ?? 'System',
+            'updated_at' => now()
+        ];
 
             // Add fields if provided
             if ($request->has('kangis_file_no'))
@@ -1797,9 +2179,13 @@ class FileNumberController extends Controller
             // checkbox that decides which column it lands in: related_fileno (a JSON
             // array on fileNumber) or old_fileno (a plain string on mls_file_no).
             // Only one is kept, so ticking/unticking the box clears the other.
+            //
+            // This is per-file identity, not a property of the allocation: stamping one
+            // file's predecessor onto all seven of its batch siblings would invent
+            // history. It is therefore written only for the file that was opened.
             $isOldFileNo = false;
             $relatedFileNoInput = '';
-            if ($request->has('related_fileno')) {
+            if ($isPrimary && $request->has('related_fileno')) {
                 $isOldFileNo = filter_var($request->input('is_old_fileno'), FILTER_VALIDATE_BOOLEAN);
                 $relatedFileNoInput = trim((string) $request->input('related_fileno'));
                 $relatedFileNumbers = array_values(array_filter(
@@ -1860,7 +2246,7 @@ class FileNumberController extends Controller
                     $mlsUpdateData['rep_address'] = $request->rep_address;
                 }
 
-                if ($request->has('related_fileno')
+                if ($isPrimary && $request->has('related_fileno')
                     && \Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasColumn('mls_file_no', 'old_fileno')) {
                     $mlsUpdateData['old_fileno'] = ($isOldFileNo && $relatedFileNoInput !== '')
                         ? $relatedFileNoInput
@@ -1868,9 +2254,19 @@ class FileNumberController extends Controller
                 }
 
                 if (!empty($mlsUpdateData)) {
+                    // Matched the way the delete cascade matches: on the file number OR
+                    // the tracking id. A row reachable only by tracking_id was previously
+                    // updated by neither path.
+                    $trackingId = trim((string) ($record->tracking_id ?? ''));
+
                     DB::connection('sqlsrv')
                         ->table('mls_file_no')
-                        ->where('full_file_number', $record->mlsfNo)
+                        ->where(function ($q) use ($record, $trackingId) {
+                            $q->where('full_file_number', $record->mlsfNo);
+                            if ($trackingId !== '') {
+                                $q->orWhere('tracking_id', $trackingId);
+                            }
+                        })
                         ->update($mlsUpdateData);
                 }
 
@@ -1878,7 +2274,7 @@ class FileNumberController extends Controller
                 // the ledger so the history survives an edit, and so the mirror lands on
                 // file_indexings.old_fileno as well. Unticking the box clears the mirrors
                 // but keeps the ledger -- see OldFileNumberService::clear().
-                if ($request->has('related_fileno')) {
+                if ($isPrimary && $request->has('related_fileno')) {
                     $oldFileNumberService = app(\App\Services\OldFileNumberService::class);
 
                     if ($isOldFileNo && $relatedFileNoInput !== '') {
@@ -1895,62 +2291,215 @@ class FileNumberController extends Controller
                 }
             }
 
-            // Keep the matching file_indexings row's title in sync — it's edited from a
-            // different screen but must show the same title as fileNumber.FileName.
-            if (isset($updateData['FileName'])) {
-                $fileNoCandidates = array_values(array_unique(array_filter([
-                    $record->mlsfNo ?? null,
-                    $record->kangisFileNo ?? null,
-                    $record->NewKANGISFileNo ?? null,
-                    $updateData['kangisFileNo'] ?? null,
-                    $updateData['NewKANGISFileNo'] ?? null,
-                ])));
+        // Keep the matching file_indexings row in sync — it's edited from a different
+        // screen but must show the same title and property details as fileNumber.
+        $fileNoCandidates = array_values(array_unique(array_filter([
+            $record->mlsfNo ?? null,
+            $record->kangisFileNo ?? null,
+            $record->NewKANGISFileNo ?? null,
+            $updateData['kangisFileNo'] ?? null,
+            $updateData['NewKANGISFileNo'] ?? null,
+        ])));
 
-                if (!empty($fileNoCandidates)) {
-                    try {
-                        $fiUpdate = [
-                            'file_title' => $updateData['FileName'],
-                            'current_holder' => $updateData['FileName'],
-                            'updated_by' => $updateData['updated_by'],
-                            'updated_at' => now(),
-                        ];
-                        if ($request->has('location')) $fiUpdate['location'] = $request->location;
-                        if ($request->has('lga'))      $fiUpdate['lga'] = $request->lga;
-                        if ($request->has('district')) $fiUpdate['district'] = $request->district;
-                        if ($request->has('plot_no'))  $fiUpdate['plot_number'] = $request->plot_no;
-                        if ($request->has('tp_no'))    $fiUpdate['tp_no'] = $request->tp_no;
+        // Whether THIS file's name is changing. Computed per file, not once for the
+        // batch: a batch can hold files under different names.
+        $nameChanged = trim((string) ($record->FileName ?? '')) !== trim((string) $request->file_name);
 
-                        DB::connection('sqlsrv')->table('file_indexings')
-                            ->whereIn('file_number', $fileNoCandidates)
-                            ->update($fiUpdate);
-                    } catch (\Exception $e) {
-                        Log::warning('Failed to propagate FileName to file_indexings', [
-                            'fileNumber_id' => $id,
-                            'error' => $e->getMessage(),
-                        ]);
-                    }
+        if (!empty($fileNoCandidates)) {
+            try {
+                $fiUpdate = [
+                    'file_title' => $updateData['FileName'],
+                    'updated_by' => $updateData['updated_by'],
+                    'updated_at' => now(),
+                ];
+
+                // current_holder is NOT a copy of the file title — a Deed of Assignment or
+                // Transfer of Title moves it to the new owner while FileName keeps naming
+                // the original allottee. Rewriting it on every save meant an edit to the
+                // plot number quietly reinstated the previous owner, so it moves only when
+                // the name itself is being changed.
+                if ($nameChanged) {
+                    $fiUpdate['current_holder'] = $updateData['FileName'];
                 }
+
+                if ($request->has('location')) $fiUpdate['location'] = $request->location;
+                if ($request->has('lga'))      $fiUpdate['lga'] = $request->lga;
+                if ($request->has('district')) $fiUpdate['district'] = $request->district;
+                if ($request->has('plot_no'))  $fiUpdate['plot_number'] = $request->plot_no;
+                if ($request->has('tp_no'))    $fiUpdate['tp_no'] = $request->tp_no;
+
+                // These columns exist on file_indexings but were never written from here,
+                // so a corrected phone or address stayed stale on the indexing screen.
+                if ($request->has('phone_no')) $fiUpdate['phone'] = $request->phone_no;
+                if ($request->has('address'))  $fiUpdate['residence_address'] = $request->address;
+
+                DB::connection('sqlsrv')->table('file_indexings')
+                    ->whereIn('file_number', $fileNoCandidates)
+                    ->update($fiUpdate);
+            } catch (\Exception $e) {
+                Log::warning('Failed to propagate FileName to file_indexings', [
+                    'fileNumber_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
             }
 
-            // Filed against the file's own number, whichever of the three it carries —
-            // the passport belongs to the file, not to this row's edit.
-            $passportUpload = $this->storePassportIfSent(
-                $request,
-                $record->mlsfNo ?? $record->kangisFileNo ?? $record->NewKANGISFileNo ?? null
-            );
+            // The customer and entity mirrors. This screen has always claimed five tables
+            // — the delete dialog lists them — but the edit only ever wrote three, so a
+            // renamed file kept its old name on the Customer and Entity records forever.
+            $this->propagateToStaging($request, $fileNoCandidates, $nameChanged);
+        }
+    }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Record updated successfully',
-                'passport_url' => $passportUpload['url'] ?? null,
+    /**
+     * Mirror an edit onto the customer and entity staging records.
+     *
+     * Deliberately narrow. The NAME is written only when it actually changed: these rows
+     * are not copies of `fileNumber`, and rewriting an identity on every unrelated save
+     * (a plot number correction, say) is how the file_indexings holder bug happened.
+     * Contact details follow the same rule as everywhere else on this form — written when
+     * the field was submitted.
+     *
+     * Each table is wrapped separately: a missing column on one mirror must never abort a
+     * save that has already succeeded on the file-number registers.
+     *
+     * @param  array<int, string>  $fileNoCandidates
+     */
+    private function propagateToStaging(Request $request, array $fileNoCandidates, bool $nameChanged): void
+    {
+        $newName = trim((string) $request->file_name);
+
+        try {
+            $customerUpdate = [];
+
+            if ($nameChanged && $newName !== '') {
+                $customerUpdate['customer_name'] = $newName;
+            }
+            if ($request->has('customer_type')) $customerUpdate['customer_type'] = $request->customer_type;
+            if ($request->has('phone_no'))      $customerUpdate['phone'] = $request->phone_no;
+            if ($request->has('address'))       $customerUpdate['property_address'] = $request->address;
+
+            if (!empty($customerUpdate)) {
+                $customerUpdate['updated_at'] = now();
+
+                DB::connection('sqlsrv')->table('customers_staging')
+                    ->whereIn('file_number', $fileNoCandidates)
+                    ->update($customerUpdate);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to propagate file-number edit to customers_staging', [
+                'file_numbers' => $fileNoCandidates,
+                'error' => $e->getMessage(),
             ]);
+        }
 
-        } catch (\Exception $e) {
+        try {
+            $entityUpdate = [];
+
+            if ($nameChanged && $newName !== '') {
+                $entityUpdate['entity_name'] = $newName;
+            }
+            if ($request->has('customer_type')) $entityUpdate['entity_type'] = $request->customer_type;
+
+            if (!empty($entityUpdate)) {
+                $entityUpdate['updated_at'] = now();
+
+                DB::connection('sqlsrv')->table('entities_staging')
+                    ->whereIn('file_number', $fileNoCandidates)
+                    ->update($entityUpdate);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to propagate file-number edit to entities_staging', [
+                'file_numbers' => $fileNoCandidates,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Save an edit to a temporary file.
+     *
+     * Temporary files are commissioned into `mls_file_no` and never get a `fileNumber`
+     * row, so the list surfaces them from that table directly — which means the row's id
+     * is an `mls_file_no` id, freely colliding with `fileNumber` ids. Before this existed,
+     * editing one loaded and then overwrote a completely unrelated file.
+     */
+    private function updateTemporaryFile(Request $request, $id)
+    {
+        $db = DB::connection('sqlsrv');
+
+        $temp = $db->table('mls_file_no')
+            ->where('id', $id)
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->first();
+
+        if (!$temp) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error updating record: ' . $e->getMessage()
-            ], 500);
+                'message' => 'Record not found'
+            ], 404);
         }
+
+        $update = [
+            'file_name'  => $request->file_name,
+            'updated_at' => now(),
+        ];
+
+        foreach ([
+            'lga' => 'lga', 'district' => 'district', 'plot_no' => 'plot_no',
+            'tp_no' => 'tp_no', 'location' => 'location', 'purpose_id' => 'purpose_id',
+            'customer_type' => 'customer_type', 'phone_no' => 'phone_no',
+            'address' => 'address', 'rep_phone_no' => 'rep_phone_no',
+            'rep_address' => 'rep_address',
+        ] as $field => $column) {
+            if ($request->has($field)) {
+                $update[$column] = $request->input($field);
+            }
+        }
+
+        $db->table('mls_file_no')->where('id', $id)->update($update);
+
+        $nameChanged = trim((string) ($temp->file_name ?? '')) !== trim((string) $request->file_name);
+        $fileNoCandidates = array_values(array_filter([$temp->full_file_number ?? null]));
+
+        if (!empty($fileNoCandidates)) {
+            try {
+                $fiUpdate = [
+                    'file_title' => $request->file_name,
+                    'updated_by' => Auth::user()->name ?? Auth::user()->email ?? 'System',
+                    'updated_at' => now(),
+                ];
+                if ($nameChanged)              $fiUpdate['current_holder'] = $request->file_name;
+                if ($request->has('location')) $fiUpdate['location'] = $request->location;
+                if ($request->has('lga'))      $fiUpdate['lga'] = $request->lga;
+                if ($request->has('district')) $fiUpdate['district'] = $request->district;
+                if ($request->has('plot_no'))  $fiUpdate['plot_number'] = $request->plot_no;
+                if ($request->has('tp_no'))    $fiUpdate['tp_no'] = $request->tp_no;
+
+                $db->table('file_indexings')
+                    ->whereIn('file_number', $fileNoCandidates)
+                    ->update($fiUpdate);
+            } catch (\Exception $e) {
+                Log::warning('Failed to propagate temporary file edit to file_indexings', [
+                    'mls_file_no_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $this->propagateToStaging($request, $fileNoCandidates, $nameChanged);
+        }
+
+        $passportUpload = $this->storePassportIfSent($request, $temp->full_file_number ?? null);
+
+        $this->forgetFileNumberCaches();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Temporary file updated successfully',
+            'updated_count' => 1,
+            'passport_url' => $passportUpload['url'] ?? null,
+        ]);
     }
 
     /**
@@ -1974,13 +2523,22 @@ class FileNumberController extends Controller
     /**
      * Remove the specified file number record and cascade delete from related tables.
      */
-    public function destroy($id)
+    public function destroy($id, Request $request)
     {
         if (!Auth::user() || Auth::user()->assign_role !== 'Supper Admin') {
             return response()->json([
                 'success' => false,
                 'message' => 'Unauthorized action. Only Supper Admin can execute a Master Delete.'
             ], 403);
+        }
+
+        // The list is a UNION of three tables with colliding ids. A row that is not a
+        // fileNumber row must never be resolved against fileNumber — that is how a Master
+        // Delete on temporary RES-1993-2644(T) (mls_file_no id 1166) purged the unrelated
+        // live file CON-AG-1987-57 (fileNumber id 1166) from five tables.
+        $refusal = $this->refuseNonFileNumberDelete($request->input('entity'));
+        if ($refusal) {
+            return $refusal;
         }
 
         $fileRecord = DB::connection('sqlsrv')->table('fileNumber')->where('id', $id)->first();
@@ -1991,24 +2549,59 @@ class FileNumberController extends Controller
             ], 404);
         }
 
+        // A batch row stands for N files but carries one id. Deleting only that id left
+        // the row on screen (redrawn from the next member), reading as a failed delete.
+        $records = collect([$fileRecord]);
+        $batchNo = '';
+
+        if ($request->boolean('apply_to_batch')) {
+            $batchService = app(\App\Services\FileNumber\BatchExpansionService::class);
+            $resolved = $batchService->resolveFor($fileRecord, $request->input('batch_no'));
+
+            if (!$resolved['ok']) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $resolved['message'],
+                ], 422);
+            }
+
+            $records = $resolved['members'];
+            $batchNo = $batchService->batchNoFor($fileRecord);
+        }
+
         DB::connection('sqlsrv')->beginTransaction();
         try {
-            $result = $this->cascadeDeleteFileRecord($id, $fileRecord);
+            $totals = array_fill_keys(
+                ['fileNumber', 'mls_file_no', 'entities_staging', 'customers_staging', 'file_indexings', 'old_file_numbers'],
+                0
+            );
+
+            foreach ($records as $record) {
+                $result = $this->cascadeDeleteFileRecord($record->id, $record);
+                foreach ($totals as $k => $_) {
+                    $totals[$k] += $result['counts'][$k] ?? 0;
+                }
+                $this->writeMasterDeleteAudit($record->id, $result, $records->count() > 1);
+            }
 
             $this->forgetFileNumberCaches();
-            $this->writeMasterDeleteAudit($id, $result);
 
             DB::connection('sqlsrv')->commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'MLS record and all associated staging/indexing records deleted successfully from all 5 systems.',
+                'deleted_count' => $records->count(),
+                'batch_no' => $batchNo ?: null,
+                'message' => $records->count() > 1
+                    ? "Batch {$batchNo} deleted — {$records->count()} files purged from all 6 systems."
+                    : 'MLS record and all associated staging/indexing records deleted successfully from all 6 systems.',
                 'details' => [
-                    'fileNumber_deleted' => $result['counts']['fileNumber'],
-                    'mls_file_no_deleted' => $result['counts']['mls_file_no'],
-                    'entities_staging_deleted' => $result['counts']['entities_staging'],
-                    'customers_staging_deleted' => $result['counts']['customers_staging'],
-                    'file_indexings_deleted' => $result['counts']['file_indexings'],
+                    'fileNumber_deleted' => $totals['fileNumber'],
+                    'mls_file_no_deleted' => $totals['mls_file_no'],
+                    'entities_staging_deleted' => $totals['entities_staging'],
+                    'customers_staging_deleted' => $totals['customers_staging'],
+                    'file_indexings_deleted' => $totals['file_indexings'],
+                    'old_file_numbers_deleted' => $totals['old_file_numbers'],
                 ]
             ]);
         } catch (\Exception $e) {
@@ -2025,6 +2618,31 @@ class FileNumberController extends Controller
     }
 
     /**
+     * Refuse a Master Delete aimed at a row that is not backed by `fileNumber`.
+     *
+     * Temporary files and Plot Extensions appear on this list but live in their own
+     * tables, with their own ids and their own lifecycles. A five-table cascade keyed on
+     * `fileNumber.id` is not merely unsupported for them — it resolves to a DIFFERENT
+     * file. Refusing is the whole point: the client also hides these buttons, but a stale
+     * page must not be able to talk the server into it.
+     */
+    private function refuseNonFileNumberDelete($entity)
+    {
+        $entity = \App\Support\MlsRowTarget::entity($entity);
+
+        if ($entity === \App\Support\MlsRowTarget::FILE_NUMBER) {
+            return null;
+        }
+
+        $label = \App\Support\MlsRowTarget::label($entity);
+
+        return response()->json([
+            'success' => false,
+            'message' => "{$label} records cannot be master-deleted from this screen — they are not held in the file number register.",
+        ], 422);
+    }
+
+    /**
      * Bulk master delete for multiple MLS file records.
      * All deletes execute inside ONE transaction — any failure rolls back every record.
      */
@@ -2038,8 +2656,11 @@ class FileNumberController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
+            // Selection keys are "F:123" / "T:1166" / "P:4"; a bare "123" from a page
+            // cached before this shipped still resolves as a fileNumber row.
             'ids'   => 'required|array|min:1|max:200',
-            'ids.*' => 'required|integer|min:1',
+            'ids.*' => 'required',
+            'apply_to_batch' => 'nullable|boolean',
         ]);
         if ($validator->fails()) {
             return response()->json([
@@ -2048,16 +2669,70 @@ class FileNumberController extends Controller
             ], 422);
         }
 
-        $ids = array_values(array_unique(array_map('intval', $request->input('ids'))));
+        $parsed = \App\Support\MlsRowTarget::parseKeys($request->input('ids'));
 
-        $records = DB::connection('sqlsrv')->table('fileNumber')->whereIn('id', $ids)->get()->keyBy('id');
+        // Temporary files and Plot Extensions are not held in `fileNumber`; their ids
+        // collide with it. Skip them loudly rather than resolving them against the wrong
+        // table — three of the four live temporary rows sit on top of real files.
+        $skipped = [];
+        $ids = [];
+
+        foreach ($parsed['targets'] as $target) {
+            if ($target['entity'] !== \App\Support\MlsRowTarget::FILE_NUMBER) {
+                $skipped[] = [
+                    'id' => $target['id'],
+                    'reason' => \App\Support\MlsRowTarget::label($target['entity'])
+                        . ' records cannot be master-deleted from this screen.',
+                ];
+                continue;
+            }
+
+            $ids[] = $target['id'];
+        }
+
+        foreach ($parsed['rejected'] as $bad) {
+            $skipped[] = ['id' => $bad, 'reason' => 'Unrecognised selection.'];
+        }
+
+        $ids = array_values(array_unique($ids));
+
+        $records = empty($ids)
+            ? collect()
+            : DB::connection('sqlsrv')->table('fileNumber')->whereIn('id', $ids)->get()->keyBy('id');
         $missingIds = array_values(array_diff($ids, $records->keys()->all()));
+
+        // Expand batch rows. Each selected row may stand for many files, so the real
+        // blast radius — and the 200 cap — has to be measured in FILES, not in rows.
+        if ($request->boolean('apply_to_batch') && $records->isNotEmpty()) {
+            $batchService = app(\App\Services\FileNumber\BatchExpansionService::class);
+            $expanded = collect();
+
+            foreach ($records as $record) {
+                $resolved = $batchService->resolveFor($record, null);
+                $members = $resolved['ok'] ? $resolved['members'] : collect([$record]);
+
+                foreach ($members as $member) {
+                    $expanded->put($member->id, $member);
+                }
+            }
+
+            $records = $expanded;
+        }
+
+        if ($records->count() > 200) {
+            return response()->json([
+                'success' => false,
+                'message' => 'That selection expands to ' . $records->count()
+                    . ' files. Please delete 200 or fewer files per batch.',
+            ], 422);
+        }
 
         if ($records->isEmpty()) {
             return response()->json([
                 'success' => false,
                 'message' => 'No matching file records found for the provided IDs.',
                 'missing_ids' => $missingIds,
+                'skipped' => $skipped,
             ], 404);
         }
 
@@ -2065,14 +2740,14 @@ class FileNumberController extends Controller
         try {
             $totals = [
                 'fileNumber' => 0, 'mls_file_no' => 0, 'entities_staging' => 0,
-                'customers_staging' => 0, 'file_indexings' => 0,
+                'customers_staging' => 0, 'file_indexings' => 0, 'old_file_numbers' => 0,
             ];
             $perRecord = [];
 
             foreach ($records as $id => $fileRecord) {
                 $result = $this->cascadeDeleteFileRecord($id, $fileRecord);
                 foreach ($totals as $k => $_) {
-                    $totals[$k] += $result['counts'][$k];
+                    $totals[$k] += $result['counts'][$k] ?? 0;
                 }
                 $this->writeMasterDeleteAudit($id, $result, true);
                 $perRecord[] = [
@@ -2086,9 +2761,10 @@ class FileNumberController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => count($records) . ' MLS record(s) deleted successfully across all 5 systems.',
+                'message' => count($records) . ' file(s) deleted successfully across all 6 systems.',
                 'deleted_count' => count($records),
                 'missing_ids' => $missingIds,
+                'skipped' => $skipped,
                 'records' => $perRecord,
                 'totals' => $totals,
             ]);
@@ -2168,7 +2844,23 @@ class FileNumberController extends Controller
                 ->whereIn('id', $fileIndexingIds)->delete();
         }
 
-        // 5. fileNumber
+        // 5. old_file_numbers — the ledger this screen's own Edit modal writes through
+        // OldFileNumberService. Left behind, it kept naming a file number that no longer
+        // exists and resurfaced in searches keyed on it.
+        $deletedOldFileNumbers = 0;
+        if (!empty($fileNumbersForStaging)) {
+            try {
+                $deletedOldFileNumbers = DB::connection('sqlsrv')->table('old_file_numbers')
+                    ->whereIn('file_number', $fileNumbersForStaging)->delete();
+            } catch (\Exception $e) {
+                Log::warning('Could not purge old_file_numbers during master delete', [
+                    'fileNumber_id' => $id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // 6. fileNumber
         $deletedFileNumbers = DB::connection('sqlsrv')->table('fileNumber')
             ->where('id', $id)->delete();
         if ($mlsfNo !== '') {
@@ -2192,6 +2884,7 @@ class FileNumberController extends Controller
                 'entities_staging' => $deletedEntities,
                 'customers_staging' => $deletedCustomers,
                 'file_indexings' => $deletedIndexings,
+                'old_file_numbers' => $deletedOldFileNumbers,
             ],
         ];
     }
@@ -2215,7 +2908,7 @@ class FileNumberController extends Controller
                 $id,
                 $result['snapshot'],
                 null,
-                "{$prefix} executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$c['fileNumber']} rows), mls_file_no ({$c['mls_file_no']} rows), entities_staging ({$c['entities_staging']} rows), customers_staging ({$c['customers_staging']} rows), file_indexings ({$c['file_indexings']} rows)."
+                "{$prefix} executed for MLS File Record ID {$id}. Affected tables: fileNumber ({$c['fileNumber']} rows), mls_file_no ({$c['mls_file_no']} rows), entities_staging ({$c['entities_staging']} rows), customers_staging ({$c['customers_staging']} rows), file_indexings ({$c['file_indexings']} rows), old_file_numbers ({$c['old_file_numbers']} rows)."
             );
         } catch (\Exception $auditEx) {
             \Log::warning("AuditLog failed during MLS master delete: " . $auditEx->getMessage());

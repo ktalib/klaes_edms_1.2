@@ -725,7 +725,7 @@
                     </select>
                   </div>
                   <div class="space-y-1">
-                    <label for="transactionDate" class="text-sm font-medium text-gray-700">Transaction/Certificate Date</label>
+                    <label for="transactionDate" class="text-sm font-medium text-gray-700">Transaction/Commencement Date</label>
                     <input type="date" id="transactionDate" name="transactionDate" x-model="transactionDate" class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10">
                   </div>
                 </div>

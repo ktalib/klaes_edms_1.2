@@ -26,6 +26,7 @@ class StoreIdVerificationRequest extends FormRequest
     public function rules(): array
     {
         $types   = array_keys((array) config('id_verification.types', []));
+        $customerTypes = array_keys((array) config('id_verification.customer_types', []));
         $maxKb   = (int) config('id_verification.uploads.max_kilobytes', 5120);
         $mimes   = implode(',', (array) config('id_verification.uploads.mimes', ['jpeg', 'jpg', 'png', 'webp']));
         $mimeTypes = implode(',', (array) config('id_verification.uploads.mime_types', []));
@@ -44,6 +45,21 @@ class StoreIdVerificationRequest extends FormRequest
         return [
             'file_number' => ['required', 'string', 'max:100'],
             'email'       => ['required', 'email', 'max:255'],
+
+            // Individual or Lawyer / Legal Adviser. Both upload an ID and go
+            // through the same name check; only a lawyer supplies a bar number.
+            'customer_type' => ['required', 'string', Rule::in($customerTypes)],
+
+            // Required for a lawyer, and rejected outright for an individual - an
+            // individual has no call-to-bar number, so a value here would be
+            // meaningless data on the record.
+            'call_to_bar_number' => [
+                Rule::requiredIf(fn () => $this->customerRequiresBarNumber()),
+                'nullable',
+                'string',
+                'max:60',
+                'regex:/^[A-Za-z0-9\/\-\. ]+$/',
+            ],
 
             'applicant_full_name' => ['required', 'string', 'min:3', 'max:200'],
             'applicant_phone'     => ['required', 'string', 'max:30'],
@@ -72,6 +88,10 @@ class StoreIdVerificationRequest extends FormRequest
             'applicant_full_name.required'       => 'Enter your full name exactly as it appears on your identification.',
             'applicant_phone.required'           => 'Enter your phone number.',
             'applicant_address.required'         => 'Enter your residential or contact address.',
+            'customer_type.required'             => 'Select whether you are an individual or a lawyer.',
+            'customer_type.in'                   => 'Select a customer type from the list.',
+            'call_to_bar_number.required'        => 'Enter your Call-to-Bar number.',
+            'call_to_bar_number.regex'           => 'The Call-to-Bar number may only contain letters, numbers, spaces and - / .',
             'identification_type.required'       => 'Select your means of identification.',
             'identification_type.in'             => 'Select a means of identification from the list.',
             'identification_type_other.required' => 'Enter the type of identification you are uploading.',
@@ -96,6 +116,14 @@ class StoreIdVerificationRequest extends FormRequest
                 'applicant_phone' => LaasApplicant::normalizePhone($phone) ?? $phone,
             ]);
         }
+    }
+
+    /** Does the chosen customer type have to supply a Call-to-Bar number? */
+    public function customerRequiresBarNumber(): bool
+    {
+        $type = (string) $this->input('customer_type', '');
+
+        return (bool) config('id_verification.customer_types.' . $type . '.requires_bar_number', false);
     }
 
     public function withValidator($validator): void

@@ -34,6 +34,15 @@ class AppServiceProvider extends ServiceProvider
                 default => new \App\Services\Ocr\TesseractOcrReader(),
             };
         });
+
+        // Roll of legal practitioners, for checking a lawyer's Call-to-Bar number.
+        // No Nigerian roll API is wired up, so the null driver is the default and
+        // answers "unknown" — never "rejected" — to everything.
+        $this->app->bind(\App\Services\BarNumber\BarRollLookup::class, function () {
+            return match (config('id_verification.bar_number.lookup_driver', 'none')) {
+                default => new \App\Services\BarNumber\NullBarRollLookup(),
+            };
+        });
     }
 
     /**

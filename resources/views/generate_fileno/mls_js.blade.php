@@ -885,6 +885,15 @@
         records.forEach(record => {
             const row = document.createElement('tr');
             row.className = 'hover:bg-gray-50 transition-colors cursor-default';
+
+            // filenumber_id is resolved by joining mls_file_no.tracking_id to fileNumber,
+            // and a handful of batch members do not resolve. Those rows used to render a
+            // live Edit button that fired GET /file-numbers/null and 500'd on an int cast.
+            const linked = record.filenumber_id !== null
+                && record.filenumber_id !== undefined
+                && String(record.filenumber_id) !== ''
+                && String(record.filenumber_id) !== 'null';
+
             row.innerHTML = `
                 <td class="px-4 py-3 whitespace-nowrap text-sm font-bold text-gray-900">${(record.mlsfNo || record.full_file_number || 'N/A').toUpperCase()}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${(record.file_name || record.FileName || 'N/A').toUpperCase()}</td>
@@ -898,12 +907,20 @@
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${(record.location || 'N/A').toUpperCase()}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${(record.lga || 'N/A').toUpperCase()}</td>
                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    ${linked ? `
                     <button onclick="editRecord(${record.filenumber_id})" class="inline-flex p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Edit Record">
                         <i data-lucide="pencil" class="w-4 h-4"></i>
-                    </button>
+                    </button>` : `
+                    <span class="inline-flex p-1.5 text-gray-300 cursor-not-allowed" title="No matching file number record — cannot be edited">
+                        <i data-lucide="pencil-off" class="w-4 h-4"></i>
+                    </span>`}
                     <button onclick="openFilePrinterManager('${record.filenumber_id}', '${record.mlsfNo || record.full_file_number || ''}', '${record.batch_no}', true)" class="inline-flex p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Print Document">
                         <i data-lucide="printer" class="w-4 h-4"></i>
                     </button>
+                    ${(window.MLSF_IS_ADMIN && linked) ? `
+                    <button onclick="deleteBatchMember(${record.filenumber_id}, '${String(record.mlsfNo || record.full_file_number || '').replace(/'/g, "\\\\'")}', '${record.batch_no || ''}')" class="inline-flex p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Master Delete this file">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>` : ''}
                 </td>
             `;
             tableBody.appendChild(row);
@@ -912,6 +929,58 @@
         // Re-initialize Lucide icons for the new buttons
         if (typeof lucide !== 'undefined') lucide.createIcons();
     }
+
+    /**
+     * Master-delete ONE file from inside the Group modal.
+     *
+     * The list only ever exposed the batch's newest member, so every other file in a batch
+     * was unreachable by Delete — the only way to remove one was to delete the head
+     * repeatedly until the grouping surfaced it. This deletes exactly the file named on
+     * the row, and never its siblings.
+     */
+    window.deleteBatchMember = function (id, fileNo, batchNo) {
+        Swal.fire({
+            title: `Delete ${fileNo}?`,
+            html: `
+                <div class="text-center">
+                    <p class="mb-3 text-slate-500 text-sm">
+                        This permanently purges <strong>${fileNo}</strong> from ${MLSF_CASCADE_TABLES.length} tables.
+                        The other files in batch ${batchNo} are <strong>not</strong> affected.
+                    </p>
+                    ${mlsfCascadeTableList()}
+                </div>`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, delete this file',
+            showLoaderOnConfirm: true,
+            preConfirm: () => {
+                return fetch(`{{ route("file-numbers.destroy", ":id") }}`.replace(':id', id), {
+                    method: 'DELETE',
+                    headers: {
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ entity: 'file_number', apply_to_batch: 0 })
+                })
+                    .then(r => r.json())
+                    .catch(err => { Swal.showValidationMessage(`Request failed: ${err}`); });
+            },
+            allowOutsideClick: () => !Swal.isLoading()
+        }).then(result => {
+            if (!result.isConfirmed || !result.value) return;
+
+            if (result.value.success) {
+                Swal.fire({ icon: 'success', title: 'Deleted!', text: result.value.message, confirmButtonColor: '#10b981' });
+                if (batchNo) viewBatch(batchNo);
+                if (typeof table !== 'undefined' && table.ajax) table.ajax.reload(null, false);
+                updateStats();
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error!', text: result.value.message || 'Delete failed.', confirmButtonColor: '#ef4444' });
+            }
+        });
+    };
 
     window.closeBatchDetailsModal = function() {
         const modal = document.getElementById('batchDetailsModal');
@@ -942,9 +1011,44 @@
             width: '32px',
             render: function (data, type, row) {
                 if (type !== 'display') return data;
-                const checked = window.mlsfSelectedIds && window.mlsfSelectedIds.has(String(data)) ? 'checked' : '';
-                return '<input type="checkbox" class="mlsf-row-check w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer" value="' + data + '" ' + checked + '>';
+
+                // The value carries the row's SOURCE TABLE, not just its id. Three tables
+                // feed this list and their ids collide, so a bare id told the server
+                // nothing about which file was ticked — temporary RES-1993-2644(T) is
+                // mls_file_no id 1166, and fileNumber 1166 is a different, live file.
+                const key = mlsfSelectionKey(row);
+                const checked = window.mlsfSelectedIds && window.mlsfSelectedIds.has(key) ? 'checked' : '';
+                const batchCount = parseInt(row.batch_count, 10) || 1;
+
+                // A batch row stands for many files; say so next to the box so a bulk
+                // delete's real reach is visible before it is confirmed.
+                const badge = batchCount > 1
+                    ? `<span class="block text-[9px] font-bold text-amber-600 leading-none mt-0.5" title="This row represents ${batchCount} files">×${batchCount}</span>`
+                    : '';
+
+                if (mlsfRowEntity(row.type) !== 'file_number') {
+                    return '<span class="text-gray-300" title="Not held in the file number register — cannot be master-deleted here">&mdash;</span>';
+                }
+
+                return '<input type="checkbox" class="mlsf-row-check w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer" value="'
+                    + key + '" data-batch-count="' + batchCount + '" ' + checked + '>' + badge;
             }
+        };
+
+        // Which table a list row actually came from. Mirrors App\Support\MlsRowTarget so
+        // the client and the server speak the same vocabulary.
+        window.mlsfRowEntity = function (rowType) {
+            const t = String(rowType || '').trim().toLowerCase();
+            if (t === 'plot extension') return 'plot_extension';
+            if (t === 'temporary') return 'temporary';
+            return 'file_number';
+        };
+
+        // "F:123" / "T:1166" / "P:4" — parsed by MlsRowTarget::parseKey().
+        window.mlsfSelectionKey = function (row) {
+            const entity = mlsfRowEntity(row.type);
+            const prefix = entity === 'plot_extension' ? 'P' : (entity === 'temporary' ? 'T' : 'F');
+            return prefix + ':' + row.id;
         };
 
         // Initialize DataTable with performance optimizations
@@ -1126,6 +1230,33 @@
                     }
                 },
                 {
+                    // The applicant's photograph, filed at commissioning and replaceable
+                    // from the Edit modal. Resolved server-side from the scannings/EDMS
+                    // record, primed one page at a time rather than one query per row.
+                    data: 'passport_url',
+                    name: 'passport_url',
+                    title: 'Passport',
+                    orderable: false,
+                    searchable: false,
+                    className: 'text-center',
+                    defaultContent: '',
+                    render: function (data, type, row) {
+                        // Sorting and the CSV/PDF exports want a word, not an <img>.
+                        if (type !== 'display') return data ? 'Yes' : 'No';
+
+                        if (!data) {
+                            return '<span class="inline-flex items-center justify-center w-9 h-11 rounded border border-dashed border-gray-300 bg-gray-50 text-gray-300" title="No passport on record"><i data-lucide="user" class="w-4 h-4"></i></span>';
+                        }
+
+                        const title = String(row.FileName || '').replace(/"/g, '&quot;');
+                        return `<img src="${data}" alt="Passport" title="${title}"
+                                     loading="lazy"
+                                     onerror="this.outerHTML='<span class=\'text-gray-300 text-[10px]\'>&mdash;</span>'"
+                                     class="w-9 h-11 object-cover rounded border border-gray-200 mx-auto cursor-zoom-in"
+                                     onclick="openMlsfPassportPreview('${data}', '${title}')">`;
+                    }
+                },
+                {
                     data: 'mlsfNo',
                     name: 'mlsfNo',
                     title: 'MLS File No',
@@ -1219,12 +1350,51 @@
                     }
                 },
                 {
+                    // One column for both halves of the Edit modal's file-number field:
+                    // an "Old File Number" tick stores it on mls_file_no.old_fileno, an
+                    // untick on fileNumber.related_fileno. Only ever one of the two, so
+                    // the badge says which this is rather than blurring them together.
+                    data: 'related_old_fileno',
+                    name: 'related_old_fileno',
+                    title: 'Related / Old File No',
+                    orderable: false,
+                    defaultContent: 'N/A',
+                    render: function (data, type, row) {
+                        const value = (data && data.value) ? String(data.value) : 'N/A';
+                        const kind = (data && data.kind) ? data.kind : 'none';
+
+                        if (type !== 'display' || kind === 'none' || value === 'N/A') return value;
+
+                        const badge = kind === 'old'
+                            ? '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 mr-1">OLD</span>'
+                            : '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200 mr-1">REL</span>';
+
+                        return badge + '<span class="font-medium">' + value.toUpperCase().replace(/</g, '&lt;') + '</span>';
+                    }
+                },
+                {
                     data: 'FileName',
                     name: 'FileName',
                     title: 'File Title',
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
                         return data ? data.toUpperCase() : 'N/A';
+                    }
+                },
+                {
+                    // Root of Title — hand-keyed on the File Indexing form and held only
+                    // on file_indexings, so a file that has never been indexed shows N/A
+                    // rather than a guess.
+                    data: 'root_of_title',
+                    name: 'root_of_title',
+                    title: 'RoT',
+                    defaultContent: 'N/A',
+                    render: function (data, type, row) {
+                        const value = data ? String(data) : 'N/A';
+                        if (type !== 'display' || value === 'N/A') return value;
+
+                        return '<span class="inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">'
+                            + value.toUpperCase().replace(/</g, '&lt;') + '</span>';
                     }
                 },
                 {
@@ -1410,6 +1580,17 @@
                         // Check if record has a batch_no
                         const hasBatchNo = row.batch_no && row.batch_no !== null && row.batch_no.trim() !== '';
                         const batchNo = hasBatchNo ? row.batch_no : '';
+                        const batchCount = parseInt(row.batch_count, 10) || 1;
+
+                        // This list is a UNION of three tables whose ids collide. Temporary
+                        // rows carry an mls_file_no id and Plot Extension rows a
+                        // plot_extensions id, so the fileNumber-keyed operations below are
+                        // not merely unsupported for them — they resolve to a DIFFERENT
+                        // file. Edit knows how to route itself; Delete and Update Allocation
+                        // do not, so they are withheld. (The server refuses them too, for
+                        // pages cached before this shipped.)
+                        const rowEntity = mlsfRowEntity(row.type);
+                        const isFileNumberRow = rowEntity === 'file_number';
 
                         return `
                             <div class="flex items-center justify-center gap-2">
@@ -1429,25 +1610,33 @@
                                     <button onclick="openEditModalFromAction(event, ${row.id}, '${row.type || ''}')"
                                             class="w-full text-left px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 flex items-center space-x-3">
                                         <i data-lucide="edit-3" class="w-4 h-4 text-slate-500"></i>
-                                        <span class="font-medium">Edit</span>
+                                        <span class="font-medium">Edit${batchCount > 1 ? ` <span class="text-[10px] font-semibold text-amber-700">(batch of ${batchCount})</span>` : ''}</span>
                                     </button>
 
+                                    ${isFileNumberRow ? `
                                     <!-- Direct Allocation -->
-                                    <button onclick="directAllocation(${row.id})" 
+                                    <button onclick="directAllocation(${row.id}, '${row.type || ''}')"
                                             class="w-full text-left px-4 py-2.5 text-sm text-green-700 hover:bg-green-50 flex items-center space-x-3">
                                         <i data-lucide="map-pin" class="w-4 h-4 text-green-500"></i>
                                         <span class="font-medium">Update Allocation data</span>
                                     </button>
+                                    ` : ''}
 
                                     <div class="border-t border-gray-100 my-1"></div>
 
                                     <!-- Delete Record -->
                                     @if(Auth::user() && Auth::user()->assign_role === 'Supper Admin')
-                                    <button onclick="deleteRecord(${row.id})" 
+                                    ${isFileNumberRow ? `
+                                    <button onclick="deleteRecord(${row.id}, '${row.type || ''}', '${batchNo}', ${batchCount})"
                                             class="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center space-x-3">
                                         <i data-lucide="trash-2" class="w-4 h-4"></i>
-                                        <span class="font-medium">Delete Record</span>
+                                        <span class="font-medium">Delete Record${batchCount > 1 ? ` (${batchCount} files)` : ''}</span>
                                     </button>
+                                    ` : `
+                                    <div class="px-4 py-2.5 text-xs text-gray-400 italic">
+                                        ${row.type || 'This record'} cannot be master-deleted here
+                                    </div>
+                                    `}
                                     @endif
                                 </div>
                             </div>
@@ -1465,7 +1654,7 @@
             order: [[(function () {
                 const headers = Array.from(document.querySelectorAll('#mlsfTable thead th'));
                 const idx = headers.findIndex(th => th.textContent.trim() === 'Time Commissioned');
-                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 13 : 12);
+                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 16 : 15);
             })(), 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
@@ -1972,6 +2161,19 @@
         } 
     }
 
+    /**
+     * Is a reclaimed (missing) serial currently being held?
+     *
+     * Several code paths auto-fill the serial field from the counter — updatePreview(),
+     * updateGenerateForm() and updateAlpineSerialNumber() all write to it — and each one
+     * would silently undo a deliberate pick. They all consult this first.
+     */
+    window.mlsfHoldingReclaimedSerial = function () {
+        const modal = document.querySelector('[x-data="fileNumberGenerator()"]');
+        const data = modal && modal._x_dataStack && modal._x_dataStack[0];
+        return !!(data && data.useReclaimedSerial && data.reclaimedSerial);
+    };
+
     async function updatePreview() {
         const serialNoField = document.getElementById('serialNo');
         const year = document.getElementById('year')?.value;
@@ -2011,7 +2213,8 @@
         const batchModeToggled = document.querySelector('[x-model="batchMode"]')?.checked;
         const batchQty = parseInt(document.getElementById('batchQuantity')?.value || '1');
 
-        if ((fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement') && hasCode && year && !isOverrideMode) {
+        if ((fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement') && hasCode && year && !isOverrideMode
+            && !window.mlsfHoldingReclaimedSerial()) {
             try {
                 if (typeof commissionModalReservation !== 'undefined') {
                     if (batchModeToggled && batchQty > 1) {
@@ -2139,7 +2342,9 @@
             serialNoField.readOnly = true;
             serialNoField.classList.add('bg-gray-100', 'text-gray-600');
             serialNoField.classList.remove('bg-white', 'text-gray-900');
-            serialNoField.value = nextSerialNo;
+            if (!window.mlsfHoldingReclaimedSerial()) {
+                serialNoField.value = nextSerialNo;
+            }
 
             if (serialDescription) {
                 serialDescription.textContent = 'Auto-generated';
@@ -2305,7 +2510,7 @@
 
         // Fallback to direct DOM manipulation
         const serialNoElement = document.getElementById('serialNo');
-        if (serialNoElement && nextSerialNo && !isOverrideMode) {
+        if (serialNoElement && nextSerialNo && !isOverrideMode && !window.mlsfHoldingReclaimedSerial()) {
             serialNoElement.value = nextSerialNo;
             // Trigger both input and change events to ensure Alpine.js updates
             serialNoElement.dispatchEvent(new Event('input', { bubbles: true }));
@@ -2641,6 +2846,15 @@
         }
         if (prefix && (fileOption === 'normal' || fileOption === 'regrant' || fileOption === 'resettlement')) {
             formData.set('land_use', prefix);
+        }
+
+        // A serial reclaimed from the missing-numbers list. Sent only while the toggle is
+        // on AND a number is actually selected, so an abandoned choice cannot leak into a
+        // later submission; anything else falls through to the normal counter.
+        formData.delete('reclaimed_serial');
+        if (alpineData && alpineData.useReclaimedSerial && alpineData.reclaimedSerial
+            && ['normal', 'regrant', 'resettlement'].includes(fileOption)) {
+            formData.set('reclaimed_serial', alpineData.reclaimedSerial);
         }
 
         // Extension files: the plot number always carries the "& EXTENSION" marker, while
@@ -3791,6 +4005,52 @@
             });
     }
 
+    /**
+     * Fill in (or hide) the "part of a batch" panel on the Edit card.
+     *
+     * The list collapses a batch into ONE row labelled with a range, so without this the
+     * form silently edits a single member — the newest — while the user believes they are
+     * editing everything the range covers. Scope always resets to "this file only": an
+     * unwanted single edit is easy to undo, a batch-wide one is not.
+     */
+    function populateEditBatchScope(data) {
+        const panel = document.getElementById('editBatchScope');
+        const batchNoField = document.getElementById('editBatchNo');
+        if (!panel || !batchNoField) return;
+
+        const count = parseInt(data.batch_count, 10) || 1;
+        const batchNo = data.batch_no || '';
+
+        batchNoField.value = batchNo;
+
+        // Reset the scope on every open, so a previous "all files" choice cannot leak
+        // into the next record edited.
+        const thisFileRadio = panel.querySelector('input[name="apply_to_batch"][value="0"]');
+        if (thisFileRadio) thisFileRadio.checked = true;
+
+        if (count < 2 || !batchNo) {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        const fileNo = data.mlsfNo || data.kangisFileNo || 'this file';
+        const setText = (elId, text) => {
+            const el = document.getElementById(elId);
+            if (el) el.textContent = text;
+        };
+
+        setText('editBatchCount', count);
+        setText('editBatchCountAll', count);
+        setText('editBatchThisFile', String(fileNo).toUpperCase());
+        setText('editBatchRange', `${batchNo} — ${data.batch_range || ''}`);
+
+        panel.classList.remove('hidden');
+
+        if (window.lucide && typeof lucide.createIcons === 'function') {
+            lucide.createIcons();
+        }
+    }
+
     function openEditModalFromAction(event, id, type) {
         if (event) {
             event.preventDefault();
@@ -3806,15 +4066,28 @@
     }
 
     function editRecord(id, type) {
+        // A batch row in the Group modal can carry a null filenumber_id; firing the
+        // request anyway produced an int-conversion 500 and left a blank form open.
+        if (id === null || id === undefined || id === '' || String(id) === 'null') {
+            hideGlobalLoading();
+            Swal.fire({
+                icon: 'warning',
+                title: 'Record not linked',
+                text: 'This file has no matching file number record, so it cannot be edited here.',
+            });
+            return;
+        }
+
         // Show loading while fetching record details
         showGlobalLoading('Loading record details...');
 
-        // Plot Extensions live in a separate table and reuse ids that collide with
-        // fileNumber ids, so flag the entity to resolve the correct record.
-        const isPlotExtension = (type || '') === 'Plot Extension';
+        // Plot Extensions and Temporary files live in separate tables and reuse ids that
+        // collide with fileNumber ids, so flag the entity to resolve the correct record.
+        // Without this a temporary row loaded — and then saved over — a different file.
+        const entity = mlsfRowEntity(type);
         let showUrl = `{{ route("file-numbers.show", ":id") }}`.replace(':id', id);
-        if (isPlotExtension) {
-            showUrl += (showUrl.includes('?') ? '&' : '?') + 'entity=plot_extension';
+        if (entity !== 'file_number') {
+            showUrl += (showUrl.includes('?') ? '&' : '?') + 'entity=' + encodeURIComponent(entity);
         }
 
         fetch(showUrl)
@@ -3822,9 +4095,16 @@
             .then(data => {
                 hideGlobalLoading();
 
+                if (data && data.success === false) {
+                    Swal.fire({ icon: 'error', title: 'Error!', text: data.message || 'Record not found' });
+                    return;
+                }
+
                 // Remember the entity so the save path targets the same table.
                 const entityField = document.getElementById('editEntity');
-                if (entityField) entityField.value = data.entity || '';
+                if (entityField) entityField.value = data.entity || entity || '';
+
+                populateEditBatchScope(data);
 
                 // Populate fields
                 document.getElementById('editId').value = data.id;
@@ -3832,7 +4112,11 @@
                 document.getElementById('editFileName').value = data.FileName || '';
                 document.getElementById('editPlotNo').value = data.plot_no || '';
                 document.getElementById('editTpNo').value = data.tp_no || '';
-                document.getElementById('editLocation').value = data.location || '';
+                // A stored location is hand-authored data by definition — protect it from
+                // the auto-composer until the user clears the field themselves.
+                const editLocationEl = document.getElementById('editLocation');
+                editLocationEl.value = data.location || '';
+                editLocationEl.dataset.userEdited = (data.location || '').trim() === '' ? '0' : '1';
                 document.getElementById('editLga').value = data.lga || '';
                 
                 // Populate District if element exists
@@ -4208,6 +4492,16 @@
     }
 
     function updateEditLocation() {
+        const locationInput = document.getElementById('editLocation');
+        if (!locationInput) return;
+
+        // A location the user typed themselves is real data — "NO 5 AHMADU BELLO WAY,
+        // NASSARAWA" is not something this function can reconstruct. Auto-composition is
+        // a convenience for a blank field, so once the field has been edited by hand it
+        // is left alone. The save propagates Location to three tables, so clobbering it
+        // here was not a cosmetic bug.
+        if (locationInput.dataset.userEdited === '1') return;
+
         const district = document.getElementById('editDistrictValue')?.value.trim() || '';
         const lga = document.getElementById('editLga')?.value.trim() || '';
 
@@ -4218,25 +4512,28 @@
         if (lga) locationDetails.push(lga);
         locationDetails.push('KANO');
 
-        const locationString = locationDetails.join(', ');
-
-        const locationInput = document.getElementById('editLocation');
-        if (locationInput) {
-            locationInput.value = locationString.toUpperCase();
-        }
+        locationInput.value = locationDetails.join(', ').toUpperCase();
     }
 
     // Attach listeners for Edit Modal fields
     $(document).ready(function() {
-        $(document).on('input change', '#editPlotNo, #editLga, #editDistrict', function() {
+        // #editPlotNo is deliberately NOT here. The composed string never contained the
+        // plot number, yet typing one still triggered the rebuild and wiped whatever
+        // Location held — so correcting a plot number silently destroyed the address.
+        $(document).on('input change', '#editLga, #editDistrict', function() {
             updateEditLocation();
+        });
+
+        // Typing in Location marks it as hand-authored; clearing it hands control back.
+        $(document).on('input', '#editLocation', function () {
+            this.dataset.userEdited = this.value.trim() === '' ? '0' : '1';
         });
         // Make the Edit / Direct Allocation District dropdowns searchable
         initEditDistrictSelect2();
         initDaDistrictSelect2();
     });
 
-    function submitEditForm(event, confirmTransactionChange = false) {
+    function submitEditForm(event, confirmTransactionChange = false, confirmBatchDivergence = false) {
         event.preventDefault();
 
         const submitBtn = event.target.querySelector('button[type="submit"]');
@@ -4252,6 +4549,9 @@
         const formData = new FormData(document.getElementById('editForm'));
         if (confirmTransactionChange) {
             formData.set('confirm_transaction_change', '1');
+        }
+        if (confirmBatchDivergence) {
+            formData.set('confirm_batch_divergence', '1');
         }
 
         fetch(`{{ route("file-numbers.update", ":id") }}`.replace(':id', id), {
@@ -4283,6 +4583,42 @@
 
                     closeEditModal();
                     table.ajax.reload();
+                } else if (status === 409 && data.requires_batch_confirmation) {
+                    // The files in this batch do not currently agree on a field being
+                    // changed. ~1 in 5 batches genuinely differ per file, and flattening
+                    // them is silent and irreversible — so show what would be overwritten.
+                    const rows = (data.divergent || []).map(d =>
+                        `<tr>
+                            <td class="px-2 py-1 text-left font-semibold text-slate-700">${d.label}</td>
+                            <td class="px-2 py-1 text-left text-slate-600">${(d.values || []).join(' · ')}</td>
+                         </tr>`).join('');
+
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Files in this batch differ',
+                        html: `
+                            <p class="text-sm text-slate-600 mb-3">${data.message || ''}</p>
+                            <div class="max-h-52 overflow-y-auto border border-slate-200 rounded-lg">
+                                <table class="w-full text-xs">
+                                    <thead class="bg-slate-50">
+                                        <tr>
+                                            <th class="px-2 py-1 text-left">Field</th>
+                                            <th class="px-2 py-1 text-left">Current values across the batch</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>${rows}</tbody>
+                                </table>
+                            </div>`,
+                        showCancelButton: true,
+                        confirmButtonText: `Yes, overwrite all ${data.batch_count || ''} files`,
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#f59e0b',
+                        cancelButtonColor: '#6b7280'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            submitEditForm(event, confirmTransactionChange, true);
+                        }
+                    });
                 } else if (status === 409 && data.requires_confirmation) {
                     // File has recorded transactions — ask the user to confirm before propagating the name change
                     Swal.fire({
@@ -4296,7 +4632,7 @@
                         cancelButtonColor: '#6b7280'
                     }).then((result) => {
                         if (result.isConfirmed) {
-                            submitEditForm(event, true);
+                            submitEditForm(event, true, confirmBatchDivergence);
                         }
                     });
                 } else {
@@ -4321,7 +4657,21 @@
             });
     }
 
-    function directAllocation(id) {
+    function directAllocation(id, rowType) {
+        // Same collision as Edit and Delete: this posts to file-numbers.update, which
+        // resolves the id against `fileNumber`. On a Temporary or Plot Extension row that
+        // is a different file, so the allocation data would land on someone else's record.
+        // The menu withholds the button for those rows; this is the second line of defence.
+        const entity = mlsfRowEntity(rowType);
+        if (entity !== 'file_number') {
+            Swal.fire({
+                icon: 'info',
+                title: 'Not available here',
+                text: `${rowType || 'This record'} records are not held in the file number register.`,
+            });
+            return;
+        }
+
         // Show loading while fetching record details
         showGlobalLoading('Loading record details...');
 
@@ -4434,6 +4784,8 @@
 
         const id = document.getElementById('daEditId').value;
         const formData = new FormData(document.getElementById('directAllocationForm'));
+        // Be explicit about the target table rather than letting the server default.
+        formData.set('entity', 'file_number');
 
         // Since it's direct allocation, we might not have file_name, but the controller requires file_name.
         // We will fetch the existing file name and append it to formData.
@@ -4496,36 +4848,101 @@
             });
     }
  
-    function deleteRecord(id) {
+    /**
+     * Full-size view of a passport thumbnail from the list.
+     *
+     * The thumbnails are 36px wide so the row stays readable; a clerk checking a face
+     * against a file needs more than that, and opening the Edit modal just to see the
+     * photo is a lot of clicks for a look.
+     */
+    window.openMlsfPassportPreview = function (url, title) {
+        if (!url) return;
+        Swal.fire({
+            title: title || 'Passport',
+            imageUrl: url,
+            imageAlt: 'Passport photograph',
+            imageWidth: 260,
+            showConfirmButton: false,
+            showCloseButton: true,
+        });
+    };
+
+    // The five tables the cascade purges, plus the old-file-number ledger this screen's
+    // own Edit modal writes — it used to survive the delete and keep naming a file that
+    // no longer existed.
+    const MLSF_CASCADE_TABLES = ['MlsfileNo', 'fileNumber', 'Entity Table', 'Customers', 'File Indexings', 'Old File Numbers'];
+
+    function mlsfCascadeTableList() {
+        return `<div class="inline-block text-left bg-slate-50 p-4 rounded-xl border border-slate-200/80 w-full max-w-md mx-auto shadow-inner">
+                    <ul class="space-y-2 text-slate-700 font-semibold text-xs list-decimal list-inside">
+                        ${MLSF_CASCADE_TABLES.map(t => `<li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">${t}</span></li>`).join('')}
+                    </ul>
+                </div>`;
+    }
+
+    function deleteRecord(id, rowType, batchNo, batchCount) {
+        // Belt and braces: these rows no longer render a Delete button, but a stale page
+        // might. The server refuses them as well.
+        const entity = mlsfRowEntity(rowType);
+        if (entity !== 'file_number') {
+            Swal.fire({
+                icon: 'info',
+                title: 'Not available here',
+                text: `${rowType || 'This record'} records are not held in the file number register and cannot be master-deleted from this screen.`,
+            });
+            return;
+        }
+
+        const count = parseInt(batchCount, 10) || 1;
+        const isBatch = count > 1 && batchNo;
+
+        // A batch row is drawn as one line but stands for N files. Deleting only the id it
+        // carries removed one member and left the row on screen — redrawn from the next
+        // member — which read as a failed delete. Say what the row really covers, and make
+        // the scope an explicit choice defaulting to the safe one.
+        const scopeChoice = isBatch ? `
+            <div class="mt-4 text-left bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p class="text-xs font-semibold text-amber-900 mb-2">
+                    This row represents <strong>${count} files</strong> in batch ${batchNo}.
+                </p>
+                <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer mb-1">
+                    <input type="radio" name="mlsfDeleteScope" value="0" checked> Delete <strong>this file only</strong>
+                </label>
+                <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer">
+                    <input type="radio" name="mlsfDeleteScope" value="1"> Delete <strong>all ${count} files</strong> in the batch
+                </label>
+            </div>` : '';
+
         Swal.fire({
             title: 'Are you sure?',
             html: `
                 <div class="text-center">
-                    <p class="mb-4 text-slate-500 text-sm">You won't be able to revert this! This action will execute a <strong>Master Cascade Delete</strong> and permanently purge this record from the following 5 tables:</p>
-                    <div class="inline-block text-left bg-slate-50 p-4 rounded-xl border border-slate-200/80 w-full max-w-md mx-auto shadow-inner">
-                        <ul class="space-y-2 text-slate-700 font-semibold text-xs list-decimal list-inside">
-                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">MlsfileNo</span></li>
-                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">fileNumber</span></li>
-                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">Entity Table</span></li>
-                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">Customers</span></li>
-                            <li><span class="font-mono text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100/50">File Indexings</span></li>
-                        </ul>
-                    </div>
+                    <p class="mb-4 text-slate-500 text-sm">You won't be able to revert this! This action will execute a <strong>Master Cascade Delete</strong> and permanently purge this record from the following ${MLSF_CASCADE_TABLES.length} tables:</p>
+                    ${mlsfCascadeTableList()}
+                    ${scopeChoice}
                 </div>
             `,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
-            cancelButtonColor: '#6b7280', 
+            cancelButtonColor: '#6b7280',
             confirmButtonText: 'Yes, delete it!',
             showLoaderOnConfirm: true,
             preConfirm: () => {
+                const scopeEl = document.querySelector('input[name="mlsfDeleteScope"]:checked');
+                const applyToBatch = !!(scopeEl && scopeEl.value === '1');
+
                 return fetch(`{{ route("file-numbers.destroy", ":id") }}`.replace(':id', id), {
                     method: 'DELETE',
                     headers: {
                         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({
+                        entity: entity,
+                        batch_no: batchNo || '',
+                        apply_to_batch: applyToBatch ? 1 : 0
+                    })
                 })
                     .then(response => {
                         if (!response.ok) {
@@ -4569,11 +4986,33 @@
     // ============================================================
     window.mlsfSelectedIds = new Set();
 
+    // How many FILES each selected row stands for. A batch row is drawn as one line but
+    // covers N files, so the selection count alone understates what a bulk delete reaches
+    // — three ticked 100-file batches once read as "3 records".
+    window.mlsfSelectedBatchCounts = new Map();
+
+    function mlsfSelectedFileCount() {
+        let total = 0;
+        window.mlsfSelectedIds.forEach(key => {
+            total += window.mlsfSelectedBatchCounts.get(key) || 1;
+        });
+        return total;
+    }
+
+    function mlsfSelectedBatchRows() {
+        let rows = 0;
+        window.mlsfSelectedIds.forEach(key => {
+            if ((window.mlsfSelectedBatchCounts.get(key) || 1) > 1) rows++;
+        });
+        return rows;
+    }
+
     function updateBulkDeleteUI() {
         const bar = document.getElementById('mlsfBulkActionsBar');
         const countEl = document.getElementById('mlsfSelectedCount');
         const count = window.mlsfSelectedIds.size;
-        if (countEl) countEl.textContent = count;
+        const files = mlsfSelectedFileCount();
+        if (countEl) countEl.textContent = files > count ? `${count} (${files} files)` : count;
         if (bar) {
             if (count > 0) {
                 bar.classList.remove('hidden');
@@ -4587,6 +5026,7 @@
 
     function clearMlsfSelection() {
         window.mlsfSelectedIds.clear();
+        window.mlsfSelectedBatchCounts.clear();
         document.querySelectorAll('#mlsfTable tbody .mlsf-row-check').forEach(cb => { cb.checked = false; });
         const selectAll = document.getElementById('mlsfSelectAll');
         if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
@@ -4613,8 +5053,10 @@
         const id = String(this.value);
         if (this.checked) {
             window.mlsfSelectedIds.add(id);
+            window.mlsfSelectedBatchCounts.set(id, parseInt(this.dataset.batchCount, 10) || 1);
         } else {
             window.mlsfSelectedIds.delete(id);
+            window.mlsfSelectedBatchCounts.delete(id);
         }
         updateBulkDeleteUI();
         refreshSelectAllState();
@@ -4628,8 +5070,10 @@
             const id = String(cb.value);
             if (checked) {
                 window.mlsfSelectedIds.add(id);
+                window.mlsfSelectedBatchCounts.set(id, parseInt(cb.dataset.batchCount, 10) || 1);
             } else {
                 window.mlsfSelectedIds.delete(id);
+                window.mlsfSelectedBatchCounts.delete(id);
             }
         });
         updateBulkDeleteUI();
@@ -4641,25 +5085,38 @@
             Swal.fire({ icon: 'info', title: 'No records selected', text: 'Tick the rows you want to delete first.' });
             return;
         }
+
+        // A ticked row can stand for a whole batch, so the count that matters is FILES,
+        // not rows: three ticked 100-file batches used to read as "3 records".
+        const fileCount = mlsfSelectedFileCount();
+        const batchRows = mlsfSelectedBatchRows();
+        const hasBatches = batchRows > 0;
+
         if (ids.length > 200) {
-            Swal.fire({ icon: 'warning', title: 'Too many records', text: 'Please select 200 or fewer records per batch.' });
+            Swal.fire({ icon: 'warning', title: 'Too many records', text: 'Please select 200 or fewer rows per batch.' });
             return;
         }
 
+        const scopeChoice = hasBatches ? `
+            <div class="mt-3 text-left bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p class="text-xs font-semibold text-amber-900 mb-2">
+                    ${batchRows} of the selected rows are batches — together the selection covers <strong>${fileCount} files</strong>.
+                </p>
+                <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer mb-1">
+                    <input type="radio" name="mlsfBulkScope" value="0" checked> Delete <strong>one file per row</strong> (${ids.length} files)
+                </label>
+                <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer">
+                    <input type="radio" name="mlsfBulkScope" value="1"> Delete <strong>every file in each batch</strong> (${fileCount} files)
+                </label>
+            </div>` : '';
+
         Swal.fire({
-            title: `Delete ${ids.length} record(s)?`,
+            title: `Delete ${ids.length} row(s)?`,
             html: `
                 <div class="text-center">
-                    <p class="mb-3 text-slate-600 text-sm">This will execute a <strong>Master Cascade Delete</strong> for <strong>${ids.length}</strong> selected record(s), purging them from <strong>5 tables</strong>:</p>
-                    <div class="inline-block text-left bg-slate-50 p-3 rounded-lg border border-slate-200 w-full max-w-md mx-auto shadow-inner">
-                        <ul class="space-y-1 text-slate-700 font-semibold text-xs list-decimal list-inside">
-                            <li><span class="font-mono text-indigo-600">MlsfileNo</span></li>
-                            <li><span class="font-mono text-indigo-600">fileNumber</span></li>
-                            <li><span class="font-mono text-indigo-600">Entity Table</span></li>
-                            <li><span class="font-mono text-indigo-600">Customers</span></li>
-                            <li><span class="font-mono text-indigo-600">File Indexings</span></li>
-                        </ul>
-                    </div>
+                    <p class="mb-3 text-slate-600 text-sm">This will execute a <strong>Master Cascade Delete</strong> for the selected row(s), purging them from <strong>${MLSF_CASCADE_TABLES.length} tables</strong>:</p>
+                    ${mlsfCascadeTableList()}
+                    ${scopeChoice}
                     <p class="mt-3 text-xs text-red-600 font-semibold">All deletes run in one transaction — any failure rolls back every record.</p>
                 </div>
             `,
@@ -4667,9 +5124,12 @@
             showCancelButton: true,
             confirmButtonColor: '#ef4444',
             cancelButtonColor: '#6b7280',
-            confirmButtonText: `Yes, delete ${ids.length}!`,
+            confirmButtonText: `Yes, delete!`,
             showLoaderOnConfirm: true,
             preConfirm: () => {
+                const scopeEl = document.querySelector('input[name="mlsfBulkScope"]:checked');
+                const applyToBatch = !!(scopeEl && scopeEl.value === '1');
+
                 return fetch(`{{ route('file-numbers.bulk-destroy') }}`, {
                     method: 'POST',
                     headers: {
@@ -4677,7 +5137,7 @@
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
-                    body: JSON.stringify({ ids: ids })
+                    body: JSON.stringify({ ids: ids, apply_to_batch: applyToBatch ? 1 : 0 })
                 })
                 .then(response => response.json().then(json => ({ ok: response.ok, json })))
                 .catch(err => {
@@ -4689,13 +5149,31 @@
             if (!result.isConfirmed || !result.value) return;
             const { ok, json } = result.value;
             if (ok && json && json.success) {
+                // Rows the server declined to touch used to vanish behind a green tick:
+                // a temporary row in the selection was silently skipped and reported as a
+                // success. Say what was left behind.
+                const notDeleted = []
+                    .concat((json.missing_ids || []).map(id => `#${id} — no matching file record`))
+                    .concat((json.skipped || []).map(s => `#${s.id} — ${s.reason}`));
+
+                const warning = notDeleted.length
+                    ? `<div class="mt-3 text-left bg-amber-50 border border-amber-200 rounded-lg p-2">
+                           <p class="text-xs font-bold text-amber-900 mb-1">${notDeleted.length} row(s) were NOT deleted:</p>
+                           <ul class="text-[11px] text-amber-800 list-disc list-inside space-y-0.5">
+                               ${notDeleted.slice(0, 8).map(t => `<li>${t}</li>`).join('')}
+                               ${notDeleted.length > 8 ? `<li>+${notDeleted.length - 8} more</li>` : ''}
+                           </ul>
+                       </div>`
+                    : '';
+
                 Swal.fire({
-                    icon: 'success',
-                    title: 'Deleted!',
-                    html: `${json.message || ''}<br><small class="text-gray-500">Cascade totals — fileNumber: ${json.totals?.fileNumber ?? 0}, mls_file_no: ${json.totals?.mls_file_no ?? 0}, entities: ${json.totals?.entities_staging ?? 0}, customers: ${json.totals?.customers_staging ?? 0}, indexings: ${json.totals?.file_indexings ?? 0}</small>`,
+                    icon: notDeleted.length ? 'warning' : 'success',
+                    title: notDeleted.length ? 'Partially deleted' : 'Deleted!',
+                    html: `${json.message || ''}<br><small class="text-gray-500">Cascade totals — fileNumber: ${json.totals?.fileNumber ?? 0}, mls_file_no: ${json.totals?.mls_file_no ?? 0}, entities: ${json.totals?.entities_staging ?? 0}, customers: ${json.totals?.customers_staging ?? 0}, indexings: ${json.totals?.file_indexings ?? 0}, old file numbers: ${json.totals?.old_file_numbers ?? 0}</small>${warning}`,
                     confirmButtonColor: '#10b981'
                 });
                 window.mlsfSelectedIds.clear();
+                window.mlsfSelectedBatchCounts.clear();
                 updateBulkDeleteUI();
                 table.ajax.reload(null, false);
                 updateStats();
@@ -5874,6 +6352,132 @@
                 return this.fileOption !== 'old_mls' && this.fileOption !== 'sltr';
             },
 
+            // ── Reclaimed (missing) serial numbers ────────────────────────────────
+            // Every one of these is initialised explicitly. An Alpine `:disabled` bound to
+            // an undefined property evaluates to "" and DISABLES the control, which fails
+            // silently and looks like a dead field.
+            useReclaimedSerial: false,
+            reclaimedSerial: '',
+            // Which prefix/year the loaded list belongs to, so a refresh triggered for an
+            // unrelated reason does not throw away a pick that is still valid.
+            reclaimedLoadedFor: '',
+            reclaimedLoading: false,
+            reclaimedNotice: '',
+            reclaimedNoticeKind: 'info',
+
+            get reclaimedNoticeClass() {
+                if (this.reclaimedNoticeKind === 'warn') return 'text-amber-700 font-medium';
+                if (this.reclaimedNoticeKind === 'error') return 'text-red-600 font-medium';
+                return 'text-gray-500';
+            },
+
+            onToggleReclaimedSerial() {
+                if (this.useReclaimedSerial) {
+                    this.loadReclaimedSerials();
+                    return;
+                }
+
+                // Turning it off hands the field back to the counter, so the form never
+                // submits a stale reclaimed serial the officer has since abandoned.
+                this.reclaimedSerial = '';
+                this.reclaimedNotice = '';
+                this.reclaimedLoadedFor = '';
+                this.serialNo = getNextSerialForLandUse(this.prefix || this.landUse);
+                this.updatePreview();
+            },
+
+            onPickReclaimedSerial() {
+                if (!this.reclaimedSerial) {
+                    this.serialNo = getNextSerialForLandUse(this.prefix || this.landUse);
+                    this.updatePreview();
+                    return;
+                }
+
+                this.serialNo = this.reclaimedSerial;
+                this.updatePreview();
+            },
+
+            loadReclaimedSerials() {
+                const landUse = (this.prefix || this.landUse || '').toString().trim();
+
+                if (!landUse) {
+                    this.reclaimedNotice = 'Pick a land use / prefix first.';
+                    this.reclaimedNoticeKind = 'warn';
+                    return;
+                }
+
+                const select = document.getElementById('reclaimedSerialSelect');
+                this.reclaimedLoading = true;
+                this.reclaimedSerial = '';
+                this.reclaimedNotice = '';
+                this.reclaimedLoadedFor = `${landUse}-${this.year}`;
+
+                const url = `{{ route('mls-fileno.reclaimable-serials') }}?land_use=${encodeURIComponent(landUse)}&year=${encodeURIComponent(this.year)}&limit=200`;
+
+                fetch(url, { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then(payload => {
+                        this.reclaimedLoading = false;
+
+                        if (!payload || !payload.success) {
+                            this.reclaimedNotice = (payload && payload.message) || 'Could not load the missing serial numbers.';
+                            this.reclaimedNoticeKind = 'error';
+                            return;
+                        }
+
+                        const data = payload.data || {};
+                        const serials = data.serials || [];
+                        const blocked = data.blocked || [];
+
+                        if (select) {
+                            // Rebuilt rather than patched: the list is only valid for the
+                            // land use and year it was fetched for.
+                            select.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
+
+                            serials.forEach(entry => {
+                                const option = document.createElement('option');
+                                option.value = entry.serial;
+                                // Say WHERE the number came from. "Freed by delete" was
+                                // issued by this system and purged; "never issued" merely
+                                // has no record here, and a paper file may still carry it.
+                                const tag = entry.origin === 'deleted' ? 'freed by delete' : 'never issued';
+                                option.textContent = `${entry.file_number}  —  ${tag}`;
+                                select.appendChild(option);
+                            });
+                        }
+
+                        // Nothing is said when the list has entries — the dropdown already
+                        // shows what is available, and the running commentary was noise in a
+                        // panel this small. An EMPTY list still speaks up, since a blank
+                        // dropdown with no explanation reads as a failure. The window is named
+                        // there because digital numbering did not start at 1 (RES-2026 begins
+                        // at 565, CON-COM-2026 at 48), so "nothing found" needs its range.
+                        if (serials.length === 0) {
+                            const window = `${landUse}-${data.year}-${data.digital_floor ?? '?'} to ${(data.current_serial ?? 1) - 1}`;
+                            this.reclaimedNotice = `No reusable serials in ${window}.`;
+                            this.reclaimedNoticeKind = 'warn';
+                        } else {
+                            this.reclaimedNotice = '';
+                            this.reclaimedNoticeKind = 'info';
+                        }
+
+                        // Numbers a delete released that are still held elsewhere (by a pra
+                        // or PropID_Master row the cascade does not purge) are deliberately
+                        // NOT listed here — the detail was noisy in the panel. The endpoint
+                        // still returns them under `blocked`, so it can be surfaced again
+                        // without a backend change.
+                        if (blocked.length > 0) {
+                            console.info(`${blocked.length} deleted serial(s) not yet reusable for ${landUse}-${data.year}:`, blocked);
+                        }
+                    })
+                    .catch(err => {
+                        this.reclaimedLoading = false;
+                        this.reclaimedNotice = 'Could not load the missing serial numbers.';
+                        this.reclaimedNoticeKind = 'error';
+                        console.error('reclaimable-serials failed:', err);
+                    });
+            },
+
             get isYearEditable() {
                 return isOverrideMode;
             },
@@ -5883,7 +6487,9 @@
             },
 
             get isSerialReadonly() {
-                // Readonly for normal (auto-generated), temporary, extension, and SIT types
+                // Readonly for normal (auto-generated), temporary, extension, and SIT types.
+                // A reclaimed serial keeps it readonly too — the value comes from the
+                // dropdown, which only offers numbers already verified as free.
                 return (this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === 'reissuance' || this.fileOption === 'temporary' || this.fileOption === 'extension' || this.fileOption === 'sit') && !isOverrideMode;
             },
 
@@ -5929,6 +6535,9 @@
             },
 
             get serialDescription() {
+                if (this.useReclaimedSerial && this.reclaimedSerial) {
+                    return 'Reusing missing serial ' + this.reclaimedSerial;
+                }
                 if (this.fileOption === 'extension') {
                     return 'Not required for extensions';
                 } else if (this.fileOption === 'temporary') {
@@ -7084,8 +7693,14 @@
             },
 
             updatePreview() {
+                // A reclaimed serial is an explicit choice, so the auto-fill below must not
+                // overwrite it. Without this guard the field and the preview both snapped
+                // straight back to the counter's next number the instant one was picked —
+                // the dropdown said 231 while the preview still read IND-2026-273.
+                const holdingReclaimedSerial = this.useReclaimedSerial && this.reclaimedSerial;
+
                 // Auto-update serial number when land use changes for normal, subdivision, merger, and temporary files
-                if (['normal', 'regrant', 'resettlement', 'reissuance', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
+                if (!holdingReclaimedSerial && ['normal', 'regrant', 'resettlement', 'reissuance', 'subdivision', 'merger', 'separation', 'temporary'].includes(this.fileOption) && (this.landUse || this.prefix) && !isOverrideMode) {
                     if (this.fileOption === 'temporary' && this.existingFileNo) {
                         // Keep extracted serial from existing file for temporary files
                     } else {
@@ -7211,6 +7826,22 @@
 
             // Method to refresh serial number from external call
             refreshSerialNumber() {
+                // A reclaimed list is only valid for the prefix and year it was fetched
+                // for, so changing the land use has to discard the current pick and reload
+                // — otherwise a RES serial stays selected while the form now says COM.
+                if (this.useReclaimedSerial) {
+                    // Only discard the pick when the list it came from no longer applies.
+                    // refreshSerialNumber() also fires after an unrelated serial-map
+                    // refresh, and clearing unconditionally wiped a valid selection.
+                    const wanted = `${(this.prefix || this.landUse || '').toString().trim()}-${this.year}`;
+
+                    if (wanted !== this.reclaimedLoadedFor) {
+                        this.reclaimedSerial = '';
+                        this.loadReclaimedSerials();
+                    }
+                    return;
+                }
+
                 if ((this.fileOption === 'normal' || this.fileOption === 'regrant' || this.fileOption === 'resettlement' || this.fileOption === '') && !isOverrideMode) {
                     const code = this.prefix || this.landUse;
                     if (code) {

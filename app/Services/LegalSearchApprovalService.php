@@ -109,7 +109,16 @@ class LegalSearchApprovalService
      */
     public function openRequest(LegalSearchOnlinePayment $payment, array $context = []): LegalSearchOnlineRequest
     {
-        $existing = LegalSearchOnlineRequest::where('payment_id', $payment->id)->first();
+        // A payment may cover several files, each with its own request row, so
+        // idempotency is per (payment, file) rather than per payment. Without the
+        // file in this lookup a multi-file payment would open one request and
+        // silently drop the rest.
+        $fileNumber = trim((string) ($context['file_number'] ?? $payment->file_number));
+
+        $existing = LegalSearchOnlineRequest::where('payment_id', $payment->id)
+            ->where('file_number', $fileNumber)
+            ->first();
+
         if ($existing) {
             return $existing;
         }
@@ -121,7 +130,7 @@ class LegalSearchApprovalService
             'requester_email' => $payment->email,
             'requester_name'  => $context['name'] ?? null,
             'requester_phone' => $context['phone'] ?? null,
-            'file_number'     => $payment->file_number,
+            'file_number'     => $fileNumber,
             'search_params'   => $payment->search_params,
             'purpose_id'      => $context['purpose_id'] ?? null,
             'purpose'         => $context['purpose'] ?? null,

@@ -1620,6 +1620,64 @@ class MlsFileNoController extends Controller
     /**
      * Generate new MLS file number with land-use-based serial numbering
      */
+    /**
+     * Serials available for manual reuse, for one land-use prefix and year.
+     *
+     * On request only. `mls_serial_control` never moves backwards, so a Master Delete
+     * strands its serial below the counter — this is how those numbers get back into
+     * circulation, chosen deliberately by an officer rather than handed out automatically.
+     *
+     * `blocked` carries the numbers a delete released that are still NOT safe, with what is
+     * holding them, so a freshly deleted file number that cannot be offered is explained
+     * instead of simply missing from the list.
+     */
+    public function getReclaimableSerials(Request $request)
+    {
+        $validated = $request->validate([
+            'land_use' => 'required|string|max:50',
+            'year' => 'nullable|integer|min:2020|max:2050',
+            'limit' => 'nullable|integer|min:1|max:200',
+        ]);
+
+        $landUse = trim($validated['land_use']);
+        $year = (int) ($validated['year'] ?? date('Y'));
+        $limit = (int) ($validated['limit'] ?? 100);
+
+        try {
+            $service = app(\App\Services\MlsSerialAllocationService::class);
+
+            $serials = $service->findReclaimableSerials($landUse, $year, $limit);
+            $blocked = $service->blockedFreedSerials($landUse, $year);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'land_use' => $landUse,
+                    'year' => $year,
+                    'current_serial' => \App\Models\MlsSerialControl::getCurrentSerial($landUse, $year),
+                    // Where digital numbering began for this prefix. Numbering ran on paper
+                    // first and the platform continued from wherever the manual register had
+                    // reached, so anything below this belongs to a physical file.
+                    'digital_floor' => $service->digitalFloor($landUse, $year),
+                    'serials' => $serials,
+                    'blocked' => $blocked,
+                    'count' => count($serials),
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error listing reclaimable MLS serials', [
+                'land_use' => $landUse,
+                'year' => $year,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Could not read the available serial numbers: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function generateMlsFileNumber(Request $request)
     {
         try {
@@ -1650,6 +1708,10 @@ class MlsFileNoController extends Controller
             try {
                 $validated = $request->validate([
                 'land_use' => 'required_unless:file_option,sit|nullable|string|max:50',
+                // A serial the officer picked from the reclaimable list instead of taking
+                // the next one off the counter. Re-verified inside the transaction below —
+                // the dropdown was built before the form was filled in.
+                'reclaimed_serial' => 'nullable|integer|min:1',
                 'file_name' => 'nullable|string|max:500',
                 'plot_no' => 'nullable|string|max:100',
                 'tp_no' => 'nullable|string|max:100',
@@ -2352,7 +2414,55 @@ class MlsFileNoController extends Controller
                 } else {
                     // Normal Logic: Consume next available serial
                     $forceFileNumber = $request->input('force_file_number');
-                    if ($forceFileNumber) {
+                    $reclaimedSerial = (int) ($validated['reclaimed_serial'] ?? 0);
+
+                    if (!$forceFileNumber && $reclaimedSerial > 0) {
+                        // Reuse a serial the counter has already passed.
+                        //
+                        // Re-checked HERE, inside the transaction, not when the dropdown was
+                        // drawn: minutes can pass between picking a number and submitting the
+                        // form, and another officer may have taken it.
+                        //
+                        // Deliberately does NOT touch mls_serial_control. The obvious-looking
+                        // MlsSerialControl::initialize() that the force_file_number branch
+                        // below calls would set last_serial to the RECLAIMED number — winding
+                        // the counter backwards from, say, 3028 to 5, so the next dozen
+                        // commissionings would collide with files that already exist. Filling
+                        // a hole must leave the high-water mark exactly where it was.
+                        $allocator = app(\App\Services\MlsSerialAllocationService::class);
+
+                        if (!$allocator->isSerialReclaimable($landUse, $year, $reclaimedSerial)) {
+                            DB::connection('sqlsrv')->rollBack();
+
+                            $taken = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $reclaimedSerial);
+                            \Log::channel('fileno_duplicates')->warning('Reclaimed serial no longer free', [
+                                'requested_file_number' => $taken,
+                                'land_use' => $landUse,
+                                'year' => $year,
+                                'serial' => $reclaimedSerial,
+                                'user_id' => Auth::id(),
+                            ]);
+
+                            return response()->json([
+                                'success' => false,
+                                'message' => "Serial {$reclaimedSerial} ({$taken}) is no longer available — it was taken while this form was open. Please refresh the list and pick another.",
+                            ], 409);
+                        }
+
+                        $serial = $reclaimedSerial;
+                        $fullFileNumber = \App\Models\MlsFileNo::generateFileNumber($landUse, $year, $serial);
+
+                        \Log::channel('fileno_duplicates')->info('Reclaimed serial used', [
+                            'file_number' => $fullFileNumber,
+                            'land_use' => $landUse,
+                            'year' => $year,
+                            'serial' => $serial,
+                            'counter_left_at' => \App\Models\MlsSerialControl::getCurrentSerial($landUse, $year),
+                            'file_option' => $fileOption,
+                            'user_id' => Auth::id(),
+                            'user' => Auth::user()->name ?? Auth::user()->email ?? 'Unknown',
+                        ]);
+                    } elseif ($forceFileNumber) {
                         $fullFileNumber = $forceFileNumber;
                         $serialParts = explode('-', $fullFileNumber);
                         $serial = (int) end($serialParts);

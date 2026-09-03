@@ -28,8 +28,19 @@ class OnlineLsDashboardController extends Controller
 
     /**
      * Flat fee charged per full Legal Search result, in kobo (₦10,000).
+     *
+     * A request may cover several files; the total is this figure times the number
+     * of files, computed on the SERVER. Nothing about the price is ever taken from
+     * the browser.
      */
     public const PAYMENT_AMOUNT_KOBO = 1000000;
+
+    /**
+     * Upper bound on files in a single request. Each file becomes its own approval
+     * row and its own emailed report, so an unbounded basket would let one payment
+     * flood the Director's queue.
+     */
+    public const MAX_FILES_PER_REQUEST = 10;
 
     /**
      * Public landing page. No accounts — anyone can search, pay and view a report.
@@ -54,7 +65,14 @@ class OnlineLsDashboardController extends Controller
             ->unique()
             ->values();
 
-        return view('online_legal_search.landing', compact('districtOptions', 'lgaOptions'));
+        return view('online_legal_search.landing', [
+            'districtOptions' => $districtOptions,
+            'lgaOptions'      => $lgaOptions,
+            // Drive the "how many files" selector and its running total from the
+            // same constants the server prices against, so the two cannot drift.
+            'maxFiles'        => self::MAX_FILES_PER_REQUEST,
+            'unitAmount'      => self::PAYMENT_AMOUNT_KOBO,
+        ]);
     }
 
     /**
@@ -241,8 +259,12 @@ class OnlineLsDashboardController extends Controller
      */
     public function result(Request $request)
     {
-        $fileNumber = trim((string) ($request->input('query') ?: $request->input('file_number') ?: ''));
-        $reference  = trim((string) $request->input('ref', ''));
+        // The searched files, primary first. `files` carries the whole basket;
+        // `query` remains the single-file entry point and is still honoured, so an
+        // old link or a bookmarked single search keeps working.
+        $fileNumbers = $this->resolveRequestedFiles($request);
+        $fileNumber  = $fileNumbers[0] ?? '';
+        $reference   = trim((string) $request->input('ref', ''));
 
         if ($fileNumber === '') {
             return redirect()->route('ols.landing');
@@ -259,14 +281,27 @@ class OnlineLsDashboardController extends Controller
         }
 
         if (!$payment) {
+            $amount = self::PAYMENT_AMOUNT_KOBO * count($fileNumbers);
+
+            // The basket is held in the SESSION, and verifyPayment() reads it from
+            // there rather than from the request. A browser that rewrites the file
+            // list on the way to payment therefore cannot buy three reports for the
+            // price of one - the list it paid for is the list the server recorded.
+            session([
+                'ols_search_files'  => $fileNumbers,
+                'ols_search_amount' => $amount,
+            ]);
+
             // Payment mode: show the Paystack checkout for this search. The
             // purpose list is a closed lookup — a search cannot proceed without
             // one of these.
             return view('online_legal_search.result', [
                 'mode'              => 'payment',
                 'fileNumber'        => $fileNumber,
+                'fileNumbers'       => $fileNumbers,
+                'unitAmount'        => self::PAYMENT_AMOUNT_KOBO,
                 'searchParams'      => $request->only(['query', 'guarantorName', 'guaranteeName', 'lga', 'district', 'location', 'plotNumber', 'planNumber', 'size', 'caveat']),
-                'amount'            => self::PAYMENT_AMOUNT_KOBO,
+                'amount'            => $amount,
                 'paystackPublicKey' => config('services.paystack.public'),
                 'purposes'          => OnlineLsSearchPurpose::options(),
                 'report'            => null,
@@ -276,18 +311,33 @@ class OnlineLsDashboardController extends Controller
         // Status mode: show where the approval request stands. The request is
         // normally created during payment verification; open it here too so a
         // payment that cleared before this page loaded is never left dangling.
-        $searchRequest = LegalSearchOnlineRequest::where('payment_id', $payment->id)->first();
+        // One request row per file on this payment.
+        $searchRequests = LegalSearchOnlineRequest::where('payment_id', $payment->id)
+            ->orderBy('id')
+            ->get();
 
-        if (!$searchRequest) {
-            $searchRequest = $this->approvalService->openRequest($payment, ['ip' => $request->ip()]);
+        if ($searchRequests->isEmpty()) {
+            $this->openApprovalRequests($payment, $request);
+
+            $searchRequests = LegalSearchOnlineRequest::where('payment_id', $payment->id)
+                ->orderBy('id')
+                ->get();
         }
 
+        // The identification submitted for this payment, shown back read-only.
+        // Resolved by payment_id rather than by the session token, so the summary
+        // still appears when the applicant returns to this page later or on
+        // another device with their reference.
+        $verification = LegalSearchOnlineVerification::where('payment_id', $payment->id)->first();
+
         return view('online_legal_search.result', [
-            'mode'          => 'status',
-            'payment'       => $payment,
-            'searchRequest' => $searchRequest,
-            'fileNumber'    => $fileNumber,
-            'report'        => null,
+            'mode'           => 'status',
+            'payment'        => $payment,
+            'searchRequest'  => $searchRequests->first(),
+            'searchRequests' => $searchRequests,
+            'verification'   => $verification,
+            'fileNumber'     => $fileNumber,
+            'report'         => null,
         ]);
     }
 
@@ -307,7 +357,29 @@ class OnlineLsDashboardController extends Controller
 
         $reference  = trim($request->input('reference'));
         $email      = $request->input('email', '');
-        $fileNumber = $request->input('file_number', '');
+
+        // The basket comes from the session, never from the request: it is what
+        // determines both the files bought and the price, and neither may be
+        // decided by the browser.
+        $fileNumbers = array_values(array_filter((array) session('ols_search_files', [])));
+        $expected    = (int) session('ols_search_amount', 0);
+
+        if (empty($fileNumbers)) {
+            // Fall back to the single searched file for a session that expired
+            // mid-checkout, so a real payment is never stranded.
+            $single = trim((string) $request->input('file_number', ''));
+            $fileNumbers = $single !== '' ? [$single] : [];
+            $expected    = self::PAYMENT_AMOUNT_KOBO * count($fileNumbers);
+        }
+
+        $fileNumber = $fileNumbers[0] ?? '';
+
+        if ($fileNumber === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your search session has expired. Please run the search again.',
+            ], 422);
+        }
 
         // A search may only proceed for one of the defined purposes. The select
         // constrains the browser; this re-checks the submitted id against the
@@ -342,13 +414,14 @@ class OnlineLsDashboardController extends Controller
         // that was already opened for it rather than opening a second one.
         $existing = LegalSearchOnlinePayment::where('reference', $reference)->first();
         if ($existing && $existing->isPaid()) {
-            $searchRequest = $this->openApprovalRequest($existing, $request, $purpose, $verification);
+            $opened = $this->openApprovalRequests($existing, $request, $purpose, $verification);
 
             return response()->json([
                 'success'      => true,
                 'already_paid' => true,
                 'reference'    => $reference,
-                'request_no'   => $searchRequest?->request_no,
+                'request_no'   => $opened[0]?->request_no,
+                'request_nos'  => array_values(array_filter(array_map(fn ($r) => $r?->request_no, $opened))),
             ]);
         }
 
@@ -369,13 +442,33 @@ class OnlineLsDashboardController extends Controller
         $amountPaid    = (int) $verify->json('data.amount');
         $customerEmail = $verify->json('data.customer.email') ?? $email;
 
+        // What was actually charged must cover what the basket costs. This is the
+        // backstop behind the session: a payment for less than the files being
+        // claimed is refused rather than quietly honoured.
+        if ($expected > 0 && $amountPaid < $expected) {
+            Log::warning('Online LS payment underpaid for the basket', [
+                'reference' => $reference,
+                'paid'      => $amountPaid,
+                'expected'  => $expected,
+                'files'     => count($fileNumbers),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The amount paid does not cover the number of files requested. Please contact support quoting your payment reference.',
+            ], 422);
+        }
+
         $payment = LegalSearchOnlinePayment::updateOrCreate(
             ['reference' => $reference],
             [
                 'user_id'           => null,
                 'online_ls_user_id' => null,
                 'email'             => $customerEmail,
+                // The primary file, so every existing single-file lookup keeps working.
                 'file_number'       => $fileNumber,
+                'file_numbers'      => $fileNumbers,
+                'file_count'        => count($fileNumbers),
                 'search_params'     => $request->input('search_params'),
                 'amount'            => $amountPaid,
                 'status'            => 'paid',
@@ -399,7 +492,8 @@ class OnlineLsDashboardController extends Controller
 
         // Open the approval request and alert the Director / Deputy Director.
         // The report is released to the requester by email only once approved.
-        $searchRequest = $this->openApprovalRequest($payment, $request, $purpose, $verification);
+        $opened = $this->openApprovalRequests($payment, $request, $purpose, $verification);
+        $searchRequest = $opened[0] ?? null;
 
         // Best-effort back-link so a reviewer opening the request can reach the
         // identification behind it. Never allowed to fail the payment response.
@@ -420,6 +514,8 @@ class OnlineLsDashboardController extends Controller
             'reference'   => $reference,
             'tracking_id' => $payment->tracking_id,
             'request_no'  => $searchRequest?->request_no,
+            'request_nos' => array_values(array_filter(array_map(fn ($r) => $r?->request_no, $opened))),
+            'file_count'  => count($fileNumbers),
         ]);
     }
 
@@ -447,37 +543,104 @@ class OnlineLsDashboardController extends Controller
     }
 
     /**
-     * Open the Director approval request for a paid transaction.
+     * The distinct file numbers this request is asking about, primary first.
      *
-     * Never lets a notification or mail failure fail the payment response — the
-     * money is already taken, so the request row matters more than the alert.
+     * `files` carries a multi-file basket; `query` / `file_number` remain the
+     * single-file entry point, so an existing link or bookmark still works.
+     *
+     * Deduplicated (nobody should be charged twice for the same file) and capped
+     * at MAX_FILES_PER_REQUEST. Both are applied HERE rather than trusted from the
+     * browser, because this list is what the price is calculated from.
+     *
+     * @return array<int, string>
      */
-    protected function openApprovalRequest(
+    protected function resolveRequestedFiles(Request $request): array
+    {
+        $candidates = $request->input('files');
+
+        if (!is_array($candidates)) {
+            // Also accept a comma-separated list, which is what a hand-built or
+            // shared link is most likely to carry.
+            $candidates = ($candidates === null || $candidates === '')
+                ? []
+                : explode(',', (string) $candidates);
+        }
+
+        // The primary always leads, whichever field it arrived in.
+        array_unshift(
+            $candidates,
+            (string) ($request->input('query') ?: $request->input('file_number') ?: '')
+        );
+
+        $files = [];
+        foreach ($candidates as $candidate) {
+            $candidate = trim((string) $candidate);
+
+            if ($candidate === '' || mb_strlen($candidate) > 100) {
+                continue;
+            }
+
+            // Case-insensitively distinct: file numbers are stored upper-case, and
+            // "res-2026-1" must not be billed alongside "RES-2026-1".
+            $key = mb_strtoupper($candidate);
+            if (!isset($files[$key])) {
+                $files[$key] = $candidate;
+            }
+        }
+
+        return array_slice(array_values($files), 0, self::MAX_FILES_PER_REQUEST);
+    }
+
+    /**
+     * Open one approval request per file on a paid transaction.
+     *
+     * A Legal Search report is a per-file legal document with its own particulars
+     * and signature, and a Director must be able to approve one file while
+     * rejecting another — so N files become N rows sharing this payment_id rather
+     * than one row describing several. Everything downstream (buildReport,
+     * approve, resend, the mailable, both approver screens) keeps working
+     * unchanged as a result.
+     *
+     * Never lets a notification or mail failure fail the payment response: the
+     * money is already taken, so the request rows matter more than the alerts.
+     * A file that fails yields a null in its slot rather than aborting the rest.
+     *
+     * @return array<int, ?LegalSearchOnlineRequest>
+     */
+    protected function openApprovalRequests(
         LegalSearchOnlinePayment $payment,
         Request $request,
         ?OnlineLsSearchPurpose $purpose = null,
         ?LegalSearchOnlineVerification $verification = null
-    ): ?LegalSearchOnlineRequest {
-        try {
-            return $this->approvalService->openRequest($payment, [
-                'ip'         => $request->ip(),
-                'purpose_id' => $purpose?->id,
-                // Snapshot the name so a later rename does not rewrite history.
-                'purpose'    => $purpose?->name,
-                // The requester's identity comes from the verified identification,
-                // so the request carries the name that was actually checked rather
-                // than a second, unverified copy typed elsewhere.
-                'name'       => $verification?->applicant_full_name,
-                'phone'      => $verification?->applicant_phone,
-            ]);
-        } catch (\Throwable $e) {
-            Log::error('OnlineLsDashboardController: failed to open approval request', [
-                'payment_id' => $payment->id,
-                'reference'  => $payment->reference,
-                'error'      => $e->getMessage(),
-            ]);
+    ): array {
+        $opened = [];
 
-            return null;
+        foreach ($payment->fileNumbers() as $file) {
+            try {
+                $opened[] = $this->approvalService->openRequest($payment, [
+                    'ip'          => $request->ip(),
+                    'purpose_id'  => $purpose?->id,
+                    // Snapshot the name so a later rename does not rewrite history.
+                    'purpose'     => $purpose?->name,
+                    // The requester's identity comes from the verified identification,
+                    // so the request carries the name that was actually checked rather
+                    // than a second, unverified copy typed elsewhere.
+                    'name'        => $verification?->applicant_full_name,
+                    'phone'       => $verification?->applicant_phone,
+                    'file_number' => $file,
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('OnlineLsDashboardController: failed to open approval request', [
+                    'payment_id'  => $payment->id,
+                    'reference'   => $payment->reference,
+                    'file_number' => $file,
+                    'error'       => $e->getMessage(),
+                ]);
+
+                $opened[] = null;
+            }
         }
+
+        return $opened;
     }
 }

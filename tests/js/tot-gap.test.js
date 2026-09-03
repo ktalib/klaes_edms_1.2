@@ -104,5 +104,39 @@ check('Grant  no leg into a government grant', [
   { i: 'Right of Occupancy', a: 'Kano State Government', b: 'Owner 3' },
 ], []);
 
+// -- Regression: CON/RES/87/348, the file that reported 2 phantom ToTs --------
+// Production, 2026-09-02. One assignment on the paper; the card demanded two
+// Transfers of Title. Three separate defects stacked:
+//   - the walk read EVERY row, so the KANGIS recertification opened a leg;
+//   - 'Kano Geographic Information Service' was not read as an authority;
+//   - the same assignment sat on the file twice, spelt Ahmed and Ahmad, and the
+//     second copy was read as a transfer back to the assignor.
+check('CON/RES/87/348  one assignment, no phantom legs', [
+  { i: 'Right of Occupancy', a: 'Kano State Government', b: 'ALHAJI IBRAHIM GWADABE KABARA' },
+  { i: 'Deed of Assignment', a: 'ALHAJI IBRAHIM GWADABE KABARA', b: 'Ahmed Shitu Abubakar' },
+  { i: 'Deed of Assignment', a: 'ALHAJI IBRAHIM GWADABE KABARA', b: 'Ahmad Shitu Abubakar' },
+  { i: 'Recertification', a: 'Kano Geographic Information Service', b: 'Ahmad Shitu Abubakar' },
+], []);
+
+// -- A mortgage is not a link in the chain (the plan says so in bold) ---------
+// This is the shape that made the bug general rather than one file's problem:
+// 1,126 conversion files carry a mortgage row.
+check('Mortgage  a mortgage after an assignment opens no leg', [
+  { i: 'Deed of Assignment', a: 'ALHAJI IBRAHIM GWADABE KABARA', b: 'Ahmad Shitu Abubakar' },
+  { i: 'Deed of Mortgage', a: 'First Bank plc', b: 'Ahmad Shitu Abubakar' },
+], []);
+
+check('Lease  a lease between two strangers opens no leg', [
+  { i: 'Right of Occupancy', a: 'Kano State Government', b: 'AUDU BELLO' },
+  { i: 'Deed of Lease', a: 'SANI GARBA', b: 'HALIMA SANI' },
+], []);
+
+// -- ...but a real gap either side of a mortgage is still reported ------------
+check('Mortgage  a real gap around a mortgage is still reported', [
+  { i: 'Right of Occupancy', a: 'Kano State Government', b: 'AUDU BELLO' },
+  { i: 'Deed of Mortgage', a: 'AUDU BELLO', b: 'First Bank plc' },
+  { i: 'Deed of Assignment', a: 'MUSA IDRIS', b: 'HALIMA SANI' },
+], ['AUDU BELLO > MUSA IDRIS']);
+
 console.log(`\n${pass}/${total} passed`);
 process.exit(pass === total ? 0 : 1);

@@ -73,10 +73,28 @@
                             <td class="px-4 py-3 text-slate-400 text-xs">{{ $payments->firstItem() + $i }}</td>
                             <td class="px-4 py-3 font-mono text-xs text-slate-700">{{ $p->reference }}</td>
                             <td class="px-4 py-3">
-                                <div class="font-semibold text-slate-800">{{ $p->user?->name ?? '—' }}</div>
+                                {{-- The applicant's real name comes from the IYC record: the portal
+                                     is public, so the `user` relation is always null here. --}}
+                                <div class="font-semibold text-slate-800">
+                                    {{ $p->verification?->applicant_full_name ?? $p->user?->name ?? '—' }}
+                                </div>
                                 <div class="text-xs text-slate-400">{{ $p->email }}</div>
                             </td>
-                            <td class="px-4 py-3 text-slate-700">{{ $p->file_number ?? '—' }}</td>
+                            <td class="px-4 py-3 text-slate-700">
+                                {{-- A payment may cover several files, charged per file. Listing them
+                                     all is what makes the amount in the next column add up. --}}
+                                @php $paidFiles = $p->fileNumbers(); @endphp
+                                @forelse($paidFiles as $paidFile)
+                                    <div class="{{ count($paidFiles) > 1 ? 'text-xs' : '' }}">{{ $paidFile }}</div>
+                                @empty
+                                    —
+                                @endforelse
+                                @if(count($paidFiles) > 1)
+                                    <span class="mt-1 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 ring-1 ring-blue-200">
+                                        {{ count($paidFiles) }} files
+                                    </span>
+                                @endif
+                            </td>
                             <td class="px-4 py-3 font-bold text-emerald-700">₦{{ number_format($p->amount / 100, 2) }}</td>
                             <td class="px-4 py-3">
                                 @if($p->status === 'paid')

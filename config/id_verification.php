@@ -108,6 +108,49 @@ return [
     ],
 
     /*
+    | Who is submitting the search. Both types go through the same ID name check
+    | and upload the same document; a lawyer additionally supplies a Call-to-Bar
+    | number, which is checked as far as it can be (see `bar_number` below).
+    */
+    'customer_types' => [
+        'individual' => [
+            'label'              => 'Individual',
+            'requires_bar_number' => false,
+        ],
+        'lawyer' => [
+            'label'              => 'Lawyer / Legal Adviser',
+            'requires_bar_number' => true,
+        ],
+    ],
+
+    /*
+    | Call-to-Bar number checking.
+    |
+    | READ THIS BEFORE CHANGING THE STATUS RULES. Nigerian general-purpose IDs -
+    | the NIN slip, driver's licence, voter's card - do NOT carry a call-to-bar
+    | number. So "look for it on the uploaded ID" finds nothing for most lawyers,
+    | which is a normal outcome and not evidence of anything.
+    |
+    | That is why an UNCONFIRMED bar number never blocks payment: if it did, no
+    | lawyer could ever complete a search. The number is recorded, its check
+    | outcome is stored, and the approving officer sees both. Only an external
+    | roll that positively REJECTS a number downgrades the result, and only to
+    | `review` - a human decides, rather than an API quirk rejecting a real
+    | practitioner.
+    |
+    | `lookup_driver` selects the roll implementation bound in AppServiceProvider.
+    | It is 'none' because no Nigerian Bar Association / Supreme Court roll API is
+    | wired up; implement BarRollLookup and add a branch to enable one.
+    */
+    'bar_number' => [
+        'lookup_driver' => env('ID_VERIFICATION_BAR_LOOKUP', 'none'),
+
+        // Minimum length after normalisation. Guards against a stray digit being
+        // "found" everywhere in an OCR transcript.
+        'min_length' => 4,
+    ],
+
+    /*
     | Accepted identification types.
     |
     | Only ONE image is collected per applicant - the side carrying the name. A
@@ -154,5 +197,14 @@ return [
         | `php artisan ols:id-verification-doctor`.
         */
         'unavailable' => 'Identification checks are temporarily unavailable. Please try again shortly — this is a problem on our side, not with your document.',
+
+        /*
+        | Appended to a lawyer's result. Deliberately neutral about an unconfirmed
+        | number: most IDs do not print one, so saying nothing would be misleading
+        | and warning about it would alarm a perfectly legitimate practitioner.
+        */
+        'bar_matched'     => 'Your Call-to-Bar number was also found on the document you uploaded.',
+        'bar_unconfirmed' => 'Your Call-to-Bar number has been recorded. It does not appear on the document you uploaded, so the approving officer will confirm it.',
+        'bar_rejected'    => 'The Call-to-Bar number you entered could not be confirmed against the roll of legal practitioners. The approving officer will review it.',
     ],
 ];

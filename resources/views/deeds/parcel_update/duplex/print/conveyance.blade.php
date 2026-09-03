@@ -2,8 +2,9 @@
     Conveyance letter — the official Ministry format.
 
     Deliberately NOT the tabular sheet the application and memo use: this is the letter
-    that goes out to the applicant, so it follows the house layout exactly — title number
-    centred at the top, date right, addressee block, an underlined RE line, then prose.
+    that goes out to the applicant, so it follows the house layout exactly — the title
+    number on the letterhead's own "Our Ref:" rule, date right, addressee block, an
+    underlined RE line, then prose.
 
     A duplex can carry several updates, so the RE line and the body are composed from the
     stages in execution order rather than hard-coded to one workflow.
@@ -163,7 +164,10 @@
     <meta charset="utf-8">
     <title>Conveyance — {{ $duplex->duplex_id }}</title>
     <style>
-        @page { size: A4; margin: 25mm 22mm; }
+        /* No page margin: the letterhead artwork has to print edge-to-edge. The
+           insets the letter used to take from @page (25mm/22mm) are now .page-sheet
+           padding, so the text still sits where it always did. */
+        @page { size: A4 portrait; margin: 0; }
 
         body {
             font-family: "Times New Roman", Times, serif;
@@ -171,17 +175,118 @@
             line-height: 1.55;
             color: #000;
             margin: 0;
-            /* Blank band the letter opens below — on the ministry's pre-printed
-               letterhead paper this is the artwork's own space, so the title
-               number starts under it rather than across it. First page only,
-               which is where the letterhead is. Same band as the memo's
-               .header-block (duplex/print/recommendation.blade.php). */
-            padding-top: 90px;
-            /* Reserve the strip the fixed footer occupies. */
-            padding-bottom: 96px;
         }
 
-        .title-no   { text-align: center; font-weight: bold; margin-bottom: 26px; }
+        /*
+         * The sheet the letter prints on, with the ministry's letterhead behind it.
+         *
+         * Fixed 210mm x 297mm background, NOT 100% 100%: a letter that runs long grows
+         * this box, and a stretched background would drag the artwork's ref box away
+         * from the number pinned on top of it. no-repeat keeps the artwork on the
+         * first page, which is the only page a letterhead belongs on.
+         *
+         * Measured off the scan (4798x6735px = 210x297mm), the same calibration the
+         * consent letters use (consent_applications/templates/assignment.blade.php).
+         */
+        .page-sheet {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            padding: 0 22mm 34mm;
+            box-sizing: border-box;
+            position: relative;
+            background-color: #fff;
+            /* background-image: url('{{ asset('assets/letterhead/bg.png') }}'); */
+            background-size: 210mm 297mm;
+            background-repeat: no-repeat;
+            background-position: left top;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+        }
+
+        /* Clears the artwork. The letterhead's ref box has its bottom border 62.5mm
+           down the sheet, so the letter opens below that rather than across it. This
+           replaces the blank band the letter used to leave for pre-printed paper. */
+        .letterhead-space { height: 68mm; }
+
+        /*
+         * bg.png is a scan of a letter that was already typed on, so it carries a
+         * previous file's reference (LKN/RES/RC/81/316) burned into the "Our Ref:"
+         * rule. Left alone every conveyance would go out quoting that number, so the
+         * patches below cover it and .our-ref prints this file's own number in its
+         * place. Every rect is measured off the scan (4798x6735px = 210x297mm).
+         *
+         * The old number sits ON the box's bottom border - its strokes run into the
+         * line at 61.9mm and a few dip below it - so the patch goes straight THROUGH
+         * the border and .ref-rule draws that segment back. Stopping the patch short
+         * of the line instead left 0.05mm of clearance, which rounds onto the line
+         * itself at screen resolution and printed it broken.
+         *
+         * #fdfdfd, not #fff: the scan's paper is off-white, and a pure white patch
+         * reads as a rectangle on the page.
+         */
+        {{-- Commented out with the background: these patch bg.png's own burned-in
+             reference and put back the stretch of border they take with it, so on
+             real headed paper they would print a white block and a second line
+             across the ministry's ref box. Uncomment them with the background. --}}
+        {{--
+        .ref-mask {
+            position: absolute;
+            background: #fdfdfd;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        /* The old number's cap tops and the dotted rule share a band, so this one
+           starts to the RIGHT of the "Our Ref:" label (which ends at 96.1mm and runs
+           down to 59.2mm) and takes both. */
+        .ref-mask-rule { left: 96.5mm; width: 39.5mm; top: 58.3mm;  height: 1.05mm; }
+        /* Below the label: the number, the border it sits on, and the strokes under it. */
+        .ref-mask-body { left: 92.5mm; width: 43.5mm; top: 59.35mm; height: 3.65mm; }
+
+        /*
+         * The box's bottom border, redrawn across the patched span. The scanned line
+         * is very slightly tilted - 61.94mm-62.42mm where this segment starts, and
+         * 61.86mm-62.32mm where it ends - so it is drawn on the average of the two
+         * and meets its neighbours within 0.08mm. #3d3b48 is the line's own colour,
+         * sampled off the scan; it is not black.
+         */
+        .ref-rule {
+            position: absolute;
+            left: 92.5mm;
+            width: 43.5mm;
+            top: 61.92mm;
+            height: 0.42mm;
+            background: #3d3b48;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+        --}}
+
+        /*
+         * Typed onto the rule, on the label's own line: it starts 1.3mm after the
+         * colon (which ends at 95.9mm) and shares the label's baseline at 59.2mm.
+         * The scan had it a whole line lower and half under the label, which is what
+         * made it read as a second, separate number.
+         *
+         * top = baseline - ascent: Times' ascent is 0.891em, so at 11pt (3.881mm)
+         * that is 3.46mm above the baseline. height matches ascent + descent exactly,
+         * so the box ends on the descender and nothing is clipped.
+         */
+        .our-ref {
+            position: absolute;
+            left: 97.2mm;
+            top: 55.74mm;
+            width: 38mm;
+            height: 4.3mm;
+            line-height: 4.3mm;
+            font-size: 11pt;
+            font-weight: bold;
+            text-align: left;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+
         .date       { text-align: right; margin-bottom: 30px; }
 
         .addressee  { margin-bottom: 26px; }
@@ -212,9 +317,11 @@
          */
         .page-footer {
             position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            /* @page has no margin any more, so the footer carries the letter's own
+               22mm side insets and stands 15mm off the foot of the sheet. */
+            left: 22mm;
+            right: 22mm;
+            bottom: 15mm;
         }
 
         .footer-logo {
@@ -231,6 +338,12 @@
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
             }
+        }
+
+        /* The sheet is the page on screen too, so the preview shows what will print. */
+        @media screen {
+            body { background: #e5e7eb; padding: 20px 0; }
+            .page-sheet { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); }
         }
 
         @media print { .no-print { display: none; } }
@@ -253,7 +366,22 @@
     <button onclick="window.print()">Print this conveyance</button>
 </div>
 
-<div class="title-no">{{ $title ?: '—' }}</div>
+<div class="page-sheet">
+
+{{-- The patches cover the previous file's reference, which is part of the bg.png
+     scan rather than something the letter can leave blank; .ref-rule puts back the
+     stretch of the box's border they take with it, and the number that belongs to
+     THIS file is printed on the rule in its place. --}}
+{{--
+<div class="ref-mask ref-mask-rule" aria-hidden="true"></div>
+<div class="ref-mask ref-mask-body" aria-hidden="true"></div>
+<div class="ref-rule" aria-hidden="true"></div>
+--}}
+<div class="our-ref" data-fit-ref>{{ $title }}</div>
+
+{{-- Opens the letter below the letterhead artwork rather than across it. --}}
+<div class="letterhead-space"></div>
+
 
 <div class="date">{{ $issued }}</div>
 
@@ -299,6 +427,20 @@
         <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAnd ADmin Enterprise System">
     </div>
 </div>
+
+</div>
+
+{{-- The "Our Ref:" rule is a fixed 38mm of printed artwork, so a long file number
+     is stepped down until it fits rather than being clipped by it. --}}
+<script>
+    document.querySelectorAll('[data-fit-ref]').forEach(function (el) {
+        var size = 11;
+        while (el.scrollWidth > el.clientWidth && size > 5) {
+            size -= 0.25;
+            el.style.fontSize = size + 'pt';
+        }
+    });
+</script>
 
 </body>
 </html>

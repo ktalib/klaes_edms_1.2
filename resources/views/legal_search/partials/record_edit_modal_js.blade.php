@@ -31,10 +31,12 @@
       { key: 'pageNo', label: 'Page No', type: 'particular' },
       { key: 'volumeNo', label: 'Volume No', type: 'particular' },
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
+      // Instrument/transaction identity leads the date block: the type drives which
+      // party roles matter, so it is picked before the registration date/time.
+      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
+      { key: 'transaction_date', label: 'Transaction/Commencement Date', type: 'date' },
       { key: 'reg_date', label: 'Reg Date', type: 'date' },
       { key: 'reg_time', label: 'Reg Time', type: 'time' },
-      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
-      { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
       { key: 'party_1', label: 'Party 1' },
       { key: 'party_2', label: 'Party 2' },
@@ -73,10 +75,10 @@
       // stored in deeds_date/deeds_time (same as pra), which the report/timeline
       // prefer for the displayed "Reg Date". transaction_time is kept as the
       // last-resort Reg Time fallback.
+      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
+      { key: 'transaction_date', label: 'Transaction/Commencement Date', type: 'date' },
       { key: 'deeds_date', label: 'Reg Date', type: 'date' },
       { key: 'deeds_time', label: 'Reg Time', type: 'time' },
-      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
-      { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
       { key: 'Grantor', label: 'Party 1' },
       { key: 'Grantee', label: 'Party 2' },
@@ -109,10 +111,10 @@
       { key: 'regNo', label: 'Reg No', readonly: true, sectionEnd: true },
       // pra has no reg_date/reg_time columns; its registration date/time is
       // tracked as deeds_date/deeds_time instead.
+      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
+      { key: 'transaction_date', label: 'Transaction/Commencement Date', type: 'date' },
       { key: 'deeds_date', label: 'Deeds Date', type: 'date' },
       { key: 'deeds_time', label: 'Deeds Time', type: 'time' },
-      { key: 'transaction_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
-      { key: 'transaction_date', label: 'Transaction Date', type: 'date' },
       // Standard parties
       { key: 'party_1', label: 'Party 1' }, { key: 'party_2', label: 'Party 2' },
       { key: 'party_3', label: 'Party 3' }, { key: 'party_4', label: 'Party 4' },
@@ -147,8 +149,8 @@
       { key: 'volume_no', label: 'Volume No', type: 'particular' },
       { key: 'registration_number', label: 'Reg No', readonly: true, sectionEnd: true },
       { key: 'instrument_type', label: 'Instrument/Transaction Type', type: 'select', optionSource: 'transaction_type' },
-      { key: 'deeds_date', label: 'Deeds Date', type: 'date' }, { key: 'deeds_time', label: 'Deeds Time', type: 'time' },
       { key: 'instrument_date', label: 'Instrument Date', type: 'date' },
+      { key: 'deeds_date', label: 'Deeds Date', type: 'date' }, { key: 'deeds_time', label: 'Deeds Time', type: 'time' },
       { key: 'grantor', label: 'Party 1' }, { key: 'grantee', label: 'Party 2' },
       { key: 'lga', label: 'LGA' }, { key: 'district', label: 'District' },
       { key: 'plot_number', label: 'Plot Number' }, { key: 'size', label: 'Size' },

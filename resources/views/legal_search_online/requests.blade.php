@@ -127,6 +127,7 @@
                             <th class="px-4 py-3">File Number</th>
                             <th class="px-4 py-3">Purpose</th>
                             <th class="px-4 py-3">Requester</th>
+                            <th class="px-4 py-3">Identification</th>
                             <th class="px-4 py-3">Payment Ref</th>
                             <th class="px-4 py-3">Submitted</th>
                             <th class="px-4 py-3">Status</th>
@@ -139,7 +140,22 @@
                                 <td class="px-4 py-3 font-bold text-slate-900">{{ $req->request_no }}</td>
                                 <td class="px-4 py-3 font-semibold text-slate-700">{{ $req->file_number ?: '—' }}</td>
                                 <td class="px-4 py-3 text-slate-600">{{ $req->purpose ?: '—' }}</td>
-                                <td class="px-4 py-3 text-slate-600">{{ $req->requester_email }}</td>
+                                <td class="px-4 py-3 text-slate-600">
+                                    {{-- requester_name is fed from the verified identification, so it
+                                         is the name that was actually checked. --}}
+                                    <div class="font-semibold text-slate-800">{{ $req->requester_name ?: '—' }}</div>
+                                    <div class="text-xs text-slate-500">{{ $req->requester_email }}</div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    @if($canApprove)
+                                        <a href="{{ route('legal-search-online.admin.requests.identification', $req->id) }}"
+                                           class="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                            View IYC
+                                        </a>
+                                    @else
+                                        <span class="text-xs text-slate-400">—</span>
+                                    @endif
+                                </td>
                                 <td class="px-4 py-3 text-slate-500">{{ $req->tracking_id ?: $req->reference }}</td>
                                 <td class="px-4 py-3 text-slate-500">{{ optional($req->submitted_at)->format('d M Y, g:i A') ?: '—' }}</td>
                                 <td class="px-4 py-3">
@@ -225,7 +241,7 @@
                                 </td>
                             </tr>
                         @empty
-                            <tr><td colspan="8" class="px-4 py-10 text-center text-slate-500">No requests in this view.</td></tr>
+                            <tr><td colspan="9" class="px-4 py-10 text-center text-slate-500">No requests in this view.</td></tr>
                         @endforelse
                     </tbody>
                 </table>

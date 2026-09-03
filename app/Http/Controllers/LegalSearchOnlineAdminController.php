@@ -39,7 +39,9 @@ class LegalSearchOnlineAdminController extends Controller
             'open_feedback'  => $openFeedback,
         ];
 
-        $payments = LegalSearchOnlinePayment::with('user')
+        // `verification` carries the applicant's real name — the `user` relation is
+        // always null here, because the portal is public and has no accounts.
+        $payments = LegalSearchOnlinePayment::with(['user', 'verification'])
             ->orderByDesc('created_at')
             ->paginate(30);
 
@@ -185,6 +187,44 @@ class LegalSearchOnlineAdminController extends Controller
      * reads here is the same document the requester receives, produced by the
      * same renderer. Nothing is sent; delivery happens only on approval.
      */
+    /**
+     * The identification (IYC) submitted behind a search request.
+     *
+     * Approver-gated like the rest of the queue. This is the only screen that
+     * surfaces the uploaded document, and it does so through the streaming route
+     * rather than by exposing a storage path.
+     */
+    public function requestIdentification(int $id, LegalSearchApprovalService $approvalService)
+    {
+        abort_unless(
+            $approvalService->isApprover(auth()->user()),
+            403,
+            'Only a Director or Deputy Director may view submitted identification.'
+        );
+
+        $searchRequest = LegalSearchOnlineRequest::findOrFail($id);
+        $verification  = $searchRequest->verification();
+
+        abort_if(
+            !$verification,
+            404,
+            'No identification was recorded for this request. It predates the IYC step.'
+        );
+
+        // Every file the payment covered, so a reviewer can see this identification
+        // belongs to a multi-file basket rather than only the file in front of them.
+        $siblings = LegalSearchOnlineRequest::where('payment_id', $searchRequest->payment_id)
+            ->orderBy('id')
+            ->get();
+
+        return view('legal_search_online.identification', [
+            'PageTitle'     => 'Identify your Customer — ' . $searchRequest->request_no,
+            'searchRequest' => $searchRequest,
+            'verification'  => $verification,
+            'siblings'      => $siblings,
+        ]);
+    }
+
     public function requestPreview(int $id, LegalSearchApprovalService $approvalService)
     {
         abort_unless($approvalService->isApprover(auth()->user()), 403, 'Only a Director or Deputy Director may review Online Legal Search requests.');

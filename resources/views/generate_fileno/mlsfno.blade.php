@@ -261,8 +261,11 @@
 
                                                  <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Source</th>
 
+                                                <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Passport</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">MLS File No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Related / Old File No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">File Title</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">RoT</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
@@ -1618,6 +1621,41 @@
                                                    autocomplete="off"
                                                    >
                                             <p class="text-xs mt-1" :class="serialDescriptionClass" x-text="serialDescription"></p>
+
+                                            {{-- Reuse a serial the counter has already passed.
+                                                 mls_serial_control only moves forward, so a Master
+                                                 Delete strands its number below the high-water mark
+                                                 and nothing ever issues it again. Opt-in and manual
+                                                 by design: the officer picks the number, the system
+                                                 never quietly reuses one. Only offered for the file
+                                                 types that draw an auto serial. --}}
+                                            <template x-if="['normal', 'regrant', 'resettlement'].includes(fileOption)">
+                                                <div class="mt-2">
+                                                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                                                        <input type="checkbox" id="useReclaimedSerial"
+                                                               x-model="useReclaimedSerial"
+                                                               @change="onToggleReclaimedSerial()"
+                                                               class="w-3.5 h-3.5 text-amber-600 border-gray-300 rounded focus:ring-amber-500">
+                                                        <span class="text-xs font-medium text-amber-700">
+                                                            <i data-lucide="rotate-ccw" class="w-3 h-3 inline mr-0.5"></i>
+                                                            Use a missing serial number
+                                                        </span>
+                                                    </label>
+
+                                                    <div x-show="useReclaimedSerial" x-transition class="mt-2">
+                                                        <select id="reclaimedSerialSelect"
+                                                                x-model="reclaimedSerial"
+                                                                @change="onPickReclaimedSerial()"
+                                                                :disabled="reclaimedLoading === true"
+                                                                class="w-full px-3 py-2 border border-amber-300 bg-amber-50 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-amber-500">
+                                                            {{-- Options are injected by loadReclaimedSerials(); this placeholder is
+                                                                 rewritten in place rather than wrapped, since a <select> cannot hold markup. --}}
+                                                            <option value="" x-text="reclaimedLoading ? 'Loading…' : 'Select a missing serial'"></option>
+                                                        </select>
+                                                        <p class="text-[11px] mt-1" :class="reclaimedNoticeClass" x-text="reclaimedNotice"></p>
+                                                    </div>
+                                                </div>
+                                            </template>
                                         </div>
                                     </div>
 
@@ -2186,6 +2224,38 @@
                             @method('PUT')
                             <input type="hidden" id="editId" name="id">
                             <input type="hidden" id="editEntity" name="entity">
+
+                            {{-- Batch scope. The list draws a whole batch as ONE row labelled with a
+                                 range (COM-2026-78-84), but that row carries the id of a single
+                                 member — the newest. Without this panel the user edits COM-2026-84
+                                 believing they edited all seven. Hidden entirely for a standalone
+                                 file, which is the overwhelming majority of rows. --}}
+                            <input type="hidden" id="editBatchNo" name="batch_no">
+                            <div id="editBatchScope" class="mb-4 p-3 border border-amber-200 bg-amber-50 rounded-lg hidden">
+                                <div class="flex items-start gap-2">
+                                    <i data-lucide="layers" class="w-4 h-4 mt-0.5 text-amber-600 flex-shrink-0"></i>
+                                    <div class="flex-1">
+                                        <p class="text-sm font-semibold text-amber-900">
+                                            Part of a batch of <span id="editBatchCount">0</span> files
+                                        </p>
+                                        <p class="text-xs text-amber-800 mt-0.5">
+                                            <span id="editBatchRange"></span>
+                                        </p>
+                                        <div class="mt-2 space-y-1.5">
+                                            <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer">
+                                                <input type="radio" name="apply_to_batch" value="0" checked
+                                                       class="text-amber-600 focus:ring-amber-500">
+                                                <span>Update <strong id="editBatchThisFile">this file</strong> only</span>
+                                            </label>
+                                            <label class="flex items-center gap-2 text-xs text-amber-900 cursor-pointer">
+                                                <input type="radio" name="apply_to_batch" value="1"
+                                                       class="text-amber-600 focus:ring-amber-500">
+                                                <span>Update <strong>all <span id="editBatchCountAll">0</span> files</strong> in this batch</span>
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <!-- Passport photograph. Captured at commissioning and filed into the
                                  file's EDMS scan folder; shown here so an edit can see what is on

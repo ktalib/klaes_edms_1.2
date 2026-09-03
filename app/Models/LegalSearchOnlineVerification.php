@@ -31,10 +31,16 @@ class LegalSearchOnlineVerification extends Model
         self::STATUS_FAILED,
     ];
 
+    public const CUSTOMER_INDIVIDUAL = 'individual';
+    public const CUSTOMER_LAWYER     = 'lawyer';
+
     protected $fillable = [
         'file_number',
         'requester_email',
         'session_token',
+        'customer_type',
+        'call_to_bar_number',
+        'bar_number_status',
         'applicant_full_name',
         'applicant_phone',
         'applicant_address',
@@ -77,6 +83,20 @@ class LegalSearchOnlineVerification extends Model
     public function request(): BelongsTo
     {
         return $this->belongsTo(LegalSearchOnlineRequest::class, 'request_id');
+    }
+
+    public function isLawyer(): bool
+    {
+        return $this->customer_type === self::CUSTOMER_LAWYER;
+    }
+
+    /** Human label for the customer type. */
+    public function customerTypeLabel(): string
+    {
+        return (string) config(
+            'id_verification.customer_types.' . $this->customer_type . '.label',
+            'Individual'
+        );
     }
 
     /** Only a verified applicant may open the checkout. */

@@ -14,6 +14,7 @@
 --}}
 @php
     $idTypes = config('id_verification.types', []);
+    $customerTypes = config('id_verification.customer_types', []);
 @endphp
 
 <div class="pay-wrap" id="idCard">
@@ -31,6 +32,29 @@
         <span class="id-head-chevron" aria-hidden="true">&#9662;</span>
     </button>
     <div class="pay-body" id="idCardBody">
+
+        <label for="idCustomerType" class="id-label">Customer type <span style="color:#dc2626;">*</span></label>
+        <select id="idCustomerType" class="id-input">
+            @foreach($customerTypes as $key => $type)
+                <option value="{{ $key }}"
+                        data-requires-bar="{{ !empty($type['requires_bar_number']) ? '1' : '0' }}">
+                    {{ $type['label'] }}
+                </option>
+            @endforeach
+        </select>
+
+        {{-- Lawyers only. A lawyer still selects a means of identification and
+             uploads the same ID as anyone else; the bar number is additional, not
+             a substitute for it. --}}
+        <div id="idBarWrap" class="id-specify" style="display:none;">
+            <label for="idBarNumber" class="id-label" style="margin-top:0;">Call-to-Bar number <span style="color:#dc2626;">*</span></label>
+            <input id="idBarNumber" type="text" class="id-input"
+                   placeholder="e.g. SCN123456" maxlength="60" autocomplete="off" />
+            <p class="pay-note" style="text-align:left;margin-top:6px;">
+                Checked against your uploaded ID where it appears there. Most IDs do not
+                print it, in which case the approving officer confirms it.
+            </p>
+        </div>
 
         <label for="idFullName" class="id-label">Full name <span style="color:#dc2626;">*</span></label>
         <input id="idFullName" type="text" class="id-input" autocomplete="name"
@@ -51,11 +75,16 @@
             @endforeach
         </select>
 
-        {{-- Only for "Other government-issued ID", where the label is required. --}}
-        <div id="idTypeOtherWrap" style="display:none;">
-            <label for="idTypeOther" class="id-label">Identification type <span style="color:#dc2626;">*</span></label>
+        {{-- Shown only for "Other government-issued ID", and required there: an
+             unlabelled "other" tells the approving officer nothing. Indented and
+             tinted so it reads as a follow-up to the select above rather than as
+             a second, competing "identification type" question. --}}
+        <div id="idTypeOtherWrap" class="id-specify" style="display:none;">
+            <label for="idTypeOther" class="id-label" style="margin-top:0;">
+                Please specify the identification type <span style="color:#dc2626;">*</span>
+            </label>
             <input id="idTypeOther" type="text" class="id-input"
-                   placeholder="e.g. NYSC Discharge Certificate" maxlength="120" />
+                   placeholder="e.g. NYSC Discharge Certificate, Government Staff ID" maxlength="120" />
         </div>
 
         {{-- One image only: the side carrying the name. Every accepted document

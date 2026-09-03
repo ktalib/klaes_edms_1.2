@@ -195,6 +195,87 @@ different name.
 
 ---
 
+## Multi-file requests
+
+One request may cover several files, charged at the unit price per file. The
+"How many files?" question sits above the file picker on the landing page; choosing
+more than one reveals a picker per additional file.
+
+**The price is decided by the server.** `resolveRequestedFiles()` takes the submitted
+list, deduplicates it case-insensitively (nobody is charged twice for the same file) and
+caps it at `MAX_FILES_PER_REQUEST` (10). The resulting list and its total are held in the
+**session**, and `verifyPayment()` reads them from there — never from the request — so a
+browser that rewrites the file list on the way to checkout cannot buy three reports for
+the price of one. Behind that sits a second check: if the amount Paystack actually
+charged is less than the basket costs, the payment is refused rather than honoured.
+
+**One request row per file.** A payment covering N files opens N
+`legal_search_online_requests` rows sharing its `payment_id`. That is deliberate: a Legal
+Search report is a per-file legal document with its own particulars and signature, and a
+Director must be able to approve one file while rejecting another. It also means
+`buildReport`, `approve`, `resend`, the mailable and both approver screens needed **no
+changes at all** — they still work one file at a time.
+
+`legal_search_online_payments.file_number` still holds the primary (first) file, so every
+existing single-file lookup keeps working; `file_numbers` and `file_count` record the
+whole basket.
+
+**The IYC check is keyed to the primary file.** The applicant is one person submitting
+one identification, so the verification row and the payment gate both use the first file
+in the basket.
+
+---
+
+## Customer type and Call-to-Bar numbers
+
+The IYC card asks who is submitting the search:
+
+| Customer type | Extra field | ID still required? |
+|---|---|---|
+| Individual | — | yes |
+| Lawyer / Legal Adviser | **Call-to-Bar number** (required) | yes — same means of identification and same upload |
+
+A lawyer is not exempt from anything. They select a means of identification, upload the
+same document, and pass the same name comparison as an individual; the bar number is
+additional evidence, never a substitute.
+
+### How the number is checked, and why `unconfirmed` is normal
+
+`app/Services/CallToBarVerificationService.php` looks in two places, in order:
+
+1. **The uploaded ID.** The OCR transcript and the entered number are both stripped to
+   letters and digits before comparison, so `SCN 123456`, `scn-123456` and `SCN123456`
+   are one value. The same OCR glyph folding the name comparison uses applies here, so a
+   `0` read as `O` still matches. Numbers shorter than
+   `id_verification.bar_number.min_length` (4) are not searched for at all — a
+   three-character string turns up in any transcript by chance.
+2. **An external roll of legal practitioners**, via the `BarRollLookup` contract.
+
+**No Nigerian roll API is wired up**, so `NullBarRollLookup` is bound and answers
+"unknown" to everything. To add one, implement `BarRollLookup` and add a branch to the
+binding in `AppServiceProvider::register`, selected by
+`id_verification.bar_number.lookup_driver`.
+
+| `bar_number_status` | Meaning | Effect on payment |
+|---|---|---|
+| `not_applicable` | An individual; no number supplied | none |
+| `matched` | Found on the ID, or confirmed by a roll | none |
+| `unconfirmed` | Recorded, but nothing could confirm it | **none — payment proceeds** |
+| `rejected` | A roll positively said the number is not valid | `verified` is downgraded to `review` |
+
+The critical rule is the third row. Nigerian general-purpose IDs — the NIN slip,
+driver's licence, voter's card — **do not print a call-to-bar number**, and no roll API
+exists. So `unconfirmed` is the ordinary outcome for a completely genuine practitioner.
+If it blocked payment, no lawyer could ever complete a search. The number is stored, the
+status is stored, and the approving officer confirms it during the existing review.
+
+A roll *outage* (an exception, a timeout, an inconclusive answer) is `unconfirmed`, never
+`rejected` — a third-party service falling over is not a finding about a practitioner.
+Only an explicit "not on the roll" reaches `rejected`, and even that only downgrades to
+`review` so a human decides rather than an API quirk rejecting a real lawyer.
+
+---
+
 ## Workflow
 
 1. Applicant enters email and confirms it (existing payment card).
@@ -294,6 +375,12 @@ database/sql/2026_09_01_create_legal_search_online_verifications_ledger.mysql.sq
 
 `id_verification_status` is constrained in the database to
 `pending | verified | review | failed`.
+
+`2026_09_02_000000_add_customer_type_to_legal_search_online_verifications.php` adds
+`customer_type` (`individual | lawyer`, constrained, defaulting to `individual` so
+existing rows need no backfill), `call_to_bar_number` (stored normalised — letters and
+digits only — so a reviewer is never comparing formatting) and `bar_number_status`
+(constrained to the four values in the table above).
 
 ---
 

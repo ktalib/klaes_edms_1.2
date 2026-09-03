@@ -1084,49 +1084,12 @@ Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'gisedms'], function 
     Route::get('/application-details/{fileId}/{fileType}', [App\Http\Controllers\ProgrammesController::class, 'getApplicationDetails'])->name('gisedms.application-details');
 });
 // File Number Generation Routes
+// The rest of the /file-numbers group lives in routes/file_numbers.php (required near the
+// top of this file). It used to be duplicated here in full: harmless for URI matching —
+// the earlier registration wins and both pointed at the same controller — but the copy
+// below had drifted, missing /stats, /bulk-destroy and /clear-cache, so edits made to it
+// appeared to work and changed nothing. Only the routes that exist nowhere else remain.
 Route::group(['middleware' => ['auth', 'XSS'], 'prefix' => 'file-numbers'], function () {
-    Route::get('/', [App\Http\Controllers\FileNumberController::class, 'index'])->name('file-numbers.index');
-    Route::get('/data', [App\Http\Controllers\FileNumberController::class, 'getData'])->name('file-numbers.data');
-    Route::get('/test-db', [App\Http\Controllers\FileNumberController::class, 'testDatabase'])->name('file-numbers.test-db');
-    Route::get('/debug-data', function () {
-        try {
-            $data = DB::connection('sqlsrv')
-                ->table('fileNumber')
-                ->select(['id', 'kangisFileNo', 'NewKANGISFileNo', 'FileName', 'mlsfNo', 'created_by', 'created_at'])
-                ->limit(5)
-                ->get();
-
-            return response()->json([
-                'success' => true,
-                'raw_data' => $data->toArray(),
-                'formatted_data' => $data->map(function ($row) {
-                    return [
-                        'id' => $row->id,
-                        'kangisFileNo' => trim($row->kangisFileNo ?? '') ?: '-',
-                        'NewKANGISFileNo' => trim($row->NewKANGISFileNo ?? '') ?: '-',
-                        'FileName' => trim($row->FileName ?? '') ?: '-',
-                        'mlsfNo' => trim($row->mlsfNo ?? '') ?: '-',
-                        'created_by' => trim($row->created_by ?? '') ?: 'System',
-                        'created_at' => $row->created_at ?: '-'
-                    ];
-                })->toArray()
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'error' => $e->getMessage()
-            ]);
-        }
-    })->name('file-numbers.debug-data');
-    Route::get('/next-serial', [App\Http\Controllers\FileNumberController::class, 'getNextSerial'])->name('file-numbers.next-serial');
-    Route::get('/existing', [App\Http\Controllers\FileNumberController::class, 'getExistingFileNumbers'])->name('file-numbers.existing');
-    Route::post('/store', [App\Http\Controllers\FileNumberController::class, 'store'])->name('file-numbers.store');
-    Route::post('/migrate', [App\Http\Controllers\FileNumberController::class, 'migrate'])->name('file-numbers.migrate');
-    Route::get('/{id}', [App\Http\Controllers\FileNumberController::class, 'show'])->name('file-numbers.show');
-    Route::put('/{id}', [App\Http\Controllers\FileNumberController::class, 'update'])->name('file-numbers.update');
-    Route::delete('/{id}', [App\Http\Controllers\FileNumberController::class, 'destroy'])->name('file-numbers.destroy');
-    Route::get('/count/total', [App\Http\Controllers\FileNumberController::class, 'getCount'])->name('file-numbers.count');
-
     // Global File Number Search API Routes
     Route::get('/api/search', [App\Http\Controllers\FileNumberController::class, 'searchFileNumbers'])->name('file-numbers.api.search');
     Route::get('/api/top', [App\Http\Controllers\FileNumberController::class, 'getTopFileNumbers'])->name('file-numbers.api.top');

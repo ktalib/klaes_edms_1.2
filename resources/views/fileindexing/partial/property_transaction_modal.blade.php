@@ -1203,12 +1203,24 @@
                     || t.indexOf('statutory') !== -1;
             },
 
+            /**
+             * An issuing authority, never a private party a title is transferred TO.
+             *
+             * KANGIS is here by name because LegalSearchService STAMPS every non-Ministry
+             * recertification with party_1 = Kano Geographic Information Service. That
+             * string contains none of government / ministry / governor / kano state, so
+             * without this line every recertified conversion file asked the officer to
+             * record a Transfer of Title into KANGIS.
+             */
             totIsGovernment(name) {
                 const n = String(name || '').toLowerCase();
                 return n.indexOf('government') !== -1
                     || n.indexOf('ministry') !== -1
                     || n.indexOf('governor') !== -1
-                    || n.indexOf('kano state') !== -1;
+                    || n.indexOf('kano state') !== -1
+                    || n.indexOf('geographic information') !== -1
+                    || n.indexOf('kangis') !== -1
+                    || n.indexOf('physical planning') !== -1;
             },
 
             /** Honorifics off, words sorted — so 'ALH MUSA IDRIS' keys as 'IDRISMUSA'. */
@@ -1274,24 +1286,47 @@
             totMissingLegs() {
                 if (!this.totIsConversionFile()) return [];
 
-                const rows = this.fhSummaryRows().filter((r) => {
+                const all = this.fhSummaryRows().filter((r) => {
                     // Synthetic context (File Commissioning, Temporary File) is not a dealing.
                     if (r.derived) return false;
                     return String(r.p1 || '').trim() !== '' || String(r.p2 || '').trim() !== '';
                 });
 
+                // ONLY rows that put the title in somebody's hands belong to the chain: a
+                // GRANT, which opens it, and a TRANSFER, which moves it.
+                //
+                // A mortgage, lease, power of attorney, search, caveat, surrender or
+                // recertification leaves ownership exactly where it was, so it may act as
+                // NEITHER end of a leg. totMovesOwnership() has always known that, but it
+                // was only ever consulted when listing transfers already recorded -- the
+                // walk itself read every row. That is what asked officers to record a
+                // Transfer of Title into a bank on 1,126 conversion files, and into KANGIS
+                // on every recertified one.
+                //
+                // An instrument that is neither is left out rather than guessed at: this
+                // check is advisory, so a missed leg costs less than a false one.
+                const rows = all.filter((r) =>
+                    this.totIsGrant(r.instrument) || this.totMovesOwnership(r.instrument)
+                );
+
                 if (rows.length < 2) return [];
 
-                // Every transfer already on the chain, by party pair, so a leg that is
-                // already recorded is never asked for again.
-                const recorded = new Set();
-                rows.forEach((r) => {
-                    if (!this.totMovesOwnership(r.instrument)) return;
-                    recorded.add(this.totPersonKey(r.p1) + '>' + this.totPersonKey(r.p2));
-                });
+                // Every transfer already on the chain. Compared BY PERSON, not by string:
+                // totSamePerson() calls 'Ahmed Shitu Abubakar' and 'Ahmad Shitu Abubakar'
+                // one man, so the exact-key set this used to build disagreed with the very
+                // guard beside it and re-asked for a transfer the file already had.
+                const transfers = rows
+                    .filter((r) => this.totMovesOwnership(r.instrument))
+                    .map((r) => ({
+                        from: String(r.p1 || '').trim(),
+                        to: String(r.p2 || '').trim(),
+                    }));
+
+                const alreadyRecorded = (from, to) => transfers.some(
+                    (t) => this.totSamePerson(t.from, from) && this.totSamePerson(t.to, to)
+                );
 
                 const legs = [];
-                const seen = new Set();
 
                 for (let i = 0; i < rows.length - 1; i++) {
                     const holder = String(rows[i].p2 || '').trim();     // where it was left
@@ -1304,12 +1339,18 @@
                     if (this.totIsGrant(next.instrument)) continue;
                     if (this.totIsGovernment(taker)) continue;
 
-                    // Same party either side — the chain is continuous here.
+                    // Same party either side - the chain is continuous here.
                     if (this.totSamePerson(holder, taker)) continue;
 
-                    const key = this.totPersonKey(holder) + '>' + this.totPersonKey(taker);
-                    if (recorded.has(key) || seen.has(key)) continue;
-                    seen.add(key);
+                    // The next row IS this leg backwards: it hands the title from `taker`
+                    // to the man already holding it. That is one dealing on the file twice
+                    // -- usually one name spelt two ways, which fhSignature() dedupes by
+                    // string and therefore misses -- not a transfer nobody recorded.
+                    if (this.totSamePerson(holder, next.p2)) continue;
+
+                    if (alreadyRecorded(holder, taker)) continue;
+                    if (legs.some((l) => this.totSamePerson(l.from, holder)
+                                      && this.totSamePerson(l.to, taker))) continue;
 
                     legs.push({
                         from: holder,
@@ -1818,7 +1859,7 @@
                                     </div>
                                     <div>
                                         <label
-                                            class="block text-sm font-medium text-gray-700 mb-1">Transaction/Certificate
+                                            class="block text-sm font-medium text-gray-700 mb-1">Transaction/Commencement
                                             Date</label>
                                         <input type="date" x-model="transaction.transactionDate"
                                             :name="'transactions[' + index + '][transaction_date]'"

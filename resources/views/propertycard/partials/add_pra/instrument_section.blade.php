@@ -32,7 +32,7 @@
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
                 <div>
-                    <label for="transactionDate" class="text-xs">Transaction/Certificate Date</label>
+                    <label for="transactionDate" class="text-xs">Transaction/Commencement Date</label>
                     <input type="date" id="transactionDate" name="transactionDate" class="form-input text-xs py-1"
                         data-model="transactionDate" value="{{ old('transactionDate') }}">
                 </div>
@@ -285,10 +285,10 @@
                             '<input name="extra_regs[' + idx + '][volume_no]" class="form-input text-xs py-1" placeholder="e.g. 2" type="number" min="1">' +
                         '</div>' +
                     '</div>' +
-                    // Row 2: Transaction Date / Deeds Date / Deeds Time
+                    // Row 2: Transaction/Commencement Date / Deeds Date / Deeds Time
                     '<div class="grid grid-cols-1 md:grid-cols-3 gap-3">' +
                         '<div>' +
-                            '<label class="text-xs text-gray-600">Transaction/Certificate Date</label>' +
+                            '<label class="text-xs text-gray-600">Transaction/Commencement Date</label>' +
                             '<input name="extra_regs[' + idx + '][transaction_date]" type="date" class="form-input text-xs py-1">' +
                         '</div>' +
                         '<div>' +

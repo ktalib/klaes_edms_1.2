@@ -1438,8 +1438,8 @@
                 </select>
               </div>
               <div class="space-y-2">
-                <!-- Changed Description to Transaction/Certificate Date with date input -->
-                <label class="text-xs font-medium text-gray-700">Transaction/Certificate Date</label>
+                <!-- Changed Description to Transaction/Commencement Date with date input -->
+                <label class="text-xs font-medium text-gray-700">Transaction/Commencement Date</label>
                 <input
                   type="date"
                   value="${instrument.transactionDate || ""}"

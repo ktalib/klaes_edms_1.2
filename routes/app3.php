@@ -1320,6 +1320,9 @@ Route::middleware(['auth'])->group(function () {
         // Director / Deputy Director approval queue for public search requests.
         Route::get('/requests', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestsIndex'])->name('requests');
         Route::get('/requests/{id}/preview', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestPreview'])->name('requests.preview');
+        // The identification (IYC) behind a request — approver-gated, and the only
+        // screen that surfaces the uploaded document.
+        Route::get('/requests/{id}/identification', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestIdentification'])->name('requests.identification');
         Route::get('/requests/{id}/invoice', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestInvoice'])->name('requests.invoice');
         // Editable counterpart of the preview: correct the records before approving.
         Route::get('/requests/{id}/correct', [\App\Http\Controllers\LegalSearchOnlineAdminController::class, 'requestCorrect'])->name('requests.correct');

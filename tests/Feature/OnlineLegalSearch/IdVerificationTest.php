@@ -115,6 +115,26 @@ class IdVerificationTest extends TestCase
         $this->instance(OcrImagePreprocessor::class, new OcrImagePreprocessor());
     }
 
+    /** Bind a roll of legal practitioners returning a fixed verdict. */
+    private function fakeRollReturning(?bool $verdict): void
+    {
+        $this->instance(\App\Services\BarNumber\BarRollLookup::class, new class($verdict) implements \App\Services\BarNumber\BarRollLookup {
+            public function __construct(private ?bool $verdict)
+            {
+            }
+
+            public function lookup(string $barNumber, string $name): ?bool
+            {
+                return $this->verdict;
+            }
+
+            public function isAvailable(): bool
+            {
+                return true;
+            }
+        });
+    }
+
     /** @return array<string, mixed> */
     private function payload(array $overrides = []): array
     {
@@ -124,6 +144,7 @@ class IdVerificationTest extends TestCase
             'applicant_full_name' => 'Iorkua Kator Daniel',
             'applicant_phone'     => '08031234567',
             'applicant_address'   => '12 Ahmadu Bello Way, Kano',
+            'customer_type'       => 'individual',
             'identification_type' => 'nin',
             'id_front'            => UploadedFile::fake()->image('front.jpg', 600, 400),
         ], $overrides);
@@ -488,5 +509,133 @@ class IdVerificationTest extends TestCase
                 'id' => $row->id, 'side' => 'front',
             ]))
             ->assertForbidden();
+    }
+
+    // ---- Customer type & Call-to-Bar ---------------------------------------
+
+    /** An individual is unchanged: no bar number, and none recorded. */
+    public function test_an_individual_needs_no_bar_number(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+
+        $this->submit()->assertOk()->assertJson(['status' => 'verified']);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+
+        $this->assertSame('individual', $row->customer_type);
+        $this->assertNull($row->call_to_bar_number);
+        $this->assertSame('not_applicable', $row->bar_number_status);
+    }
+
+    /** A lawyer must supply one. */
+    public function test_a_lawyer_must_supply_a_bar_number(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+
+        $this->postJson(route('ols.verification.store'), $this->payload(['customer_type' => 'lawyer']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('call_to_bar_number');
+    }
+
+    /** The customer type itself is constrained to the configured list. */
+    public function test_an_unknown_customer_type_is_rejected(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+
+        $this->postJson(route('ols.verification.store'), $this->payload(['customer_type' => 'judge']))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('customer_type');
+    }
+
+    /**
+     * A lawyer still uploads an ID and passes the same name check. The bar number
+     * is stored normalised alongside the customer type.
+     */
+    public function test_a_lawyer_is_verified_on_the_name_and_the_number_is_stored(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'scn-123 456'])
+            ->assertOk()
+            ->assertJson(['status' => 'verified', 'can_pay' => true]);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+
+        $this->assertSame('lawyer', $row->customer_type);
+        $this->assertSame('SCN123456', $row->call_to_bar_number);
+    }
+
+    /** When the number is printed on the ID, the check finds it. */
+    public function test_a_bar_number_found_on_the_id_is_recorded_as_matched(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR SUPREME COURT NUMBER SCN123456');
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'SCN123456'])
+            ->assertOk()
+            ->assertJson(['status' => 'verified']);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+        $this->assertSame('matched', $row->bar_number_status);
+    }
+
+    /**
+     * The case that matters most: a lawyer whose NIN slip does not print the
+     * number must still be able to pay. Blocking here would stop every lawyer.
+     */
+    public function test_an_unconfirmed_bar_number_still_allows_payment(): void
+    {
+        $this->fakeOcrReturning('FEDERAL REPUBLIC OF NIGERIA DANIEL IORKUA KATOR');
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'SCN123456'])
+            ->assertOk()
+            ->assertJson(['status' => 'verified', 'can_pay' => true]);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+        $this->assertSame('unconfirmed', $row->bar_number_status);
+        $this->assertNotNull($row->id_verified_at);
+    }
+
+    /** A roll that rejects the number pulls a passing name match down to review. */
+    public function test_a_rejected_bar_number_downgrades_a_verified_name_to_review(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+        $this->fakeRollReturning(false);
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'SCN999999'])
+            ->assertOk()
+            ->assertJson(['status' => 'review', 'can_pay' => false]);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+        $this->assertSame('rejected', $row->bar_number_status);
+        $this->assertNull($row->id_verified_at);
+    }
+
+    /** And a rejected number therefore cannot reach a payment transaction. */
+    public function test_payment_cannot_start_after_a_rejected_bar_number(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+        $this->fakeRollReturning(false);
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'SCN999999'])->assertOk();
+
+        $this->postJson(route('ols.payment.verify'), [
+            'reference'   => 'test-ref-bar-rejected',
+            'purpose_id'  => 1,
+            'file_number' => self::FILE_NUMBER,
+        ])->assertStatus(422);
+    }
+
+    /** A roll that confirms an off-document number counts as matched. */
+    public function test_a_roll_confirmation_is_recorded_as_matched(): void
+    {
+        $this->fakeOcrReturning('DANIEL IORKUA KATOR');
+        $this->fakeRollReturning(true);
+
+        $this->submit(['customer_type' => 'lawyer', 'call_to_bar_number' => 'SCN123456'])
+            ->assertOk()
+            ->assertJson(['status' => 'verified']);
+
+        $row = LegalSearchOnlineVerification::where('file_number', self::FILE_NUMBER)->firstOrFail();
+        $this->assertSame('matched', $row->bar_number_status);
     }
 }

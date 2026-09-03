@@ -30,6 +30,11 @@
   .ols-select2 .select2-container--default.select2-container--open .select2-selection--single {
     border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.1);
   }
+  /* The file-count select and its options, coloured explicitly: native select
+     rendering follows the OS theme on some machines and left this grey-on-grey. */
+  #file-count { color: #111827; background-color: #fff; }
+  #file-count option { color: #111827; background-color: #fff; }
+
   /* Advanced compact variant (h-10) */
   .ols-select2-sm .select2-container--default .select2-selection--single { height: 2.5rem; padding-left: 0.75rem; }
   .ols-select2-sm .select2-container--default .select2-selection--single .select2-selection__arrow { height: 2.5rem; }
@@ -89,19 +94,66 @@
 
           <!-- Quick -->
           <div id="quick-search">
-            <div class="flex flex-col sm:flex-row items-center gap-3 max-w-2xl">
-              <div class="flex-1 relative w-full ols-select2">
+            {{-- The count decides how many pickers appear below and what the search
+                 costs, so it is asked before the file number. The whole question stays
+                 out of sight until the applicant opts in: a single-file search is by
+                 far the common case, and an inert control on screen is just clutter. --}}
+            <div class="max-w-2xl mb-5">
+              <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-700 cursor-pointer select-none">
+                <input type="checkbox" id="multi-file-toggle"
+                       class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer">
+                This request covers more than one file
+              </label>
+
+              <div id="file-count-wrap" class="mt-3" style="display:none;">
+                <label for="file-count" class="block text-sm font-medium text-gray-700 mb-1">
+                  How many files are under this request?
+                </label>
+                <select id="file-count"
+                        class="w-full sm:w-56 border border-gray-300 rounded-md text-sm focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 h-10 px-3">
+                  @for ($i = 1; $i <= $maxFiles; $i++)
+                    <option value="{{ $i }}">{{ $i }} {{ \Illuminate\Support\Str::plural('file', $i) }}</option>
+                  @endfor
+                </select>
+                <p id="file-count-note" class="text-xs text-gray-500 mt-1.5 hidden">
+                  Each file is searched and reported separately, at
+                  <strong>&#8358;{{ number_format($unitAmount / 100) }}</strong> per file.
+                  <span id="file-count-total" class="font-semibold text-gray-700"></span>
+                </p>
+              </div>
+            </div>
+
+            {{-- Primary file. Only labelled "File number 1" once there are others to
+                 number it against. --}}
+            <div class="max-w-2xl">
+              <label for="search-query" id="primary-file-label"
+                     class="block text-sm font-medium text-gray-700 mb-1" style="display:none;">
+                File number 1
+              </label>
+              <div class="relative w-full ols-select2">
                 <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5 z-10 pointer-events-none"></i>
                 <select id="search-query" class="w-full"><option></option></select>
               </div>
+            </div>
+            <p class="text-xs text-gray-500 mt-2.5 max-w-2xl">
+              Start typing a file number to pick from official records — or type an owner / plot number and press Search.
+              <span class="text-gray-400">e.g. "COM-RES-2021-78", "KN12345"</span>
+            </p>
+
+            {{-- Populated by JS once a count above 1 is chosen; each cell is the same
+                 Select2 file lookup as the primary field. A grid rather than a stack:
+                 at the ten-file maximum a single column runs well past the fold. --}}
+            <div id="extra-files"
+                 class="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-5 gap-y-4"
+                 style="display:none;"></div>
+
+            {{-- Search sits AFTER every picker. Above them, a ten-file basket would
+                 send the applicant scrolling back up to submit. --}}
+            <div class="mt-5">
               <button id="search-btn" class="inline-flex items-center justify-center rounded-md font-medium border-0 bg-blue-600 text-white hover:bg-blue-700 px-7 h-12 text-base whitespace-nowrap">
                 <i data-lucide="search" class="w-5 h-5 mr-2"></i> Search
               </button>
             </div>
-            <p class="text-xs text-gray-500 mt-2.5">
-              Start typing a file number to pick from official records — or type an owner / plot number and press Search.
-              <span class="text-gray-400">e.g. "COM-RES-2021-78", "KN12345"</span>
-            </p>
           </div>
 
           <!-- Advanced -->
@@ -329,6 +381,13 @@
   function runSearch(params) {
     if (!Object.values(params).some(v => (v || '').trim() !== '')) return;
     window.lastSearchParams = params;
+
+    // A multi-file basket previews EVERY file, not just the first. The applicant
+    // is about to be charged per file, so they must see what each one holds
+    // before paying for all of them.
+    const files = allChosenFiles();
+    if (files.length > 1) { return runMultiSearch(files, params); }
+
     show('loading');
 
     fetch(SEARCH_URL, {
@@ -340,6 +399,139 @@
     .then(data => renderResults(data))
     .catch(() => renderResults({ has_results: false, error: true }))
     .finally(() => { if (window.lucide) window.lucide.createIcons(); });
+  }
+
+  // One search per file, in parallel. A failure on one file resolves to an error
+  // entry rather than rejecting the batch, so a single bad file number cannot
+  // blank the whole results page.
+  function runMultiSearch(files, params) {
+    show('loading');
+
+    Promise.all(files.map(file =>
+      fetch(SEARCH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'application/json' },
+        body: JSON.stringify(Object.assign({}, params, { query: file })),
+      })
+      .then(r => r.json())
+      .then(data => ({ file: file, data: data }))
+      .catch(() => ({ file: file, data: { has_results: false, error: true } }))
+    ))
+    .then(renderMultiResults)
+    .finally(() => { if (window.lucide) window.lucide.createIcons(); });
+  }
+
+  // The preview card for one file, without its own action button — a multi-file
+  // basket is paid for as a whole, so there is a single Next at the end.
+  function summaryCardHtml(file, data) {
+    const s = (data && data.summary) || {};
+    const number = esc(s.file_number || file);
+
+    if (!data || !data.has_results) {
+      const info = (data && data.file_info) || null;
+
+      if (info) {
+        const rows = [
+          ['File Title', info.file_title],
+          ['Location', info.location],
+          ['Plot No', info.plot_number],
+          ['LGA', info.lga],
+        ].filter(r => r[1]);
+
+        return `
+          <div class="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+            <div class="p-5">
+              <div class="font-semibold text-lg text-gray-800 flex items-center">
+                <i data-lucide="file-text" class="h-5 w-5 mr-2 text-blue-500"></i>${number}
+              </div>
+              <div class="mt-3 grid grid-cols-2 gap-x-5 gap-y-2 text-sm">
+                ${rows.map(r => `<div><span class="text-gray-500">${esc(r[0])}:</span> <span class="text-gray-700 font-medium">${esc(r[1])}</span></div>`).join('')}
+              </div>
+              <div class="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+                No registered transaction on this file. Its report will show the File
+                Commissioning entry only — it is still charged at the standard fee.
+              </div>
+            </div>
+          </div>`;
+      }
+
+      return `
+        <div class="bg-white rounded-xl shadow border border-red-200 overflow-hidden">
+          <div class="p-5">
+            <div class="font-semibold text-lg text-gray-800 flex items-center">
+              <i data-lucide="file-x" class="h-5 w-5 mr-2 text-red-500"></i>${number}
+            </div>
+            <div class="mt-3 rounded-lg bg-red-50 border border-red-200 p-3 text-xs text-red-700">
+              No record found for this file number. Please correct it above — you would
+              otherwise be charged for a file we cannot report on.
+            </div>
+          </div>
+        </div>`;
+    }
+
+    const districtLga = [s.district, s.lga].filter(Boolean).join(' / ') || '—';
+    const caveatBadge = s.is_caveated
+      ? '<span class="inline-flex items-center rounded-full text-xs font-medium px-2.5 py-1 bg-red-500 text-white">Caveat: Yes</span>'
+      : '';
+
+    return `
+      <div class="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+        <div class="p-5">
+          <div class="flex justify-between items-start mb-3">
+            <div>
+              <div class="font-semibold text-lg text-gray-800 flex items-center">
+                <i data-lucide="file-text" class="h-5 w-5 mr-2 text-blue-500"></i>${number}
+              </div>
+              <div class="text-sm text-gray-500 mt-1">${esc(s.file_title) || 'Matched record'}</div>
+            </div>
+            ${caveatBadge}
+          </div>
+          <div class="grid grid-cols-2 gap-x-5 gap-y-2 text-sm">
+            <div><span class="text-gray-500">District/LGA:</span> <span class="text-gray-700 font-medium">${esc(districtLga)}</span></div>
+            <div><span class="text-gray-500">Land Use:</span> <span class="text-gray-700 font-medium">${esc(s.land_use) || '—'}</span></div>
+            <div><span class="text-gray-500">Plot No:</span> <span class="text-gray-700 font-medium">${esc(s.plot_number) || '—'}</span></div>
+            <div><span class="text-gray-500">Size:</span> <span class="text-gray-700 font-medium">${esc(s.size) || '—'}</span></div>
+            <div><span class="text-gray-500">Transaction(s):</span> <span class="text-gray-700 font-medium">${s.transaction_count ?? '—'}</span></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // Every file's preview, then one Next covering the whole basket.
+  function renderMultiResults(entries) {
+    show('results');
+
+    el('no-results').classList.add('hidden');
+    el('file-info-card').classList.add('hidden');
+
+    const card = el('summary-card');
+    const total = UNIT_AMOUNT_NAIRA * entries.length;
+
+    el('results-count').textContent =
+      `(${entries.length} files — \u20A6${total.toLocaleString()} total)`;
+
+    card.classList.remove('hidden');
+    card.innerHTML = `
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        ${entries.map(e => summaryCardHtml(e.file, e.data)).join('')}
+      </div>
+      <div class="mt-6 bg-white rounded-xl shadow border border-gray-200 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="text-sm text-gray-600">
+          <div class="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
+            These are previews only. The full Legal Search reports (complete file history
+            &amp; particulars) require payment of
+            <strong>\u20A6${UNIT_AMOUNT_NAIRA.toLocaleString()}</strong> per file —
+            <strong>\u20A6${total.toLocaleString()}</strong> for ${entries.length} files.
+            You will receive one report per file.
+          </div>
+        </div>
+        <button id="view-result-btn" class="inline-flex items-center justify-center rounded-md font-medium border-0 bg-blue-600 text-white hover:bg-blue-700 px-6 py-2.5 whitespace-nowrap shrink-0">
+          <i data-lucide="lock" class="w-4 h-4 mr-2"></i> Next
+        </button>
+      </div>`;
+
+    el('view-result-btn').addEventListener('click', goToResult);
+    if (window.lucide) window.lucide.createIcons();
   }
 
   function renderResults(data) {
@@ -415,7 +607,59 @@
     const p = window.lastSearchParams || {};
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v) qs.append(k, v); });
+
+    // Carry the whole basket. The server re-derives the list and the price from
+    // these, deduplicating and capping them — this is a convenience, not a
+    // source of truth.
+    extraFileNumbers().forEach(f => qs.append('files[]', f));
+
     window.location.href = RESULT_URL + '?' + qs.toString();
+  }
+
+  // ---- Multi-file basket -----------------------------------------------------
+  // The count question drives how many additional pickers exist. The primary file
+  // stays in #search-query and is what the on-screen preview is based on; the
+  // extras are collected here and carried to the payment page.
+  const UNIT_AMOUNT_NAIRA = {{ (int) ($unitAmount / 100) }};
+  const MAX_FILES = {{ (int) $maxFiles }};
+
+  // Primary plus every filled extra picker, deduplicated case-insensitively —
+  // the same rule the server applies when it prices the basket.
+  function allChosenFiles() {
+    const primary = (document.getElementById('search-query').value || '').trim();
+    const seen = {};
+    const out = [];
+
+    [primary].concat(extraFileNumbers()).forEach(function (f) {
+      const key = f.toUpperCase();
+      if (f && !seen[key]) { seen[key] = true; out.push(f); }
+    });
+
+    return out;
+  }
+
+  function extraFileNumbers() {
+    return Array.from(document.querySelectorAll('#extra-files select'))
+      .map(sel => (sel.value || '').trim())
+      .filter(Boolean);
+  }
+
+  function renderCountTotal() {
+    const note = document.getElementById('file-count-note');
+    const total = document.getElementById('file-count-total');
+    const planned = parseInt(document.getElementById('file-count').value, 10) || 1;
+
+    if (planned <= 1) { note.classList.add('hidden'); return; }
+
+    // Quote what will actually be CHARGED: the files picked so far, not the
+    // number planned for. Selecting "5 files" and filling two must not quote
+    // five, or the total on screen contradicts the total at checkout.
+    const chosen = allChosenFiles().length;
+    const count = chosen > 0 ? chosen : planned;
+
+    note.classList.remove('hidden');
+    total.textContent = 'Total for ' + count + ' file' + (count === 1 ? '' : 's')
+      + ': \u20A6' + (UNIT_AMOUNT_NAIRA * count).toLocaleString();
   }
 
   function esc(v) {
@@ -553,6 +797,90 @@
       if (searchSection) searchSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
       focusQuick();
     };
+    // Rebuild the extra file pickers whenever the count changes. Existing choices
+    // are preserved across a change, so raising the count from 2 to 3 does not
+    // make the applicant re-pick what they already selected.
+    const $extraWrap = $('#extra-files');
+
+    function buildExtraPickers() {
+      const count = parseInt($('#file-count').val(), 10) || 1;
+      const wanted = Math.min(Math.max(count - 1, 0), MAX_FILES - 1);
+      const kept = extraFileNumbers();
+
+      // Select2 must be torn down before its markup is discarded, or it leaves
+      // orphaned containers and duplicate dropdowns behind.
+      $extraWrap.find('select').each(function () {
+        if ($(this).data('select2')) { $(this).select2('destroy'); }
+      });
+      $extraWrap.empty();
+
+      if (wanted === 0) {
+        // Inline display rather than the `hidden` class: an inline style beats any
+        // utility, so showing/hiding never depends on whether Tailwind emits
+        // `.hidden` after `.grid`.
+        $extraWrap.css('display', 'none');
+        renderCountTotal();
+        return;
+      }
+
+      for (let i = 0; i < wanted; i++) {
+        const id = 'extra-file-' + i;
+        $extraWrap.append(
+          '<div class="ols-select2 ols-select2-sm min-w-0">' +
+            '<label class="block text-sm font-medium text-gray-700 mb-1" for="' + id + '">' +
+              'File number ' + (i + 2) +
+            '</label>' +
+            '<select id="' + id + '" class="w-full"><option></option></select>' +
+          '</div>'
+        );
+
+        const $sel = $('#' + id);
+        initFileSelect($sel, 'Select file number ' + (i + 2), { allowTags: false });
+
+        // Restore a previously chosen value into its own slot.
+        if (kept[i]) {
+          $sel.append(new Option(kept[i], kept[i], true, true)).trigger('change');
+        }
+
+        $sel.on('change', renderCountTotal);
+      }
+
+      $extraWrap.css('display', 'grid');
+      renderCountTotal();
+    }
+
+    // The checkbox owns the selector. Unticking resets to a single file and tears
+    // the extra pickers down, so an abandoned multi-file basket can never follow
+    // the applicant to the payment page.
+    const $multiToggle = $('#multi-file-toggle');
+    const $fileCount = $('#file-count');
+
+    function applyMultiFileToggle() {
+      const on = $multiToggle.is(':checked');
+
+      // Hidden outright rather than disabled: an inert control on screen is just
+      // clutter for the single-file case, which is most of them.
+      $('#file-count-wrap').css('display', on ? 'block' : 'none');
+      // The primary field is only "File number 1" when there are others to
+      // number it against.
+      $('#primary-file-label').css('display', on ? 'block' : 'none');
+
+      if (on) {
+        // Ticking a box that means "more than one" should not leave a selector
+        // reading 1.
+        if ((parseInt($fileCount.val(), 10) || 1) < 2) { $fileCount.val('2'); }
+      } else {
+        $fileCount.val('1');
+      }
+
+      buildExtraPickers();
+    }
+
+    $multiToggle.on('change', applyMultiFileToggle);
+    $fileCount.on('change', buildExtraPickers);
+    $quick.on('change', renderCountTotal);
+    applyMultiFileToggle();
+
     $('#try-new-search').on('click', revealSearch);
     $('#start-search-btn').on('click', revealSearch);
 

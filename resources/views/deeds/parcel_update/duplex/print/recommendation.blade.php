@@ -215,20 +215,39 @@
             display: flex;
             justify-content: center;
         }
+        /*
+         * The memo's own letterhead, behind the sheet. This is the plain headed paper
+         * the memo has always been printed on - the red spine down the left, the arms
+         * and ministry name across the top - not the ref-box letterhead the conveyance
+         * uses (duplex/print/conveyance.blade.php uses assets/letterhead/bg.png).
+         *
+         * Fixed 210mm x 297mm, NOT 100% 100%: a memo that runs to a second page grows
+         * this box, and a stretched background would pull the spine off the margin the
+         * text is set against. no-repeat keeps it on the first page.
+         */
         .a4-page {
             background-color: var(--page-color);
+            /* background-image: url('{{ asset('assets/letterhead/letterheader.jpeg') }}'); */
+            background-size: 210mm 297mm;
+            background-repeat: no-repeat;
+            background-position: left top;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
             width: 210mm;
             min-height: 297mm;
             display: flex;
             position: relative;
             box-shadow: 0 0 10px rgba(0,0,0,0.5);
         }
-        .left-sidebar { width: 60px; flex-shrink: 0; }
+        /* Wide enough to clear the artwork, measured off it: the red spine runs to
+           25mm and the green rule sits at 29.5mm-30.4mm. With .main-container's 40px
+           padding the text starts at 36mm, ~5.5mm clear of the rule. */
+        .left-sidebar { width: 25.4mm; flex-shrink: 0; }
         .main-container { flex: 1; display: flex; flex-direction: column; padding: 20px 40px; }
-        /* Blank band the memo is printed over: on the ministry's pre-printed
-           letterhead paper this is the artwork's own space, so the addressee
-           starts below it rather than across it. 130px ~ 34mm from the sheet
-           top once .main-container's 20px padding is counted. */
+        /* The artwork's own space at the head of the sheet, so the addressee starts
+           below it rather than across it. The arms and ministry name run to 36mm;
+           130px plus .main-container's 20px padding puts the first line at 41mm. */
         .header-block { height: 130px; margin-bottom: 5px; }
         .addressee { font-weight: bold; text-decoration: underline; margin-top: 15px; margin-bottom: 15px; font-size: 1.1em; }
         .body-paragraph { text-align: justify; line-height: 1.4; margin-bottom: 15px; }
@@ -340,7 +359,9 @@
                      reason: these sheets are printed from hosts that are not always
                      this app. KLAES left, LAnd ADmin right. --}}
                 <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" style="height: 58px; width: auto; object-fit: contain;">
-                <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAnd ADmin Enterprise System" style="height: 58px; width: auto; object-fit: contain;">
+                {{-- 40.6px is 58px less 30%: this mark carries its own padding inside the file,
+                     so at the KLAES logo's height it reads as the larger of the two. --}}
+                <img src="http://app.klaes.ng/assets/logo/Left_Logo.png" alt="LAnd ADmin Enterprise System" style="height: 40.6px; width: auto; object-fit: contain;">
             </div>
         </div>
     </div>

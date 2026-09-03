@@ -38,6 +38,9 @@ Route::prefix('/mls-fileno')->middleware(['auth'])->group(function () {
     Route::post('/mark-batch-printed', [MlsFileNoController::class, 'markBatchPrinted'])->name('mls-fileno.mark-batch-printed');
     Route::get('/printable-batches', [MlsFileNoController::class, 'getPrintableBatches'])->name('mls-fileno.printable-batches');
     Route::get('/temp-file-details', [MlsFileNoController::class, 'getTempFileDetailsByPropId'])->name('mls-fileno.temp-file-details');
+    // Serials the counter has already passed that nothing holds any more — offered only
+    // when the officer asks, and only for the land use they have selected.
+    Route::get('/reclaimable-serials', [MlsFileNoController::class, 'getReclaimableSerials'])->name('mls-fileno.reclaimable-serials');
 
     // These MUST be last because they use route parameters
     Route::get('/{id}', [MlsFileNoController::class, 'show'])->name('mls-fileno.show');

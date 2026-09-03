@@ -35,8 +35,18 @@
        Flex rather than grid so the two cards keep their own heights when the
        identification card grows with previews and validation messages. */
     .pay-columns { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; justify-content: center; width: 100%; }
-    .pay-columns .pay-wrap { flex: 1 1 460px; max-width: 520px; }
-    @media (max-width: 900px) { .pay-columns { flex-direction: column; align-items: center; } .pay-columns .pay-wrap { width: 520px; } }
+    /* The cards SHRINK to stay side by side rather than stacking as soon as they
+       cannot both be full width. The identification step belongs next to the thing
+       it unlocks; stacking pushes it below the fold, where it reads as optional.
+       A 380px basis keeps the pair together down to ~760px — below that they are
+       genuinely too narrow for the form, and stacking is the honest answer.
+       min-width:0 lets a flex item shrink past its content, which it will not do
+       by default. */
+    .pay-columns .pay-wrap { flex: 1 1 380px; max-width: 520px; min-width: 0; }
+    @media (max-width: 760px) {
+      .pay-columns { flex-direction: column; align-items: center; }
+      .pay-columns .pay-wrap { width: 100%; max-width: 520px; }
+    }
 
     /* Collapsible IYC header. The <button> is restyled to sit flush as the card's
        own header rather than looking like a control dropped inside it. */
@@ -65,6 +75,9 @@
     .id-preview-empty { font-size: 11px; color: #9ca3af; }
     .id-file { width: 100%; box-sizing: border-box; font-size: 11px; color: #4b5563; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px; background: #fff; }
     .id-clear { margin-top: 6px; background: none; border: 0; padding: 0; font-size: 11px; color: #dc2626; cursor: pointer; }
+    /* The "please specify" follow-up under a select. Indented against a tinted
+       rail so it reads as belonging to the choice above it, not as a new question. */
+    .id-specify { margin-top: 10px; padding: 10px 12px; border-left: 3px solid #93c5fd; background: #f8fafc; border-radius: 0 8px 8px 0; }
     .id-status { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
     .id-status.ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
     .id-status.warn { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
@@ -130,8 +143,40 @@
       <p>Secure payment submits your request for approval. No account needed.</p>
     </div>
     <div class="pay-body">
-      <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
+      @php
+        // Always a list, so single and multi-file requests render the same way.
+        $payFiles  = $fileNumbers ?? [$fileNumber];
+        $payUnit   = $unitAmount ?? $amount;
+        $payCount  = count($payFiles);
+      @endphp
+
+      @if($payCount === 1)
+        <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $payFiles[0] }}</span></div>
+      @else
+        {{-- Every file is listed: the applicant is being charged per file, so they
+             must be able to check the exact set before paying. --}}
+        <div class="pay-row" style="align-items:flex-start;">
+          <span class="lbl">File Numbers ({{ $payCount }})</span>
+          <span class="val" style="text-align:right;">
+            @foreach($payFiles as $payFile)
+              <span style="display:block;">{{ $payFile }}</span>
+            @endforeach
+          </span>
+        </div>
+        <div class="pay-row">
+          <span class="lbl">Per file</span>
+          <span class="val">&#8358;{{ number_format($payUnit / 100) }} &times; {{ $payCount }}</span>
+        </div>
+      @endif
+
       <div class="pay-row"><span class="lbl">Total</span><span class="val pay-total">&#8358;{{ number_format($amount / 100) }}</span></div>
+
+      @if($payCount > 1)
+        <p class="pay-note" style="text-align:left;margin-top:8px;">
+          Each file is searched and approved separately — you will receive
+          {{ $payCount }} reports, one per file.
+        </p>
+      @endif
 
       <label for="paySearchPurpose" style="display:block;margin-top:16px;margin-bottom:6px;font-size:13px;font-weight:600;color:#374151;">Purpose of search <span style="color:#dc2626;">*</span></label>
       <select id="paySearchPurpose" required
@@ -282,8 +327,10 @@
       const ALLOWED    = ['image/jpeg', 'image/png', 'image/webp'];
 
       const el = (id) => document.getElementById(id);
-      const typeSelect = el('idType');
-      const otherWrap  = el('idTypeOtherWrap');
+      const typeSelect     = el('idType');
+      const otherWrap      = el('idTypeOtherWrap');
+      const customerSelect = el('idCustomerType');
+      const barWrap        = el('idBarWrap');
       const frontLabel = el('idFrontLabel');
       const statusBox  = el('idStatus');
       const payBtn     = el('payBtn');
@@ -311,6 +358,17 @@
         // Mirrored into the header, which may be all the applicant can see.
         headStatus.textContent = HEAD_LABELS[kind] || '';
         headStatus.hidden = !headStatus.textContent;
+      }
+
+      // Individual or lawyer. Only a lawyer is asked for a Call-to-Bar number;
+      // for an individual the field is hidden AND cleared, so a value typed before
+      // switching type is never submitted.
+      function applyCustomerTypeRules() {
+        const opt = customerSelect.options[customerSelect.selectedIndex];
+        const needsBar = opt && opt.dataset.requiresBar === '1';
+
+        barWrap.style.display = needsBar ? 'block' : 'none';
+        if (!needsBar) { el('idBarNumber').value = ''; }
       }
 
       // Only the label changes with the ID type - a passport's data page is not
@@ -383,12 +441,14 @@
         clearBtn.addEventListener('click', function () { clearImage(inputId); });
       }
 
-      ['idFullName', 'idAddress', 'idTypeOther'].forEach(function (id) {
+      ['idFullName', 'idAddress', 'idTypeOther', 'idBarNumber'].forEach(function (id) {
         el(id).addEventListener('input', function () { invalidate(); scheduleVerification(); });
       });
       typeSelect.addEventListener('change', function () { applyTypeRules(); invalidate(); scheduleVerification(); });
+      customerSelect.addEventListener('change', function () { applyCustomerTypeRules(); invalidate(); scheduleVerification(); });
       wireImage('idFront');
       applyTypeRules();
+      applyCustomerTypeRules();
 
       // ---- Automatic verification -------------------------------------------
       // No button: the check fires by itself once the form is complete, and again
@@ -406,6 +466,8 @@
       function currentAnswers() {
         const file = el('idFront').files && el('idFront').files[0];
 
+        const customerOpt = customerSelect.options[customerSelect.selectedIndex];
+
         return {
           email:    (el('payEmail').value || '').trim(),
           phone:    (el('payPhone').value || '').trim(),
@@ -413,6 +475,9 @@
           address:  (el('idAddress').value || '').trim(),
           type:     typeSelect.value,
           typeOther: (el('idTypeOther').value || '').trim(),
+          customerType: customerSelect.value,
+          needsBar: !!(customerOpt && customerOpt.dataset.requiresBar === '1'),
+          barNumber: (el('idBarNumber').value || '').trim(),
           file:     file || null,
         };
       }
@@ -423,6 +488,8 @@
         if (!a.file) return false;
         if (!a.fullName || !a.address || !a.phone) return false;
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) return false;
+        if (!a.customerType) return false;
+        if (a.needsBar && !a.barNumber) return false;
         if (!a.type) return false;
         if (a.type === 'other' && !a.typeOther) return false;
 
@@ -434,6 +501,7 @@
       function signatureOf(a) {
         return [
           a.email, a.phone, a.fullName, a.address, a.type, a.typeOther,
+          a.customerType, a.barNumber,
           a.file ? a.file.name + ':' + a.file.size + ':' + a.file.lastModified : '',
         ].join('|');
       }
@@ -465,6 +533,8 @@
         body.append('applicant_full_name', answers.fullName);
         body.append('applicant_phone', answers.phone);
         body.append('applicant_address', answers.address);
+        body.append('customer_type', answers.customerType);
+        if (answers.needsBar) { body.append('call_to_bar_number', answers.barNumber); }
         body.append('identification_type', answers.type);
         if (answers.type === 'other') { body.append('identification_type_other', answers.typeOther); }
         body.append('id_front', answers.file);
@@ -525,24 +595,67 @@
     <span style="color:#e2e8f0;font-size:12px;">Ref: {{ $payment->tracking_id ?? $payment->reference }}</span>
   </div>
 
+  {{-- Same two-column shell as the payment step, so the request and the
+       identification behind it stay side by side after payment too. --}}
+  <div class="pay-columns">
   <div class="pay-wrap">
+    @php
+      // Always a collection, so a single-file payment renders exactly as before.
+      $allRequests = collect($searchRequests ?? [$searchRequest])->filter();
+      $requestCount = $allRequests->count();
+    @endphp
     <div class="pay-head">
-      <h1>Request {{ $searchRequest->request_no }}</h1>
-      <p>Your payment was received and your Legal Search request has been submitted.</p>
+      @if($requestCount > 1)
+        <h1>{{ $requestCount }} Legal Search Requests</h1>
+        <p>Your payment was received and each file has been submitted for approval.</p>
+      @else
+        <h1>Request {{ $searchRequest->request_no }}</h1>
+        <p>Your payment was received and your Legal Search request has been submitted.</p>
+      @endif
     </div>
     <div class="pay-body">
-      <div class="pay-row">
-        <span class="lbl">Status</span>
-        <span class="val" style="background:{{ $badge[0] }};color:{{ $badge[1] }};padding:4px 10px;border-radius:999px;font-size:12px;">{{ $badge[2] }}</span>
-      </div>
-      <div class="pay-row"><span class="lbl">Request No.</span><span class="val">{{ $searchRequest->request_no }}</span></div>
-      <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
+      @if($requestCount > 1)
+        {{-- Each file is approved on its own, so each gets its own row: one may be
+             approved while another is still with the Director. --}}
+        @foreach($allRequests as $req)
+          @php
+            $reqKey = $req->status ?? 'pending';
+            $reqBadge = [
+              'pending'  => ['#fef3c7', '#92400e', 'Awaiting Approval'],
+              'approved' => ['#dcfce7', '#166534', 'Approved'],
+              'rejected' => ['#fee2e2', '#991b1b', 'Not Approved'],
+            ][$reqKey] ?? ['#e2e8f0', '#334155', ucfirst($reqKey)];
+          @endphp
+          <div class="pay-row" style="align-items:center;">
+            <span class="lbl">
+              <strong style="color:#1f2937;">{{ $req->file_number }}</strong><br>
+              <span style="font-size:11px;">{{ $req->request_no }}</span>
+            </span>
+            <span class="val" style="background:{{ $reqBadge[0] }};color:{{ $reqBadge[1] }};padding:4px 10px;border-radius:999px;font-size:12px;">{{ $reqBadge[2] }}</span>
+          </div>
+        @endforeach
+      @else
+        <div class="pay-row">
+          <span class="lbl">Status</span>
+          <span class="val" style="background:{{ $badge[0] }};color:{{ $badge[1] }};padding:4px 10px;border-radius:999px;font-size:12px;">{{ $badge[2] }}</span>
+        </div>
+        <div class="pay-row"><span class="lbl">Request No.</span><span class="val">{{ $searchRequest->request_no }}</span></div>
+        <div class="pay-row"><span class="lbl">File Number</span><span class="val">{{ $fileNumber }}</span></div>
+      @endif
       <div class="pay-row"><span class="lbl">Purpose</span><span class="val">{{ $searchRequest->purpose ?: '—' }}</span></div>
       <div class="pay-row"><span class="lbl">Payment Ref</span><span class="val">{{ $payment->tracking_id ?? $payment->reference }}</span></div>
       <div class="pay-row"><span class="lbl">Report goes to</span><span class="val">{{ $payment->email }}</span></div>
       <div class="pay-row"><span class="lbl">Submitted</span><span class="val">{{ optional($searchRequest->submitted_at)->format('d M Y, g:i A') }}</span></div>
 
-      @if($statusKey === 'approved')
+      @if($requestCount > 1)
+        <div style="margin-top:18px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:14px;border-radius:10px;font-size:13px;">
+          <strong>Your Online Legal Search (ONLS) request has been sent to the Director / Deputy Director
+          for Confirmation, Verification &amp; Approval.</strong>
+          Once your request has been Verified &amp; Approved, the full Legal Search report will be emailed
+          to <strong>{{ $payment->email }}</strong> as a PDF attachment — one report per file, sent as each
+          file is approved. You do not need to keep this page open.
+        </div>
+      @elseif($statusKey === 'approved')
         <div style="margin-top:18px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:14px;border-radius:10px;font-size:13px;">
           <strong>Approved{{ $searchRequest->reviewer_name ? ' by ' . $searchRequest->reviewer_name : '' }}.</strong>
           Your Legal Search report has been emailed to <strong>{{ $payment->email }}</strong> as a PDF attachment.
@@ -556,14 +669,34 @@
         </div>
       @else
         <div style="margin-top:18px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:14px;border-radius:10px;font-size:13px;">
-          <strong>Your request is with the Director / Deputy Director for approval.</strong>
-          Once approved, the full Legal Search report is emailed to <strong>{{ $payment->email }}</strong> as a PDF attachment.
+          {{-- The address is the one the payment was made under, so the applicant
+               can see exactly where the report will land before they close the page. --}}
+          <strong>Your Online Legal Search (ONLS) request has been sent to the Director / Deputy Director
+          for Confirmation, Verification &amp; Approval.</strong>
+          Once your request has been Verified &amp; Approved, the full Legal Search report will be emailed
+          to <strong>{{ $payment->email }}</strong> as a PDF attachment.
           You do not need to keep this page open.
         </div>
       @endif
 
-      <p class="pay-note">Keep request number <strong>{{ $searchRequest->request_no }}</strong> for any correspondence about this search.</p>
+      @if($requestCount > 1)
+        <p class="pay-note">
+          Keep request numbers
+          <strong>{{ $allRequests->pluck('request_no')->filter()->implode(', ') }}</strong>
+          for any correspondence about this search.
+        </p>
+      @else
+        <p class="pay-note">Keep request number <strong>{{ $searchRequest->request_no }}</strong> for any correspondence about this search.</p>
+      @endif
     </div>
+  </div>
+
+  {{-- Read-only: the identification was checked before payment and is part of the
+       record under review, so it is shown back but never re-opened for editing.
+       Absent only for payments made before the IYC step existed. --}}
+  @if(!empty($verification))
+    @include('online_legal_search.partials.identification-summary', ['verification' => $verification])
+  @endif
   </div>
 @endif
 
