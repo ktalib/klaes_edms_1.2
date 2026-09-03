@@ -484,16 +484,35 @@
 
       // Complete enough to be worth sending. Deliberately mirrors the server's
       // required fields — StoreIdVerificationRequest re-checks all of it.
-      function isComplete(a) {
-        if (!a.file) return false;
-        if (!a.fullName || !a.address || !a.phone) return false;
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) return false;
-        if (!a.customerType) return false;
-        if (a.needsBar && !a.barNumber) return false;
-        if (!a.type) return false;
-        if (a.type === 'other' && !a.typeOther) return false;
+      // What is still missing, in the order the applicant meets the fields. Named
+      // rather than counted, because two of these live in the OTHER card: an
+      // applicant who has filled the whole IYC card and is only missing their
+      // phone number would otherwise sit in front of a form that does nothing and
+      // says nothing.
+      function missingAnswers(a) {
+        const missing = [];
 
-        return true;
+        if (!a.phone) { missing.push('your phone number'); }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email)) { missing.push('a valid email address'); }
+        if (!a.customerType) { missing.push('your customer type'); }
+        if (a.needsBar && !a.barNumber) { missing.push('your Call-to-Bar number'); }
+        if (!a.fullName) { missing.push('your full name'); }
+        if (!a.address) { missing.push('your address'); }
+        if (!a.type) { missing.push('your means of identification'); }
+        if (a.type === 'other' && !a.typeOther) { missing.push('the identification type'); }
+        if (!a.file) { missing.push('a photo of your ID'); }
+
+        return missing;
+      }
+
+      // Has the applicant engaged with this card at all? Until they have, saying
+      // nothing is right — the card is simply untouched.
+      function identificationStarted(a) {
+        return !!(a.fullName || a.address || a.type || a.file || a.barNumber);
+      }
+
+      function isComplete(a) {
+        return missingAnswers(a).length === 0;
       }
 
       // Identifies the exact submission, image included, so re-sending an
@@ -516,11 +535,26 @@
 
         const answers = currentAnswers();
 
-        if (!isComplete(answers)) {
-          // Nothing to say yet — the applicant is still filling the form, and
-          // nagging about fields they have not reached would be noise.
-          statusBox.style.display = 'none';
-          headStatus.hidden = true;
+        const missing = missingAnswers(answers);
+
+        if (missing.length > 0) {
+          // Silent only while the card is untouched. Once they have started, tell
+          // them exactly what is outstanding — including the two fields that live
+          // in the payment card, which is otherwise an invisible reason for a form
+          // that appears to do nothing.
+          if (!identificationStarted(answers)) {
+            statusBox.style.display = 'none';
+            headStatus.hidden = true;
+            return;
+          }
+
+          const list = missing.length === 1
+            ? missing[0]
+            : missing.slice(0, -1).join(', ') + ' and ' + missing[missing.length - 1];
+
+          setStatus('warn', 'Still needed before we can check your identification: ' + list + '.');
+          headStatus.textContent = 'Incomplete';
+          headStatus.hidden = false;
           return;
         }
 

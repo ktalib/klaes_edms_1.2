@@ -85,6 +85,24 @@ class IdVerificationDoctor extends Command
             $this->line('   <fg=green>not cached</> — .env is read live');
         }
 
+        // 3b. proc_open. The OCR package shells out, so a hardened php.ini that
+        //     disables proc_open breaks OCR while everything else looks healthy —
+        //     and the failure reads as "could not execute tesseract", which sends
+        //     you hunting for a missing binary that is sitting right there.
+        $this->newLine();
+        $this->line('3b. Shell-out support (php.ini)');
+        $disabled = array_map('trim', explode(',', (string) ini_get('disable_functions')));
+        $blocked = array_values(array_intersect(['proc_open', 'proc_close', 'escapeshellarg'], $disabled));
+
+        if (empty($blocked)) {
+            $this->line('   <fg=green>proc_open available</> — PHP may run external commands');
+        } else {
+            $this->error('   → DISABLED in php.ini: ' . implode(', ', $blocked));
+            $this->line('     OCR shells out to tesseract, so it cannot work until these are');
+            $this->line('     removed from disable_functions in this server\'s php.ini.');
+            $ok = false;
+        }
+
         // 4. Can we actually run it? This is the check that catches a binary that
         //    exists but the service account may not execute.
         $this->newLine();
