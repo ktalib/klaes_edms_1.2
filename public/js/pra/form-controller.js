@@ -271,6 +271,9 @@
             this.instrumentTypeSelect = container.querySelector('#instrument_type_value');
             this.instrumentCategorySelect = container.querySelector('#instrument_category');
             this.instrumentOldNote = container.querySelector('[data-role="instrument-old-note"]');
+            // Shown only while Instrument Type is 'Other': the field that names the paper.
+            this.otherTransactionTypeGroup = container.querySelector('[data-role="other-transaction-type-group"]');
+            this.otherTransactionTypeInput = container.querySelector('#other_transaction_type');
             this.state = {
                 formMode: 'property',
                 transactionType: '',
@@ -1025,6 +1028,14 @@
                     .filter(Boolean)
                     .sort((a, b) => a.label.localeCompare(b.label));
 
+                // 'Other' is not an instrument in the catalogue, it is the way out of it:
+                // the officer names the paper in the Specify field beside this select.
+                // Appended after the sort so it stays at the foot of the list, which is
+                // where the file-indexing modal (which appends it in PHP) puts it too.
+                if (!normalizedOptions.some((item) => item.value.toLowerCase() === 'other')) {
+                    normalizedOptions.push({ value: 'Other', label: 'Other' });
+                }
+
                 let hasMatch = false;
 
                 normalizedOptions.forEach((item) => {
@@ -1224,6 +1235,20 @@
                 || normalizedTx.includes('occupation permit')
                 || normalizedTx === 'op';
             const isCofOTransaction = normalizedTx.includes('certificate of occupancy');
+            const isOtherTransaction = normalizedTx === 'other';
+
+            if (this.otherTransactionTypeGroup) {
+                this.otherTransactionTypeGroup.classList.toggle('hidden', !isOtherTransaction);
+            }
+            if (this.otherTransactionTypeInput) {
+                // A hidden input must not hold the form back on its own `required`, and the
+                // name it holds belongs to 'Other' alone -- left behind on a row that has
+                // since become a real instrument, the server would save it in its place.
+                this.otherTransactionTypeInput.required = isOtherTransaction;
+                if (!isOtherTransaction && this.otherTransactionTypeInput.value !== '') {
+                    this.otherTransactionTypeInput.value = '';
+                }
+            }
 
             const updateLabelText = (labelElement, text) => {
                 if (!labelElement || !text) return;

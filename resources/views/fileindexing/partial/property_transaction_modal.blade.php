@@ -64,6 +64,10 @@
                 recordId: null,
                 source: '',
                 transactionType: '',
+                // Filled in only when Transaction Type is 'Other': the instrument as it
+                // reads on the paper. It is what gets SAVED as the transaction type --
+                // the word 'Other' names no instrument and would be dead on a timeline.
+                otherTransactionType: '',
                 status: 'Normal',
                 transactionDate: '',
                 opType: '',
@@ -244,6 +248,7 @@
                     recordId: null,
                     source: '',
                     transactionType: '',
+                    otherTransactionType: '',
                     status: 'Normal',
                     transactionDate: '',
                     typeValue: '',
@@ -341,6 +346,12 @@
 
             isOPTransaction(transactionType) {
                 return normalizePropertyTransactionType(transactionType) === 'Occupancy Permit (OP)';
+            },
+
+            // 'Other' is a prompt, not an instrument: it reveals the field where the
+            // officer names the instrument the catalogue does not list.
+            isOtherTransaction(transactionType) {
+                return normalizePropertyTransactionType(transactionType) === 'Other';
             },
 
             // The 44 Kano Local Governments, in the exact wording saved as party_1.
@@ -1077,7 +1088,13 @@
                 }
                 
                 this.registerTransactionType(transaction.transactionType);
-                
+
+                // The typed name belongs to 'Other' alone. Left behind on a row that has
+                // since become a real instrument, it would be submitted in its place.
+                if (!this.isOtherTransaction(transaction.transactionType)) {
+                    transaction.otherTransactionType = '';
+                }
+
                 const isGov = this.isGovernmentTransaction(transaction.transactionType);
                 console.log('Transaction Type changed:', {
                     value: transaction.transactionType,
@@ -1478,6 +1495,20 @@
                     return;
                 }
 
+                const missingOtherName = this.transactions.some(t =>
+                    this.isOtherTransaction(t.transactionType) && !String(t.otherTransactionType || '').trim()
+                );
+
+                if (missingOtherName) {
+                    const msg = 'Please specify the instrument type for the transaction whose type is Other.';
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire({ icon: 'error', title: 'Validation Error', text: msg, confirmButtonText: 'OK' });
+                    } else {
+                        alert(msg);
+                    }
+                    return;
+                }
+
                 const missingOpSerial = this.transactions.some(t =>
                     this.isOPTransaction(t.transactionType) && !String(t.opSerialNumber || '').trim()
                 );
@@ -1865,6 +1896,28 @@
                                             :name="'transactions[' + index + '][transaction_date]'"
                                             class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
                                     </div>
+                                </div>
+
+                                <!-- Other: the instrument still has to be named -->
+                                {{-- 'Other' is picked when the paper is an instrument the
+                                     catalogue does not list. Saving the word itself would
+                                     record nothing, so what is typed here is submitted as
+                                     the transaction type in its place. --}}
+                                <div x-show="isOtherTransaction(transaction.transactionType)" x-cloak x-transition>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                        Specify Instrument Type <span class="text-red-500">*</span>
+                                    </label>
+                                    <input type="text" x-model="transaction.otherTransactionType"
+                                        :name="'transactions[' + index + '][other_transaction_type]'"
+                                        maxlength="255"
+                                        placeholder="Name the instrument as it reads on the document"
+                                        :class="!String(transaction.otherTransactionType || '').trim()
+                                            ? 'border-red-400 ring-1 ring-red-300'
+                                            : 'border-gray-300'"
+                                        class="w-full px-3 py-2 text-sm border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors">
+                                    <p class="mt-1 text-[11px] text-gray-500">
+                                        Saved as the transaction type in place of &quot;Other&quot;.
+                                    </p>
                                 </div>
 
                                 <!-- Status / Type / Category, on one row -->
@@ -2603,6 +2656,10 @@
                                         source: record._source || record.source || '',
                                         transactionType: normalizedType,
                                         instrumentType: normalizedType,
+                                        // A stored row already carries the instrument's real name
+                                        // (registered through ensureTransactionTypes below), so it
+                                        // never comes back as 'Other'.
+                                        otherTransactionType: '',
                                         status: record.status || 'Normal',
                                         transactionDate: formattedTransactionDate || '',
                                         opType: record.op_type || record.opType || '',
@@ -2664,6 +2721,7 @@
                                     id: 1,
                                     recordId: null,
                                     transactionType: '',
+                                    otherTransactionType: '',
                                     status: 'Normal',
                                     transactionDate: '',
                                     typeValue: '',
@@ -2954,7 +3012,14 @@
             // Set by the user on a row the server held back as a possible duplicate:
             // "I have checked — this is a separate instrument, save it."
             force_save: t.forceSave ? 1 : 0,
-            transaction_type: t.transactionType || '',
+            // 'Other' is replaced by the instrument the officer named, so every
+            // destination table stores a real instrument name. The typed name rides
+            // along under its own key for the record.
+            transaction_type: (normalizePropertyTransactionType(t.transactionType) === 'Other'
+                && String(t.otherTransactionType || '').trim())
+                ? String(t.otherTransactionType).trim()
+                : (t.transactionType || ''),
+            other_transaction_type: String(t.otherTransactionType || '').trim(),
             instrument_type: t.instrumentType || '',
             status: t.status || 'Normal',
             op_type: t.opType || '',

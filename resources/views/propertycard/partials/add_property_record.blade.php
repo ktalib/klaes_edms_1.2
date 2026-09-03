@@ -53,7 +53,25 @@
                                     class="form-select text-sm transaction-type-select" data-model="transactionType"
                                     data-role="transaction-type" data-placeholder="Select type">
                                     <option value="">Select type</option>
+                                    {{-- The catalogue is fetched into this select at load; 'Other'
+                                         is written here as well so the way out of the catalogue
+                                         survives a failed instrument-types lookup. --}}
+                                    <option value="Other">Other</option>
                                 </select>
+                            </div>
+
+                            {{-- 'Other' is a prompt, not an instrument. What is typed here is
+                                 submitted as the instrument type in its place -- a record whose
+                                 type reads 'Other' names nothing on a timeline or in a search.
+                                 Shown, required and cleared by PraFormController. --}}
+                            <div class="space-y-1 mt-3 hidden" data-role="other-transaction-type-group">
+                                <label for="other_transaction_type" class="text-sm">
+                                    Specify Instrument Type <span class="text-red-500">*</span>
+                                </label>
+                                <input type="text" id="other_transaction_type" name="other_transaction_type"
+                                    maxlength="255" class="form-input text-sm w-full"
+                                    placeholder="Name the instrument as it reads on the document">
+                                <p class="text-xs text-gray-500">Saved as the instrument type in place of "Other".</p>
                             </div>
 
                             <div class="mt-4" data-role="related-file-number-section">

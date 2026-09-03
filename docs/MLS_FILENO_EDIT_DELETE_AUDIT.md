@@ -556,6 +556,30 @@ Plot Extension rows it resolves the **wrong record** and purges an unrelated fil
 
 Also shipped, by later request: three new columns on this list — **Passport** (thumbnail, click to enlarge; batched through `FilePassportService::prime()` so it stays one query per page), **RoT**, and **Related / Old File No** (one column badged `REL` or `OLD`, since those are the two halves of a single field on the Edit modal). Added to all three row formatters, not just the `fileNumber` one.
 
+### Layout follow-up (2026-09-03)
+
+RoT and Related/Old File No were folded out of their own columns: the related/old number now
+renders beneath the MLS File No it belongs to (badged `REL` / `OLD`), and the Root of Title
+beneath the File Title (badged `RoT`). Both are attributes of those values, not independent
+columns. The sort-fallback index was corrected from 15/16 to 13/14 to match.
+
+### Edit now reaches the OSS applications list (2026-09-03)
+
+Commissioning publishes every MLS file into `oss_applications` via
+`MlsCommissioningOssApplicationService` — **5,102** rows carry
+`system_source = MLS_FILE_NUMBER_GENERATOR` — and that table is what
+`/lands-one-stop-shop/applications?type=no-change-of-name` reads. The edit stopped at the
+file-number screens, so that page kept showing whatever was captured at commissioning.
+
+`propagateToOssApplications()` now mirrors the edit onto that row from both the normal and
+the temporary-file save paths, using the same column mapping commissioning wrote:
+`applicant_name` (name changes only), `plot_no`, `plan_no` **fed from the TP number**,
+`location`, `district`, `lga`, `address`, `phone`. Wrapped so a missing column cannot fail a
+save that has already succeeded on the registers.
+
+The drift was visible in live data: `IND-2026-230` reads *MAKA ADO* on `fileNumber` and
+*MAKA ADO ALI* on its OSS row.
+
 ### Deliberately not done
 
 * **F-5** — the blanket `fileNumber` delete by `mlsfNo` is untouched, pending a ruling on whether one MLS number may legitimately have several rows.

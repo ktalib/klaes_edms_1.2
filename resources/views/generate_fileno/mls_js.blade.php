@@ -1303,6 +1303,26 @@
                         } else {
                             html = `<div class="font-bold text-gray-900">${display}</div>`;
                         }
+                        // The related / old file number belongs to this file number, so it
+                        // sits directly beneath it. Only ever one of the two is populated —
+                        // an "Old File Number" tick on the Edit modal stores it on
+                        // mls_file_no.old_fileno, an untick on fileNumber.related_fileno —
+                        // so the badge says which rather than blurring them together.
+                        const relOld = row.related_old_fileno;
+                        if (relOld && relOld.kind && relOld.kind !== 'none' && relOld.value && relOld.value !== 'N/A') {
+                            // The number carries its badge's colour so the two read as one
+                            // label: amber for a previous (old) number, sky for a related
+                            // one. Grey text next to a coloured badge made the value look
+                            // like an afterthought rather than part of the same fact.
+                            const isOld = relOld.kind === 'old';
+                            const relBadge = isOld
+                                ? '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 mr-1">OLD</span>'
+                                : '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200 mr-1">REL</span>';
+                            const relValueClass = isOld ? 'text-amber-700' : 'text-sky-700';
+
+                            html += `<div class="mt-1 text-[11px]">${relBadge}<span class="font-semibold ${relValueClass}">${String(relOld.value).toUpperCase().replace(/</g, '&lt;')}</span></div>`;
+                        }
+
                         if (row.batch_no && row.batch_count > 1) {
                             html += `
                                 <div class="mt-1">
@@ -1350,51 +1370,29 @@
                     }
                 },
                 {
-                    // One column for both halves of the Edit modal's file-number field:
-                    // an "Old File Number" tick stores it on mls_file_no.old_fileno, an
-                    // untick on fileNumber.related_fileno. Only ever one of the two, so
-                    // the badge says which this is rather than blurring them together.
-                    data: 'related_old_fileno',
-                    name: 'related_old_fileno',
-                    title: 'Related / Old File No',
-                    orderable: false,
-                    defaultContent: 'N/A',
-                    render: function (data, type, row) {
-                        const value = (data && data.value) ? String(data.value) : 'N/A';
-                        const kind = (data && data.kind) ? data.kind : 'none';
-
-                        if (type !== 'display' || kind === 'none' || value === 'N/A') return value;
-
-                        const badge = kind === 'old'
-                            ? '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 mr-1">OLD</span>'
-                            : '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200 mr-1">REL</span>';
-
-                        return badge + '<span class="font-medium">' + value.toUpperCase().replace(/</g, '&lt;') + '</span>';
-                    }
-                },
-                {
                     data: 'FileName',
                     name: 'FileName',
                     title: 'File Title',
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
-                        return data ? data.toUpperCase() : 'N/A';
-                    }
-                },
-                {
-                    // Root of Title — hand-keyed on the File Indexing form and held only
-                    // on file_indexings, so a file that has never been indexed shows N/A
-                    // rather than a guess.
-                    data: 'root_of_title',
-                    name: 'root_of_title',
-                    title: 'RoT',
-                    defaultContent: 'N/A',
-                    render: function (data, type, row) {
-                        const value = data ? String(data) : 'N/A';
-                        if (type !== 'display' || value === 'N/A') return value;
+                        const title = data ? String(data).toUpperCase() : 'N/A';
 
-                        return '<span class="inline-block px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">'
-                            + value.toUpperCase().replace(/</g, '&lt;') + '</span>';
+                        // Sorting and the CSV/PDF exports want the title alone.
+                        if (type !== 'display') return title;
+
+                        let html = `<div>${title.replace(/</g, '&lt;')}</div>`;
+
+                        // Root of Title is a property OF the title, not a column of its own.
+                        // Hand-keyed on the File Indexing form and held only on
+                        // file_indexings, so a file that has never been indexed simply shows
+                        // nothing here rather than a guessed value.
+                        const rot = row.root_of_title;
+                        if (rot && rot !== 'N/A') {
+                            html += `<div class="mt-0.5"><span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 mr-1">RoT</span>`
+                                + `<span class="text-[11px] font-medium text-emerald-800">${String(rot).toUpperCase().replace(/</g, '&lt;')}</span></div>`;
+                        }
+
+                        return html;
                     }
                 },
                 {
@@ -1654,7 +1652,7 @@
             order: [[(function () {
                 const headers = Array.from(document.querySelectorAll('#mlsfTable thead th'));
                 const idx = headers.findIndex(th => th.textContent.trim() === 'Time Commissioned');
-                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 16 : 15);
+                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 14 : 13);
             })(), 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],

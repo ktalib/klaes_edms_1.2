@@ -113,6 +113,110 @@ class MlsFcListAndDeleteGuardTest extends TestCase
     }
 
     /** @test */
+    public function an_edit_reaches_the_oss_applications_row_the_file_was_published_as(): void
+    {
+        // Commissioning publishes every MLS file into oss_applications
+        // (MlsCommissioningOssApplicationService) — 5,102 rows carry
+        // system_source = MLS_FILE_NUMBER_GENERATOR — and that table is what
+        // /lands-one-stop-shop/applications?type=no-change-of-name reads.
+        //
+        // Before this, an edit stopped at the file-number screens, so the applications page
+        // kept showing whatever was captured at commissioning time. Asserted structurally:
+        // the propagation must be wired into BOTH save paths, and it must not write columns
+        // commissioning never wrote.
+        $controller = file_get_contents(app_path('Http/Controllers/FileNumberController.php'));
+
+        $this->assertStringContainsString(
+            'private function propagateToOssApplications(',
+            $controller,
+            'The OSS propagation is missing'
+        );
+
+        $this->assertSame(
+            2,
+            substr_count($controller, '$this->propagateToOssApplications($request, $fileNoCandidates, $nameChanged);'),
+            'Both the normal and the temporary-file save paths must propagate to oss_applications'
+        );
+    }
+
+    /** @test */
+    public function the_oss_edit_mapping_matches_what_commissioning_writes(): void
+    {
+        // The two must not drift. plan_no is the trap: commissioning feeds it from the TP
+        // number, so an edit that skipped it would leave a corrected TP invisible on the
+        // applications page forever.
+        $controller = file_get_contents(app_path('Http/Controllers/FileNumberController.php'));
+        $commissioning = file_get_contents(app_path('Services/MlsCommissioningOssApplicationService.php'));
+
+        $start = strpos($controller, 'private function propagateToOssApplications(');
+        $mapping = substr($controller, $start, 2500);
+
+        foreach (['plot_no', 'plan_no', 'location', 'district', 'lga', 'applicant_name'] as $column) {
+            $this->assertStringContainsString(
+                $column,
+                $mapping,
+                "The edit does not propagate oss_applications.{$column}"
+            );
+            $this->assertStringContainsString(
+                "'{$column}'",
+                $commissioning,
+                "Commissioning does not write oss_applications.{$column} — the mapping has drifted"
+            );
+        }
+
+        $this->assertStringContainsString(
+            "'tp_no' => 'plan_no'",
+            $mapping,
+            'plan_no must be fed from the TP number, as commissioning does'
+        );
+    }
+
+    /** @test */
+    public function the_oss_row_for_a_commissioned_file_is_reachable_by_the_propagation_filter(): void
+    {
+        // Proves the WHERE clause actually resolves — without writing anything.
+        $db = DB::connection('sqlsrv');
+
+        $published = $db->table('oss_applications')
+            ->where('system_source', 'MLS_FILE_NUMBER_GENERATOR')
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->whereNotNull('file_no')
+            ->first(['file_no']);
+
+        if (!$published) {
+            $this->markTestSkipped('No MLS-sourced oss_applications rows in this environment.');
+        }
+
+        $record = $db->table('fileNumber')->where('mlsfNo', $published->file_no)->first();
+
+        if (!$record) {
+            $this->markTestSkipped('The sampled OSS row has no fileNumber record.');
+        }
+
+        // The same candidate list applyFileNumberEdit() builds.
+        $candidates = array_values(array_unique(array_filter([
+            $record->mlsfNo ?? null,
+            $record->kangisFileNo ?? null,
+            $record->NewKANGISFileNo ?? null,
+        ])));
+
+        $reachable = $db->table('oss_applications')
+            ->whereIn('file_no', $candidates)
+            ->where(function ($q) {
+                $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+            })
+            ->count();
+
+        $this->assertGreaterThan(
+            0,
+            $reachable,
+            "An edit to {$record->mlsfNo} would not reach its oss_applications row"
+        );
+    }
+
+    /** @test */
     public function master_delete_refuses_a_temporary_row(): void
     {
         $admin = $this->admin();

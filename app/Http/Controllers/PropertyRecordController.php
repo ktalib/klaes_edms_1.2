@@ -51,6 +51,23 @@ class PropertyRecordController extends Controller
         return stripos($transactionType, self::OCCUPANCY_PERMIT_MARKER) !== false;
     }
 
+    /**
+     * 'Other' is a prompt, not an instrument. Every capture screen that offers it also
+     * asks the officer to name the instrument, and that name is what gets stored --
+     * a row whose transaction type reads 'Other' names nothing and is dead on a
+     * timeline, in a search and in every report built off the type.
+     *
+     * @param  string|null  $transactionType  what the dropdown holds
+     * @param  string|null  $specified        what the "Specify" field holds
+     */
+    public static function resolveOtherTransactionType($transactionType, $specified): string
+    {
+        $type = trim((string) $transactionType);
+        $named = trim((string) $specified);
+
+        return (strcasecmp($type, 'Other') === 0 && $named !== '') ? $named : $type;
+    }
+
     public function __construct(
         PropertyIdAllocationService $propertyIdAllocationService,
         TimelineWeightingService $timelineService,
@@ -772,6 +789,18 @@ class PropertyRecordController extends Controller
             'url' => $request->url(),
             'user_agent' => $request->userAgent()
         ]);
+
+        // Substituted before ANYTHING reads the type: the duplicate check below, the
+        // validator, the party mapping and every table then see the instrument the
+        // officer named rather than the placeholder they picked it under.
+        $otherTypeKey = $request->filled('transactionType') ? 'transactionType' : 'transaction_type';
+        $resolvedTransactionType = self::resolveOtherTransactionType(
+            $request->input($otherTypeKey),
+            $request->input('other_transaction_type')
+        );
+        if ($resolvedTransactionType !== '' && $resolvedTransactionType !== trim((string) $request->input($otherTypeKey))) {
+            $request->merge([$otherTypeKey => $resolvedTransactionType]);
+        }
 
         $recordMode = $request->input('record_mode', 'property');
         $isIndexMode = $recordMode === 'index';
@@ -1564,6 +1593,17 @@ class PropertyRecordController extends Controller
      */
     public function update(Request $request, $id)
     {
+        // See store(): 'Other' is replaced by the name typed beside it before anything
+        // reads the type, so an edit cannot write the placeholder back over the record.
+        $otherTypeKey = $request->filled('transactionType') ? 'transactionType' : 'transaction_type';
+        $resolvedTransactionType = self::resolveOtherTransactionType(
+            $request->input($otherTypeKey),
+            $request->input('other_transaction_type')
+        );
+        if ($resolvedTransactionType !== '' && $resolvedTransactionType !== trim((string) $request->input($otherTypeKey))) {
+            $request->merge([$otherTypeKey => $resolvedTransactionType]);
+        }
+
         // **PIC/PRA ROUTING FIX**: Determine target table based on record_mode
         $recordMode = $request->input('record_mode', 'property');
         $isIndexMode = $recordMode === 'index';
@@ -3046,6 +3086,26 @@ class PropertyRecordController extends Controller
         try {
             \Log::info('=== Property Record from File Indexing START ===');
             \Log::info('Request Data:', $request->all());
+
+            // A row captured as 'Other' carries the instrument's name alongside it.
+            // Substituted before validation so the rules below, and every staging
+            // table, see the instrument. (The modal already does this on the way out;
+            // this stands in for a browser still running the older script.)
+            $incomingTransactions = (array) $request->input('transactions', []);
+            $typesSubstituted = false;
+            foreach ($incomingTransactions as $i => $incoming) {
+                $resolvedType = self::resolveOtherTransactionType(
+                    $incoming['transaction_type'] ?? '',
+                    $incoming['other_transaction_type'] ?? ''
+                );
+                if ($resolvedType !== trim((string) ($incoming['transaction_type'] ?? ''))) {
+                    $incomingTransactions[$i]['transaction_type'] = $resolvedType;
+                    $typesSubstituted = true;
+                }
+            }
+            if ($typesSubstituted) {
+                $request->merge(['transactions' => $incomingTransactions]);
+            }
 
             // Validate the request - file_indexing_id is now optional
             $validator = Validator::make($request->all(), [

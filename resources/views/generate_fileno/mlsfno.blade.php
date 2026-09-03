@@ -262,10 +262,11 @@
                                                  <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Source</th>
 
                                                 <th class="px-4 py-3 text-center text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Passport</th>
+                                                {{-- The related/old file number sits under the file number it belongs to,
+                                                     and the Root of Title under the title — both are attributes of those
+                                                     values, not columns of their own. --}}
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">MLS File No</th>
-                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Related / Old File No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">File Title</th>
-                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">RoT</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>

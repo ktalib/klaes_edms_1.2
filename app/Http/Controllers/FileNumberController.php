@@ -2347,6 +2347,73 @@ class FileNumberController extends Controller
             // — the delete dialog lists them — but the edit only ever wrote three, so a
             // renamed file kept its old name on the Customer and Entity records forever.
             $this->propagateToStaging($request, $fileNoCandidates, $nameChanged);
+
+            // Commissioning also publishes the file to the OSS applications list
+            // (MlsCommissioningOssApplicationService), which is what
+            // /lands-one-stop-shop/applications?type=no-change-of-name reads. Without this
+            // an edit stopped at the file-number screens and that page kept showing the
+            // values captured at commissioning time.
+            $this->propagateToOssApplications($request, $fileNoCandidates, $nameChanged);
+        }
+    }
+
+    /**
+     * Mirror an edit onto the OSS applications row this file was published as.
+     *
+     * The column mapping deliberately matches what commissioning wrote in the first place
+     * (MlsCommissioningOssApplicationService::payload) — note `plan_no` is fed from the TP
+     * number, so a TP correction has to travel that way or it never reaches the page.
+     *
+     * Applicant identity follows the same rule as everywhere else on this form: the name
+     * moves only when it actually changed, never as a side effect of a plot-number fix.
+     *
+     * @param  array<int, string>  $fileNoCandidates
+     */
+    private function propagateToOssApplications(Request $request, array $fileNoCandidates, bool $nameChanged): void
+    {
+        try {
+            $update = [];
+
+            if ($nameChanged) {
+                $newName = trim((string) $request->file_name);
+                if ($newName !== '') {
+                    $update['applicant_name'] = $newName;
+                }
+            }
+
+            foreach ([
+                'plot_no' => 'plot_no',
+                'tp_no' => 'plan_no',
+                'location' => 'location',
+                'district' => 'district',
+                'lga' => 'lga',
+                'address' => 'address',
+                'phone_no' => 'phone',
+            ] as $field => $column) {
+                if ($request->has($field)) {
+                    $update[$column] = $request->input($field);
+                }
+            }
+
+            if (empty($update)) {
+                return;
+            }
+
+            $update['updated_at'] = now();
+
+            DB::connection('sqlsrv')->table('oss_applications')
+                ->whereIn('file_no', $fileNoCandidates)
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->update($update);
+        } catch (\Throwable $e) {
+            // The file-number registers are already saved and are authoritative; a missing
+            // column on the OSS row must not fail the edit.
+            Log::warning('Failed to propagate file-number edit to oss_applications', [
+                'file_numbers' => $fileNoCandidates,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -2488,6 +2555,7 @@ class FileNumberController extends Controller
             }
 
             $this->propagateToStaging($request, $fileNoCandidates, $nameChanged);
+            $this->propagateToOssApplications($request, $fileNoCandidates, $nameChanged);
         }
 
         $passportUpload = $this->storePassportIfSent($request, $temp->full_file_number ?? null);
