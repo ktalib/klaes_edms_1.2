@@ -341,32 +341,71 @@
                                             <div class="mt-2">
                                                 <button type="button" id="removeProfileBtn"
                                                     class="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800"
-                                                    onclick="(function(){
-                                                        if (!confirm('{{ __('Remove this profile picture? The user will be asked to upload a new one before they can use the system again.') }}')) { return; }
-                                                        document.getElementById('removeProfileFlag').value = '1';
-                                                        document.getElementById('profile').value = '';
-                                                        document.getElementById('editProfilePreview').classList.add('hidden');
-                                                        document.getElementById('editProfilePlaceholder').classList.remove('hidden');
-                                                        document.getElementById('removeProfileBtn').classList.add('hidden');
-                                                        document.getElementById('removeProfileUndo').classList.remove('hidden');
-                                                    })()">
+                                                    onclick="markProfileForRemoval()">
                                                     <i class="fas fa-trash-alt"></i>
                                                     {{ __('Remove Profile Picture') }}
                                                 </button>
                                                 <div id="removeProfileUndo" class="hidden mt-1 flex items-center gap-2 text-xs text-amber-700">
                                                     <span>{{ __('Will be removed when you save.') }}</span>
                                                     <button type="button" class="font-medium underline hover:text-amber-900"
-                                                        onclick="(function(){
-                                                            document.getElementById('removeProfileFlag').value = '0';
-                                                            document.getElementById('editProfilePreview').classList.remove('hidden');
-                                                            document.getElementById('editProfilePlaceholder').classList.add('hidden');
-                                                            document.getElementById('removeProfileUndo').classList.add('hidden');
-                                                            document.getElementById('removeProfileBtn').classList.remove('hidden');
-                                                        })()">
+                                                        onclick="undoProfileRemoval()">
                                                         {{ __('Undo') }}
                                                     </button>
                                                 </div>
                                             </div>
+
+                                            {{-- Defined here too: this form is also reachable from pages that
+                                                 do not carry the users-list stylesheet. --}}
+                                            <style>.swal-topmost { z-index: 100000; }</style>
+                                            <script>
+                                            /**
+                                             * The photo card lives inside the edit form, so removal is a flag on
+                                             * that form rather than its own request — a nested form would be
+                                             * invalid HTML. Nothing is deleted until Save Changes is submitted.
+                                             */
+                                            function undoProfileRemoval() {
+                                                document.getElementById('removeProfileFlag').value = '0';
+                                                document.getElementById('editProfilePreview').classList.remove('hidden');
+                                                document.getElementById('editProfilePlaceholder').classList.add('hidden');
+                                                document.getElementById('removeProfileUndo').classList.add('hidden');
+                                                document.getElementById('removeProfileBtn').classList.remove('hidden');
+                                            }
+
+                                            function markProfileForRemoval() {
+                                                var apply = function () {
+                                                    document.getElementById('removeProfileFlag').value = '1';
+                                                    document.getElementById('profile').value = '';
+                                                    document.getElementById('editProfilePreview').classList.add('hidden');
+                                                    document.getElementById('editProfilePlaceholder').classList.remove('hidden');
+                                                    document.getElementById('removeProfileBtn').classList.add('hidden');
+                                                    document.getElementById('removeProfileUndo').classList.remove('hidden');
+                                                };
+
+                                                var message = @json(__('The photo will be cleared when you save. :name will be asked to upload a new one before they can use the system again.', ['name' => $user->name]));
+
+                                                if (typeof Swal === 'undefined') {
+                                                    if (window.confirm(message)) { apply(); }
+                                                    return;
+                                                }
+
+                                                Swal.fire({
+                                                    title: @json(__('Remove profile picture?')),
+                                                    text: message,
+                                                    icon: 'warning',
+                                                    showCancelButton: true,
+                                                    confirmButtonText: @json(__('Yes, remove it')),
+                                                    cancelButtonText: @json(__('Cancel')),
+                                                    confirmButtonColor: '#d97706',
+                                                    cancelButtonColor: '#6b7280',
+                                                    reverseButtons: true,
+                                                    focusCancel: true,
+                                                    // This form is shown inside the z-50 modal container.
+                                                    customClass: { container: 'swal-topmost' }
+                                                }).then(function (result) {
+                                                    if (result.isConfirmed) { apply(); }
+                                                });
+                                            }
+                                            </script>
                                         @endif
                                     </div>
                                 </div>

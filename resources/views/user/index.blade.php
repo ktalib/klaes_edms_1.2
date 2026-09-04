@@ -63,6 +63,10 @@
         .users-table thead th a:hover {
             color: #4f46e5;
         }
+        /* Above the row action menu, which teleports to <body> at z-index 9999. */
+        .swal-topmost {
+            z-index: 100000;
+        }
      </style>
     <!-- Main Content -->
     <div class="flex-1 overflow-auto" x-data="{ 
@@ -329,11 +333,93 @@ $(document).ready(function() {
         });
     }
 
+    /**
+     * Confirm styles per action. `danger` is the default because everything
+     * wearing .confirm_dialog on this page is irreversible or locks someone out.
+     */
+    const CONFIRM_VARIANTS = {
+        danger:  { icon: 'warning',  colour: '#dc2626' },
+        warning: { icon: 'warning',  colour: '#d97706' },
+        info:    { icon: 'question', colour: '#4f46e5' }
+    };
+
+    /**
+     * Resolves true when the user confirms.
+     *
+     * Falls back to the native dialog if SweetAlert has not loaded — this page
+     * gets it from layouts/app.blade.php, but a confirmation must never be
+     * skipped just because a CDN was unreachable.
+     */
+    function confirmAction(options) {
+        if (typeof Swal === 'undefined') {
+            return Promise.resolve(window.confirm(options.text));
+        }
+
+        const variant = CONFIRM_VARIANTS[options.variant] || CONFIRM_VARIANTS.danger;
+
+        return Swal.fire({
+            title: options.title,
+            text: options.text,
+            icon: variant.icon,
+            showCancelButton: true,
+            confirmButtonText: options.confirmText,
+            cancelButtonText: @json(__('Cancel')),
+            confirmButtonColor: variant.colour,
+            cancelButtonColor: '#6b7280',
+            reverseButtons: true,
+            focusCancel: true,
+            // The row action menu sits at z-index 9999; keep the dialog above it
+            // so a slow dropdown close cannot overlap the confirmation.
+            customClass: { container: 'swal-topmost' }
+        }).then(function (result) {
+            return result.isConfirmed === true;
+        });
+    }
+
+    /**
+     * Outcome message. Falls back to alert() for the same reason confirmAction
+     * falls back to confirm() — the user must still be told what happened.
+     */
+    function notify(icon, message) {
+        if (typeof Swal === 'undefined') {
+            window.alert(message);
+            return Promise.resolve();
+        }
+
+        return Swal.fire({
+            icon: icon,
+            text: message,
+            confirmButtonColor: '#4f46e5',
+            customClass: { container: 'swal-topmost' }
+        });
+    }
+
     function attachConfirmDialogs() {
         $('.confirm_dialog').off('click').on('click', function(e) {
-            if (!confirm($(this).data('dialog-text'))) {
-                e.preventDefault();
-            }
+            // SweetAlert answers asynchronously, so the click's own default can
+            // never be the thing that submits — it is always cancelled here and
+            // the form is submitted by hand once the user has confirmed.
+            e.preventDefault();
+
+            const $trigger = $(this);
+            const form = $trigger.closest('form').get(0);
+
+            confirmAction({
+                title: $trigger.data('dialog-title') || @json(__('Please confirm')),
+                text: $trigger.data('dialog-text') || '',
+                confirmText: $trigger.data('dialog-confirm') || @json(__('Yes, continue')),
+                variant: $trigger.data('dialog-variant')
+            }).then(function (confirmed) {
+                if (!confirmed) {
+                    return;
+                }
+
+                if (form) {
+                    form.submit();
+                } else if ($trigger.attr('href')) {
+                    window.location = $trigger.attr('href');
+                }
+            });
         });
     }
 
@@ -359,16 +445,26 @@ $(document).ready(function() {
                 window.currentModalId = modalId;
             },
             error: function() {
-                alert('{{ __("Failed to load import form") }}');
+                notify('error', @json(__('Failed to load import form')));
             }
         });
     };
 
     window.clearTestData = function() {
-        if (!confirm('{{ __("Are you sure you want to delete all TEST environment users? This action cannot be undone.") }}')) {
-            return;
-        }
+        // Reached from the Import CSV modal, which sits above this page.
+        confirmAction({
+            title: @json(__('Delete all TEST users?')),
+            text: @json(__('Every user in the TEST environment will be permanently deleted. This cannot be undone.')),
+            confirmText: @json(__('Yes, delete them')),
+            variant: 'danger'
+        }).then(function (confirmed) {
+            if (confirmed) {
+                clearTestDataRequest();
+            }
+        });
+    };
 
+    function clearTestDataRequest() {
         $.ajax({
             url: '{{ route("users.clear.test") }}',
             type: 'POST',
@@ -378,21 +474,22 @@ $(document).ready(function() {
             },
             success: function(response) {
                 if (response.success) {
-                    alert(response.message);
-                    location.reload();
+                    notify('success', response.message).then(function () {
+                        location.reload();
+                    });
                 } else {
-                    alert(response.message);
+                    notify('error', response.message);
                 }
             },
             error: function(xhr) {
-                let errorMsg = '{{ __("Error clearing test data") }}';
+                let errorMsg = @json(__('Error clearing test data'));
                 if (xhr.responseJSON && xhr.responseJSON.message) {
                     errorMsg = xhr.responseJSON.message;
                 }
-                alert(errorMsg);
+                notify('error', errorMsg);
             }
         });
-    };
+    }
 });
 </script>
     
