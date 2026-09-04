@@ -14,10 +14,10 @@ namespace App\Services;
  * Type and Category are ONE field each. Their options change with the instrument,
  * and an instrument that has none simply hides them:
  *
- *   Plot Allocation Letter    Land, LGA, Urban Development Board   | —
- *   Occupancy Permit          Resettlement, Direct Allocation, LGA | Old, New
- *   Certificate of Occupancy  Land, Old KANGIS, New KANGIS         | Old, New
- *   Right of Occupancy        Land, LGA                            | Old, New
+ *   Plot Allocation Letter    Ministry, LGA, Urban Development Board | —
+ *   Occupancy Permit          Resettlement, Direct Allocation, LGA   | Old, New
+ *   Certificate of Occupancy  Land, Old KANGIS, New KANGIS, LGA      | Old, New
+ *   Right of Occupancy        Ministry, LGA                          | Old, New
  *
  * This class is the only copy of that table. The transaction card, the PRA card and
  * the File Index occupancy-permit section all render it, so adding a value is one
@@ -35,7 +35,7 @@ namespace App\Services;
  * 'OCCUPANCY PERMIT', a trailing "\r\n" from the InstrumentTypes import — so
  * lookups normalise case and whitespace and match the KEY as a substring. That is
  * also why ST/SLTR Certificate of Occupancy resolve to the CofO entry — they take the
- * same three Types, since the instrument name already says which of the two they are.
+ * same Types, since the instrument name already says which of the two they are.
  */
 class InstrumentTypeCatalog
 {
@@ -56,23 +56,26 @@ class InstrumentTypeCatalog
     private const CATALOG = [
         'plot allocation letter' => [
             'label' => 'Plot Allocation Letter',
-            // The body that issued the letter. An LGA-issued one is a Plot Allocation
-            // Letter of Type 'LGA' -- it is NOT a separate instrument type, which is
-            // what 'LGA Allocation Letter' briefly was.
-            'types' => ['Land', 'LGA', 'Urban Development Board'],
+            // The body that issued the letter: the Ministry, a Local Government, or the
+            // Urban Development Board. An LGA-issued one is a Plot Allocation Letter of
+            // Type 'LGA' -- it is NOT a separate instrument type, which is what
+            // 'LGA Allocation Letter' briefly was.
+            'types' => ['Ministry', 'LGA', 'Urban Development Board'],
             // The only instrument with no Category: a letter has no Old/New generation.
             'categories' => [],
             'type_column' => self::GENERIC_TYPE_COLUMN,
         ],
         'certificate of occupancy' => [
             'label' => 'Certificate of Occupancy',
-            // Three, and only three. The stored values keep their existing spelling —
-            // ~15,500 CofO_staging rows use them and every reader expects them — so only
-            // the LABELS read as the table does.
+            // Which registry issued the certificate, plus the Local-Government-issued one.
+            // The stored values keep their existing spelling — ~15,500 CofO_staging rows use
+            // them and every reader expects them — so only the LABELS read as the table does.
+            // 'LGA CofO' follows that same spelling; the screens recognise an LGA-issued
+            // instrument by the LABEL, not the value, so it needs no rule of its own — see
+            // isLgaType() in public/js/pra/form-controller.js.
             //
-            // SLTR, ST and LGA are deliberately NOT offered. SLTR and ST are their own
-            // instrument types, so the instrument already says which it is; LGA is not a
-            // kind of Certificate of Occupancy at all. The ~444 rows still storing
+            // SLTR and ST are deliberately NOT offered: they are their own instrument types,
+            // so the instrument already says which it is. The ~444 rows still storing
             // 'SLTR CofO' / 'ST CofO' are not lost: a stored value this list does not
             // carry stays selectable as '(legacy)', so loading such a record cannot
             // silently blank its Type.
@@ -80,6 +83,7 @@ class InstrumentTypeCatalog
                 'Land CofO' => 'Land',
                 'KANGIS CofO - Old' => 'Old KANGIS',
                 'KANGIS CofO - New' => 'New KANGIS',
+                'LGA CofO' => 'LGA',
             ],
             'categories' => ['Old', 'New'],
             'type_column' => 'cofo_type',
@@ -87,7 +91,7 @@ class InstrumentTypeCatalog
         'right of occupancy' => [
             'label' => 'Right of Occupancy',
             // Nothing stored these before, so the values are the labels.
-            'types' => ['Land', 'LGA'],
+            'types' => ['Ministry', 'LGA'],
             'categories' => ['Old', 'New'],
             'type_column' => self::GENERIC_TYPE_COLUMN,
         ],

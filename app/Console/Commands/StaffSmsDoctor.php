@@ -24,7 +24,10 @@ class StaffSmsDoctor extends Command
 {
     protected $signature = 'staff:sms-doctor
         {--user= : Check one user id and explain what they would receive today}
-        {--send= : Actually send a test message to this user id (spends money)}';
+        {--send= : Actually send a test message to this user id (spends money)}
+        {--to= : Send the test to a raw phone number instead of a user id (spends money)}
+        {--route= : Override services.bulk_sms_ng.gateway for this test send}
+        {--sender= : Override the sender ID for this test send}';
 
     protected $description = 'Diagnose the staff login/logout SMS: config, credentials, table, recipients.';
 
@@ -131,6 +134,50 @@ class StaffSmsDoctor extends Command
             $this->line('');
             $this->warn('  Most recent failure (user ' . $lastFailure->user_id . ', ' . $lastFailure->sms_type . '):');
             $this->line('    ' . $lastFailure->failure_reason);
+        }
+
+        // ── Raw test send ────────────────────────────────────────────────────
+        // For proving which route/sender the gateway actually honours: the name
+        // that arrives on the handset is the only evidence, and it cannot be
+        // read back from the API.
+        if ($to = $this->option('to')) {
+            $route = $this->option('route') ?: config('services.bulk_sms_ng.gateway', '1');
+            $sender = $this->option('sender') ?: config('services.bulk_sms_ng.sender');
+            $number = BulkSmsNgService::normalizeNumber((string) $to);
+
+            $this->line('');
+            $this->comment('Test send');
+
+            if ($number === null) {
+                $this->error('  "' . $to . '" is not a usable Nigerian mobile number.');
+
+                return self::FAILURE;
+            }
+
+            $this->line('  to .................... ' . $number);
+            $this->line('  sender id ............. ' . $sender);
+            $this->line('  route (smsgateway) .... ' . $route);
+
+            if (!$this->confirm('Send one real SMS now? This spends wallet credit.')) {
+                return self::SUCCESS;
+            }
+
+            config([
+                'services.bulk_sms_ng.gateway' => (string) $route,
+                'services.bulk_sms_ng.sender' => $sender,
+            ]);
+
+            $text = 'KLAES test: checking which name this message arrives from. Route ' . $route . '.';
+
+            if ($gateway->send($number, $text)) {
+                $this->info('  Accepted by the gateway.');
+                $this->line('  Now CHECK THE HANDSET: the sender name that actually arrives is the answer.');
+                $this->line('  The full gateway response is in storage/logs — look for "BulkSmsNgService: send result".');
+            } else {
+                $this->error('  Refused — ' . ($gateway->lastFailureReason() ?: 'no reason given'));
+            }
+
+            return self::SUCCESS;
         }
 
         // ── One user ─────────────────────────────────────────────────────────

@@ -104,9 +104,9 @@
             </div>
 
             {{-- A Certificate of Occupancy's Type is the shared Type field above, whose
-                 options for this instrument are Land / Old KANGIS / New KANGIS (and SLTR /
-                 ST for those variants). This hidden input is only what posts cofo_type,
-                 kept in step by applyInstrumentCatalogRules(). --}}
+                 options for this instrument are Land / Old KANGIS / New KANGIS / LGA.
+                 This hidden input is only what posts cofo_type, kept in step by
+                 applyInstrumentCatalogRules(). --}}
             <input type="hidden" id="cofo_type" name="cofo_type" data-model="cofoType" value="{{ old('cofo_type') }}">
             <input type="hidden" id="instrument_subtype" name="instrument_subtype" data-model="instrumentSubtype" value="">
 

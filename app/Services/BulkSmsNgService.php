@@ -46,6 +46,11 @@ class BulkSmsNgService
         '606' => 'gateway internal error, try again later',
         '607' => 'more than 100 recipients in one request',
         '608' => 'this account is not authorised for that route',
+        // Not a failure: the message was accepted but held. Nigerian telcos do
+        // not take promotional traffic between 19:45 and 08:00, so anything sent
+        // overnight is queued by the gateway and delivered from 08:30. A sign-in
+        // SMS for an early shift can therefore arrive well after the sign-in.
+        '609' => 'accepted but deferred — telcos do not deliver promotional SMS overnight',
     ];
 
     /** Plain-language reason the last send() failed, or null if it succeeded. */
@@ -153,9 +158,16 @@ class BulkSmsNgService
 
         Log::log($ok ? 'info' : 'warning', 'BulkSmsNgService: send result', [
             'phone'     => $mobile,
+            // What we ASKED for. The gateway can substitute its own sender on a
+            // route that does not carry registered alphanumeric IDs, and says so
+            // nowhere in the response — compare this against the name that
+            // actually arrives on the handset before blaming the config.
             'sender'    => $sender,
+            'route'     => (string) config('services.bulk_sms_ng.gateway', '1'),
             'http_code' => $http,
-            'response'  => $body === '' ? '<empty>' : mb_substr($body, 0, 200),
+            // Was 200 chars, which cut the body off mid-field and hid whatever
+            // the gateway reports after the scheduling notice.
+            'response'  => $body === '' ? '<empty>' : mb_substr($body, 0, 1000),
             'code'      => $this->lastCode,
             'reason'    => $this->lastReason,
             'success'   => $ok,
