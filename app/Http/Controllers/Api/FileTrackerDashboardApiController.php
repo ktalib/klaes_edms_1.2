@@ -226,16 +226,32 @@ class FileTrackerDashboardApiController extends Controller
             ? array_filter((array) $request->query('types'), fn ($value) => !empty($value))
             : ['file_tracking.assignment'];
 
+        // scope=all lists EVERY module (legal_search_online, digital_request,
+        // parcel_update...), not just file tracking. The header bell asks for it:
+        // the post-login flash plays any unread notification, so a bell that only
+        // listed file_tracking left the other modules unreadable AND unclearable —
+        // "Mark all as read" stayed disabled and the pop-up replayed every login.
+        $scopeAll = strtolower((string) $request->query('scope')) === 'all';
+
         $baseQuery = Notification::query()
             ->forUser($user->id)
-            ->where(function ($query) use ($types) {
-                $query->where('module', 'file_tracking')
-                    ->orWhereIn('type', $types);
+            ->when(!$scopeAll, function ($query) use ($types) {
+                $query->where(function ($inner) use ($types) {
+                    $inner->where('module', 'file_tracking')
+                        ->orWhereIn('type', $types);
+                });
             })
             ->orderByDesc('created_at');
 
         $totalCount = (clone $baseQuery)->count();
         $unreadCount = (clone $baseQuery)->where('is_read', false)->count();
+
+        // Unread across every module, whatever this request was scoped to. The
+        // "Mark all as read" button is enabled off this number because that
+        // endpoint clears everything the user owns.
+        $unreadCountAll = $scopeAll
+            ? $unreadCount
+            : Notification::query()->forUser($user->id)->where('is_read', false)->count();
         $records = (clone $baseQuery)->limit($limit)->get();
 
         $notifications = $records->map(function (Notification $notification) {
@@ -272,6 +288,7 @@ class FileTrackerDashboardApiController extends Controller
             'data' => [
                 'count' => $totalCount,
                 'unreadCount' => $unreadCount,
+                'unreadCountAll' => $unreadCountAll,
                 'limit' => $limit,
                 'items' => $notifications,
                 'generatedAt' => now()->toIso8601String(),

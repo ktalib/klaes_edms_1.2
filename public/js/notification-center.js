@@ -258,6 +258,9 @@
           action.disabled = true;
           try {
             await request(config.markAllEndpoint, { method: 'PATCH' });
+            // Nothing is unread any more, so the post-login flash queue must not
+            // replay this backlog on the next login either.
+            window.NotificationFlash?.suppress?.();
             fetchNotifications();
           } catch (error) {
             alert(error.message || 'Unable to mark notifications.');

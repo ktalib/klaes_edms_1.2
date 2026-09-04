@@ -174,5 +174,5 @@
     csrf: '{{ csrf_token() }}',
   };
 </script>
-<script src="{{ asset('js/notification-center.js') }}" defer></script>
+<script src="{{ asset('js/notification-center.js') }}?v={{ filemtime(public_path('js/notification-center.js')) }}" defer></script>
 @endsection

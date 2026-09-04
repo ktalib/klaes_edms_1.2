@@ -28,8 +28,8 @@
           class="pl-10 pr-4 py-2 border border-gray-200 rounded-md w-64 focus:outline-none focus:ring-2 focus:ring-blue-500" />
       </div>
       <div class="relative" id="file-tracker-header-notifications" data-sound-url="{{ asset('sound/sound.wav') }}"
-        data-endpoint="{{ route('file-tracker-dashboard.notifications') }}"
-        data-fallback-endpoint="{{ url('api/file-tracker-dashboard/notifications') }}"
+        data-endpoint="{{ route('file-tracker-dashboard.notifications', ['scope' => 'all']) }}"
+        data-fallback-endpoint="{{ url('api/file-tracker-dashboard/notifications?scope=all') }}"
         data-icon-url="{{ asset('assets/logo/logo.png') }}" data-poll-interval="20000"
         data-mark-all-endpoint="{{ route('notifications.api.mark-all-read') }}">
         <button type="button"
@@ -300,8 +300,8 @@
   </div>
 </div>
 
-<script src="{{ asset('js/push-notification-center.js') }}" defer></script>
-<script src="{{ asset('js/file-tracker-notifications.js') }}" defer></script>
+<script src="{{ asset('js/push-notification-center.js') }}?v={{ filemtime(public_path('js/push-notification-center.js')) }}" defer></script>
+<script src="{{ asset('js/file-tracker-notifications.js') }}?v={{ filemtime(public_path('js/file-tracker-notifications.js')) }}" defer></script>
 <script src="{{ asset('js/welcome-popup.js') }}" defer></script>
 @if (Auth::check() && Auth::user()->needs_profile_photo)
   @include('profile.partials.photo-required-card')
@@ -325,7 +325,7 @@
     sessionKey: "{{ $flashSessionKey }}"
   };
 </script>
-<script src="{{ asset('js/notification-flash.js') }}" defer></script>
+<script src="{{ asset('js/notification-flash.js') }}?v={{ filemtime(public_path('js/notification-flash.js')) }}" defer></script>
 
 
 

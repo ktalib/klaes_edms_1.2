@@ -322,10 +322,52 @@
                                                     ph.classList.add('hidden');
                                                 };
                                                 reader.readAsDataURL(file);
+                                                // Picking a new file is a replacement, not a removal.
+                                                document.getElementById('removeProfileFlag').value = '0';
+                                                var undo = document.getElementById('removeProfileUndo');
+                                                var btn = document.getElementById('removeProfileBtn');
+                                                if (undo) { undo.classList.add('hidden'); }
+                                                if (btn) { btn.classList.remove('hidden'); }
                                             })(this)">
                                         @error('profile')
                                             <p class="mt-1 text-xs text-red-600">{{ $message }}</p>
                                         @enderror
+
+                                        {{-- Removal is a flag on this form rather than its own request: the card
+                                             sits inside the edit form, and a nested form is invalid HTML. The
+                                             list screen's action menu posts to users.profile-photo.destroy. --}}
+                                        <input type="hidden" name="remove_profile" id="removeProfileFlag" value="0">
+                                        @if ($user->profile_url)
+                                            <div class="mt-2">
+                                                <button type="button" id="removeProfileBtn"
+                                                    class="inline-flex items-center gap-1 text-xs font-medium text-red-600 hover:text-red-800"
+                                                    onclick="(function(){
+                                                        if (!confirm('{{ __('Remove this profile picture? The user will be asked to upload a new one before they can use the system again.') }}')) { return; }
+                                                        document.getElementById('removeProfileFlag').value = '1';
+                                                        document.getElementById('profile').value = '';
+                                                        document.getElementById('editProfilePreview').classList.add('hidden');
+                                                        document.getElementById('editProfilePlaceholder').classList.remove('hidden');
+                                                        document.getElementById('removeProfileBtn').classList.add('hidden');
+                                                        document.getElementById('removeProfileUndo').classList.remove('hidden');
+                                                    })()">
+                                                    <i class="fas fa-trash-alt"></i>
+                                                    {{ __('Remove Profile Picture') }}
+                                                </button>
+                                                <div id="removeProfileUndo" class="hidden mt-1 flex items-center gap-2 text-xs text-amber-700">
+                                                    <span>{{ __('Will be removed when you save.') }}</span>
+                                                    <button type="button" class="font-medium underline hover:text-amber-900"
+                                                        onclick="(function(){
+                                                            document.getElementById('removeProfileFlag').value = '0';
+                                                            document.getElementById('editProfilePreview').classList.remove('hidden');
+                                                            document.getElementById('editProfilePlaceholder').classList.add('hidden');
+                                                            document.getElementById('removeProfileUndo').classList.add('hidden');
+                                                            document.getElementById('removeProfileBtn').classList.remove('hidden');
+                                                        })()">
+                                                        {{ __('Undo') }}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        @endif
                                     </div>
                                 </div>
 

@@ -276,6 +276,20 @@ class UserController extends Controller
         return true;
     }
 
+    /**
+     * Honour the edit form's "Remove Profile Picture" control.
+     * Returns true when a photo was cleared. Ignored when the same submit also carries
+     * a new upload — replacing a photo is not removing it.
+     */
+    private function applyProfileRemoval(Request $request, User $user): bool
+    {
+        if (!$request->boolean('remove_profile') || $request->hasFile('profile')) {
+            return false;
+        }
+
+        return app(ProfilePhotoService::class)->remove($user);
+    }
+
     private function profileUploadRules(bool $required = false): array
     {
         return ProfilePhotoService::rules($required);
@@ -642,6 +656,7 @@ class UserController extends Controller
                 unset($userData['profile']);
                 $user->fill($userData);
                 $this->applyProfileUpload($request, $user);
+                $this->applyProfileRemoval($request, $user);
                 $user->username = $request->username; // update username
                 $user->email = $request->filled('email') ? $request->email : uniqid('temp') . '@klaes.com.ng';
                 if ($request->filled('password')) {
@@ -781,6 +796,7 @@ class UserController extends Controller
                     $user->password = Hash::make($request->password);
                 }
                 $this->applyProfileUpload($request, $user);
+                $this->applyProfileRemoval($request, $user);
                 $user->save();
                 $this->notifyAccountUpdate($user);
                 
@@ -788,6 +804,27 @@ class UserController extends Controller
             }
     }
 
+
+    /**
+     * Clear a user's passport photo from the row action menu.
+     *
+     * Separate from update() so the list screen can do it without opening the edit form.
+     */
+    public function removeProfilePhoto(User $user)
+    {
+        if (!app(ProfilePhotoService::class)->remove($user)) {
+            return redirect()->back()->with('success', __('That user has no profile picture to remove.'));
+        }
+
+        $user->save();
+
+        return redirect()->back()->with(
+            'success',
+            __('Profile picture removed for :name. They will be asked to upload a new one at their next sign-in.', [
+                'name' => $user->name,
+            ])
+        );
+    }
 
     public function suspend(User $user)
     {

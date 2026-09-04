@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Jobs\SendStaffAttendanceSms;
+use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Models\UserActivityLog;
 use App\Models\UserActivityLogSetting;
@@ -394,7 +396,10 @@ class ActivityLogService
                     'man_hours_per_day',
                     'shift_code',
                     'auto_deactivate',
-                    'staff_type_category'
+                    'staff_type_category',
+                    // Needed by the auto-logout attendance SMS below; a column
+                    // left out of this list reads as null, not as a lazy load.
+                    'phone_number'
                 );
             }])
             ->orderBy('id');
@@ -456,6 +461,16 @@ class ActivityLogService
                     $autoLoggedOut++;
                     $sessionsRemoved += $result['sessions_removed'];
                     $cacheInvalidated = true;
+
+                    // Most staff never click Log Out — their session is ended
+                    // here instead, and this path fires no Logout event, so the
+                    // listener would never see it. The shift-end and once-a-day
+                    // rules still apply; this only makes the moment visible.
+                    SendStaffAttendanceSms::queueFor(
+                        (int) $user->id,
+                        StaffSmsLog::TYPE_LOGOUT,
+                        $evaluation['logout_time'] ?? null
+                    );
                 } else {
                     $skipped[] = ['session_id' => $session->id, 'user_id' => $user->id, 'reason' => 'optimistic_lock_failed'];
                 }

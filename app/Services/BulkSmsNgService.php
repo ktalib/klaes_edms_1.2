@@ -252,6 +252,19 @@ class BulkSmsNgService
      */
     private function normalizePhone(string $phone): ?string
     {
+        return self::normalizeNumber($phone);
+    }
+
+    /**
+     * The same rule, callable without an instance.
+     *
+     * Callers that need to know whether a stored number is usable BEFORE
+     * deciding to send — the attendance SMS skips staff with no usable number
+     * rather than logging a failure for each of them — share this one
+     * definition so "valid" cannot drift between the check and the send.
+     */
+    public static function normalizeNumber(string $phone): ?string
+    {
         $digits = preg_replace('/\D+/', '', $phone) ?? '';
 
         if (str_starts_with($digits, '234') && strlen($digits) === 13) {

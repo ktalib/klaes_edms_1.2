@@ -3,6 +3,8 @@
 namespace App\Listeners;
 
 use Illuminate\Auth\Events\Login;
+use App\Jobs\SendStaffAttendanceSms;
+use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use Illuminate\Support\Facades\Log;
@@ -47,6 +49,18 @@ class LogUserLogin
             }
         } catch (\Throwable $exception) {
             Log::error('Failed to record login activity', [
+                'user_id' => $event->user->id ?? null,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        // The day's sign-in SMS. Queued to run after the response so a slow
+        // gateway can never hold up the sign-in itself; the once-a-day check
+        // lives in StaffAttendanceSmsService, not here.
+        try {
+            SendStaffAttendanceSms::queueFor($event->user->id, StaffSmsLog::TYPE_LOGIN);
+        } catch (\Throwable $exception) {
+            Log::error('Failed to queue login SMS', [
                 'user_id' => $event->user->id ?? null,
                 'message' => $exception->getMessage(),
             ]);

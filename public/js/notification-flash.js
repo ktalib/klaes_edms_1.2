@@ -3,6 +3,13 @@
 
   const displayInterval = 4500;
   const STORAGE_PREFIX = 'notificationFlash-';
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+  // Set by "Mark all as read" (header bell / notifications page) so a queue that
+  // is already playing stops mid-flight instead of finishing a list the user has
+  // just cleared.
+  let suppressed = false;
+  let activeStorageKey = null;
 
   // localStorage, not sessionStorage: sessionStorage is scoped to a single tab,
   // so opening the app in a second tab replayed the whole queue. The key
@@ -30,6 +37,34 @@
       return localStorage.getItem(storageKey) === '1';
     } catch (error) {
       return false;
+    }
+  }
+
+  // A flashed notification stays UNREAD until the user acknowledges it, which is
+  // why it used to replay at every login: nothing in this file ever wrote the
+  // read flag. Clicking the card (Open / Close / the body) now marks it read, so
+  // the pop-up never comes back for a notification the user has dealt with. An
+  // auto-dismissed toast is deliberately left unread - the user never saw it.
+  // keepalive lets the request survive the navigation the Open button triggers.
+  function markNotificationRead(id) {
+    if (!id) {
+      return;
+    }
+    try {
+      fetch(`/file-tracker-dashboard/notifications/${id}/read`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'same-origin',
+        keepalive: true,
+      }).catch(() => {
+        /* best effort - the notification simply stays unread */
+      });
+    } catch (error) {
+      /* ignored */
     }
   }
 
@@ -152,6 +187,9 @@
     let index = 0;
 
     const showNext = () => {
+      if (suppressed) {
+        return;
+      }
       if (index >= items.length) {
         markPlayed(storageKey);
         return;
@@ -180,16 +218,19 @@
 
       closeBtn.addEventListener('click', (event) => {
         event.stopPropagation();
+        markNotificationRead(items[index]?.id);
         removeToast();
       });
 
       openBtn.addEventListener('click', (event) => {
         event.stopPropagation();
+        markNotificationRead(items[index]?.id);
         window.location.href = '/notifications';
       });
 
       toast.addEventListener('click', (event) => {
         if (!event.target.closest('.toast-bar-action')) {
+          markNotificationRead(items[index]?.id);
           window.location.href = '/notifications';
         }
       });
@@ -204,7 +245,8 @@
     }
     const config = window.NotificationFlashConfig;
     const storageKey = (config && config.sessionKey) || 'notificationFlashPlayed';
-    if (!config || hasPlayed(storageKey)) {
+    activeStorageKey = storageKey;
+    if (!config || hasPlayed(storageKey) || suppressed) {
       return;
     }
 
@@ -233,6 +275,25 @@
       console.warn('Notification flash failed', error);
     }
   }
+
+  // Called by "Mark all as read" so the queue dies immediately and stays dead for
+  // the rest of this login, even before the server round-trip lands.
+  function suppress() {
+    suppressed = true;
+    const storageKey =
+      activeStorageKey ||
+      (window.NotificationFlashConfig && window.NotificationFlashConfig.sessionKey) ||
+      'notificationFlashPlayed';
+    markPlayed(storageKey);
+    document
+      .querySelectorAll('.notification-flash-container .notification-flash-toast')
+      .forEach((toast) => toast.remove());
+  }
+
+  window.NotificationFlash = Object.assign(window.NotificationFlash || {}, {
+    suppress,
+    markRead: markNotificationRead,
+  });
 
   document.addEventListener('DOMContentLoaded', initFlashNotifications);
 })(window, document);

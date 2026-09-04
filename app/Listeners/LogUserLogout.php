@@ -3,6 +3,8 @@
 namespace App\Listeners;
 
 use Illuminate\Auth\Events\Logout;
+use App\Jobs\SendStaffAttendanceSms;
+use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Models\UserActivityLog;
 use App\Services\ActivityLogService;
@@ -66,6 +68,12 @@ class LogUserLogout
                 UserActivityLog::logActivity($userId, 'logout', [
                     'activity_description' => 'User logged out successfully'
                 ]);
+
+                // The day's sign-out SMS. Queued to run after the response, and
+                // held back until the user has reached the end of their own
+                // shift — StaffAttendanceSmsService makes that call, so signing
+                // out for lunch sends nothing and spends nothing.
+                SendStaffAttendanceSms::queueFor((int) $userId, StaffSmsLog::TYPE_LOGOUT);
             }
         } catch (\Exception $e) {
             \Log::error('Failed to log user logout: ' . $e->getMessage());

@@ -215,6 +215,9 @@
           'X-Requested-With': 'XMLHttpRequest',
         },
         credentials: 'same-origin',
+        // Some call sites navigate away in the same tick (the toast body opens
+        // /notifications); keepalive stops the browser cancelling the write.
+        keepalive: true,
       });
 
       if (!response.ok) {
@@ -363,7 +366,13 @@
       list.innerHTML = rows;
     }
 
-    function updateCounters(unread, total) {
+    // `unreadAll` is the unread count across EVERY module (the bell is scoped to
+    // all modules now, but the fallback endpoint or an older cached response can
+    // still answer with the file-tracking subset only). "Mark all as read" clears
+    // everything the user owns, so it stays enabled while anything is unread —
+    // otherwise a user whose only unread items sat outside the bell's scope could
+    // never clear them, and the post-login pop-up replayed forever.
+    function updateCounters(unread, total, unreadAll) {
       if (badge) {
         if (unread > 0) {
           badge.style.display = 'flex';
@@ -379,7 +388,8 @@
       }
 
       if (markAllBtn) {
-        markAllBtn.disabled = !unread;
+        const clearable = typeof unreadAll === 'number' ? unreadAll : unread;
+        markAllBtn.disabled = !clearable;
       }
     }
 
@@ -401,12 +411,12 @@
     }
 
     notificationCenter
-      .on('update', ({ items, unreadCount, totalCount, newItems, isInitialLoad }) => {
+      .on('update', ({ items, unreadCount, totalCount, newItems, isInitialLoad, raw }) => {
         hideErrors();
         showLoading(false);
         lastItems = items;
         renderList(items);
-        updateCounters(unreadCount, totalCount);
+        updateCounters(unreadCount, totalCount, raw?.data?.unreadCountAll);
         // Only toast items that arrived while this page was open. On the first
         // poll everything looks new, and toasting it would re-pop the same card
         // on every page load or refresh — the post-login flash queue
@@ -491,6 +501,10 @@
             throw new Error(`Unable to mark all as read (status ${response.status}).`);
           }
 
+          // Everything is read server-side now, so kill the post-login flash queue
+          // too: without this the pop-up kept replaying (and came back at the next
+          // login) even though the user had just cleared the bell.
+          window.NotificationFlash?.suppress?.();
           await notificationCenter.refresh();
         } catch (error) {
           alert(error?.message || 'Unable to mark notifications as read.');
@@ -673,9 +687,12 @@
 
       container.appendChild(toast);
 
-      // Clicking anywhere on the popup card (except action or dismiss buttons) opens /notifications
+      // Clicking anywhere on the popup card (except action or dismiss buttons) opens
+      // /notifications. Acknowledging it here also clears the unread flag, so the
+      // post-login flash never re-pops a card the user has already opened.
       toast.addEventListener('click', (e) => {
         if (!e.target.closest('.toast-bar-action') && !e.target.closest('.toast-dismiss')) {
+          markNotificationRead(item.id).catch(() => {});
           window.location.href = '/notifications';
         }
       });
@@ -696,6 +713,7 @@
 
           // Handle local informational actions
           if (action === 'open-notifications') {
+            markNotificationRead(item.id).catch(() => {});
             window.location.href = '/notifications';
             return;
           }
@@ -703,6 +721,7 @@
             if (toast.dataset.dismissTimeoutId) {
               clearTimeout(Number(toast.dataset.dismissTimeoutId));
             }
+            markNotificationRead(item.id).catch(() => {});
             dismissToast(toast);
             return;
           }

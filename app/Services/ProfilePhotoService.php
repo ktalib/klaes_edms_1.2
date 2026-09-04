@@ -52,18 +52,67 @@ class ProfilePhotoService
     }
 
     /**
+     * Clear the user's photo: delete the file and blank both columns.
+     * The caller is responsible for saving the model.
+     *
+     * Returns true when the user actually had a photo to remove.
+     *
+     * Note this re-arms the mandatory-photo gate — User::$needs_profile_photo becomes
+     * true again, so RequireProfilePhoto will hold the user on the upload card at their
+     * next request until they supply a new one. That is the intended effect of removing
+     * a wrong or unacceptable photo.
+     */
+    public function remove(User $user): bool
+    {
+        $had = $user->profile_url !== null;
+
+        // Both columns are cleared: profile is what the accessor reads first, but a
+        // legacy row can name a different file in passport_photo_path, which would
+        // otherwise resurface as the fallback.
+        $this->deleteFile($user, (string) $user->profile);
+        $this->deleteFile($user, (string) $user->passport_photo_path);
+
+        $user->profile = null;
+        $user->passport_photo_path = null;
+
+        return $had;
+    }
+
+    /**
      * Remove the user's current photo file, leaving the shared placeholder alone.
      */
     private function deletePrevious(User $user): void
     {
-        $previous = trim((string) $user->profile);
+        $this->deleteFile($user, (string) $user->profile);
+    }
 
-        if ($previous === '' || strtolower($previous) === self::PLACEHOLDER) {
+    /**
+     * Delete one stored photo path off the public disk.
+     *
+     * Skips the shared "avatar.png" placeholder, and skips any path another user row
+     * still points at — legacy rows stored bare filenames, so two accounts can name the
+     * same file and deleting it for one would blank the other.
+     */
+    private function deleteFile(User $user, string $stored): void
+    {
+        $stored = trim($stored);
+
+        if ($stored === '' || strtolower($stored) === self::PLACEHOLDER) {
+            return;
+        }
+
+        $sharedWith = User::where('id', '<>', $user->id)
+            ->where(function ($query) use ($stored) {
+                $query->where('profile', $stored)->orWhere('passport_photo_path', $stored);
+            })
+            ->exists();
+
+        if ($sharedWith) {
             return;
         }
 
         // Older rows stored a bare filename that lived under upload/profile.
-        $candidates = [$previous, self::DIRECTORY . '/' . $previous];
+        $candidates = [$stored, self::DIRECTORY . '/' . $stored];
 
         foreach ($candidates as $candidate) {
             if (Storage::disk('public')->exists($candidate)) {
