@@ -320,58 +320,71 @@
                     instrument type AND its sub-type, since the two Occupancy Permit
                     registers paginate separately.
 
+                    The answer is given in the "You are about to register" popup, next to the
+                    volume it is overriding — that is the moment the officer is deciding which
+                    number this instrument takes, and it is the only screen every instrument
+                    with a vault passes through. The panel below is what remains in the form:
+                    a standing reminder of the number chosen, and — for the few types that
+                    open no popup (Devolution Order) — the picker itself.
+
                     Rendered only on the dedicated capture page: the side-capture pages
                     (OSS Applications, Land/MLS) hand-type their particulars already.
                 --}}
                 @if ($showCaptureBanner ?? false)
+                {{-- What the capture actually posts. Hidden inputs rather than the checkbox
+                     itself, because the answer now arrives from the popup as often as from
+                     the panel; writeBackfillState() in instruments-capture.js is the one
+                     place that sets all three. --}}
+                <input type="hidden" id="backfill_registration" name="backfill_registration" value="0">
+                <input type="hidden" id="backfill_volume_no" name="backfill_volume_no" value="">
+                <input type="hidden" id="backfill_serial_no" name="backfill_serial_no" value="">
+
                 <div id="backfill-panel" class="backfill-panel hidden mb-6">
-                    <label for="backfill_registration" class="backfill-panel__toggle">
-                        <input type="checkbox" id="backfill_registration" name="backfill_registration" value="1"
-                            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
-                        <span>
-                            <span class="backfill-panel__title">
-                                Fill a missing registration number
+                    {{-- Hidden whenever the popup owns the answer, leaving only the chosen
+                         line below — two live copies of one question is how they disagree. --}}
+                    <div id="backfill-controls">
+                        <label for="backfill_toggle" class="backfill-panel__toggle">
+                            <input type="checkbox" id="backfill_toggle"
+                                class="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                            <span>
+                                <span class="backfill-panel__title">
+                                    Fill a missing registration number
+                                </span>
+                                {{-- Held back for now. Restore by uncommenting: the JS that fills
+                                     both lines is still in place and simply skips whichever
+                                     element is absent, so nothing else has to change.
+
+                                <span id="backfill-panel-hint" class="backfill-panel__hint">
+                                    Use this only to re-enter an instrument whose registration was deleted.
+                                </span>
+                                --}}
                             </span>
-                            {{-- Held back for now. Restore by uncommenting: the JS that fills
-                                 both lines is still in place (syncBackfillPanel /
-                                 requestBackfillReport) and simply skips whichever element is
-                                 absent, so nothing else has to change.
+                        </label>
 
-                            <span id="backfill-panel-hint" class="backfill-panel__hint">
-                                Use this only to re-enter an instrument whose registration was deleted.
-                            </span>
-                            --}}
-                        </span>
-                    </label>
+                        {{-- Where this register starts and where it stands: the two facts that
+                             decide which numbers can be missing at all. Held back with the hint
+                             above; uncomment to bring it back.
 
-                    {{-- Where this register starts and where it stands: the two facts that
-                         decide which numbers can be missing at all. Held back with the hint
-                         above; uncomment to bring it back.
+                        <p id="backfill-range" class="backfill-panel__range hidden"></p>
+                        --}}
 
-                    <p id="backfill-range" class="backfill-panel__range hidden"></p>
-                    --}}
-
-                    <div id="backfill-fields" class="backfill-panel__fields hidden">
-                        <div>
-                            <label for="backfill_volume_select" class="backfill-panel__label">Volume</label>
-                            <select id="backfill_volume_select"
-                                class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-amber-500 outline-none">
-                            </select>
-                        </div>
-                        <div>
-                            <label for="backfill_serial_select" class="backfill-panel__label">Missing number</label>
-                            <select id="backfill_serial_select"
-                                class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-mono focus:ring-1 focus:ring-amber-500 outline-none">
-                            </select>
+                        <div id="backfill-fields" class="backfill-panel__fields hidden">
+                            <div>
+                                <label for="backfill_volume_select" class="backfill-panel__label">Volume</label>
+                                <select id="backfill_volume_select"
+                                    class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-amber-500 outline-none">
+                                </select>
+                            </div>
+                            <div>
+                                <label for="backfill_serial_select" class="backfill-panel__label">Missing number</label>
+                                <select id="backfill_serial_select"
+                                    class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-mono focus:ring-1 focus:ring-amber-500 outline-none">
+                                </select>
+                            </div>
                         </div>
                     </div>
 
                     <p id="backfill-chosen" class="backfill-panel__chosen hidden"></p>
-
-                    {{-- What the capture actually posts. Set by JS from the two selects so
-                         the selects themselves never submit anything of their own. --}}
-                    <input type="hidden" id="backfill_volume_no" name="backfill_volume_no" value="">
-                    <input type="hidden" id="backfill_serial_no" name="backfill_serial_no" value="">
                 </div>
                 @endif
 

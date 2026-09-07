@@ -317,22 +317,43 @@ $(function () {
         return String((row && row.instrument_type) || '').toLowerCase().includes('transfer of title');
     }
 
+    /**
+     * One label per grant type, however it was stored.
+     *
+     * op_type was captured by several screens over several years and the same answer
+     * exists in two spellings — "Resettlement" (19,126 rows) and "OP Resettlement"
+     * (4,284), "Direct Allocation" (9,337) and "OP Direct Allocation" (222). They mean
+     * the same thing, and showing both makes the column read as four grant types when
+     * there are two.
+     *
+     * The bare form wins: the column is already headed OP TYPE, so the prefix repeats
+     * the header. This is the same rule the OSS applications page applies to its own
+     * sub-label (preg_replace('/^op\\s+/i', '', $src)), so the two screens agree.
+     *
+     * Display only. The stored values are untouched, so sorting and the server-side
+     * search still key off whatever each row actually holds.
+     */
+    function normalizeOpType(val) {
+        const text = String(val || '').trim().replace(/\s+/g, ' ');
+        if (!text) return '';
+        return text.replace(/^op\s+/i, '');
+    }
+
     function fmtOpType(val, type, row) {
-        // A transferred record is labelled for what it now is. The original grant type
-        // is kept underneath, because it is still how the parcel was allocated and the
-        // officers read this column to tell Resettlement files from Direct Allocation.
+        // A transferred record is labelled for what it now is, and nothing else. The
+        // original grant type is deliberately NOT shown underneath: this column answers
+        // one question per row, and a second line under the badge reads as a second
+        // type rather than as history. op_type is not even read on this path.
         if (isTransferOfTitle(row)) {
-            const origin = val
-                ? `<div class="text-[10px] text-slate-400 mt-0.5">${val}</div>`
-                : '';
-            return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-700">Transfer of Title</span>${origin}`;
+            return '<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-700">Transfer of Title</span>';
         }
 
-        if (!val) return '<span class="text-slate-300">—</span>';
-        const cls = val.toLowerCase().includes('resettlement')
+        const label = normalizeOpType(val);
+        if (!label) return '<span class="text-slate-300">—</span>';
+        const cls = label.toLowerCase().includes('resettlement')
             ? 'bg-orange-100 text-orange-700'
             : 'bg-sky-100 text-sky-700';
-        return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}">${val}</span>`;
+        return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${cls}">${label}</span>`;
     }
 
     function buildCaptureEditIdentifier(r) {

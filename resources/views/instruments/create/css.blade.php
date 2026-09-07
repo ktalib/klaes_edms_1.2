@@ -255,6 +255,27 @@
         color: #92400e;
     }
 
+    /* The panel reduced to its reminder line, for the instruments whose picker
+       lives in the "You are about to register" popup: there is no checkbox above
+       it any more, so the indent that lined it up under one has to go. */
+    .backfill-panel__chosen--solo {
+        margin-top: 0;
+        padding-left: 0;
+    }
+
+    /* The same panel inside a SweetAlert. Two selects side by side do not fit a
+       440px popup, so they stack; everything else is inherited, which is the
+       point - the officer sees the same control in both places. */
+    .backfill-panel--notice {
+        margin-top: 14px;
+        text-align: left;
+    }
+
+    .backfill-panel--notice .backfill-panel__fields {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.5rem;
+    }
+
     /* Shared styling for the "what are we capturing?" prompts (CofO variant + type,
        OP type) - a row of choice cards, optionally with a follow-up select. */
     .type-prompt {

@@ -600,12 +600,16 @@ class CommissioningSheetController extends Controller
             //    so the reader expects the pair whichever of the two was recorded.
             //    Done last, so the raw numbers above still drive the lookups.
             //    ST keeps its own two-line treatment and is left alone.
+            //    The sheet's own number is excluded from the pair: it is already printed
+            //    on the File No line above, and a recertification IS the land file of its
+            //    own KANGIS alias, so pairing would repeat it here as if it were another
+            //    file ("RES-RC-2026-8 (KN 6873)" against RES-RC-2026-8).
             $pairs = app(KangisLandPairService::class);
             if (!empty($data['old_file_number'])) {
-                $data['old_file_number'] = $pairs->formatList($data['old_file_number']);
+                $data['old_file_number'] = $pairs->formatList($data['old_file_number'], $fileNo);
             }
             if (!empty($data['related_file_number']) && stripos($fileNo, 'ST-') !== 0) {
-                $data['related_file_number'] = $pairs->formatList($data['related_file_number']);
+                $data['related_file_number'] = $pairs->formatList($data['related_file_number'], $fileNo);
             }
 
             return view('commissioning_sheet.pdf', compact('data'));
@@ -677,13 +681,15 @@ class CommissioningSheetController extends Controller
                 $candidate = trim((string) ($oldRow->old_fileno ?? ''));
                 // An entry equal to the file's own number is not a previous number.
                 if ($candidate !== '' && strcasecmp($candidate, $fileNumber) !== 0) {
-                    $old = $pairs->formatList($candidate);
+                    $old = $pairs->formatList($candidate, $fileNumber);
                 }
             }
 
             $relatedRaw = $this->resolveRelatedFileNumber($fileNumber);
             if ($relatedRaw !== '') {
-                $related = $pairs->formatList($relatedRaw);
+                // Excluded for the same reason as on the printed sheet: the file's own
+                // number already leads the sheet and must not reappear beside its alias.
+                $related = $pairs->formatList($relatedRaw, $fileNumber);
             }
         } catch (\Throwable $e) {
             \Log::warning('Commissioning sheet file links lookup failed: ' . $e->getMessage());

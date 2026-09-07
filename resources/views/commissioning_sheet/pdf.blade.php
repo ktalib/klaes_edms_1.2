@@ -41,6 +41,10 @@
         if ($isSt && strcasecmp($fileType, 'Conversion') === 0) {
             $fileType = 'ST Conversion';
         }
+        // Whether the shared row prints a Plot No or a Reason: the departments that hold a
+        // plot number (Land / Sectional Titling) print the number, DCIV prints the reason.
+        $isPlotNoRow = $isOss || $isSt;
+
         $watermarkText = $isCtc ? 'CERTIFIED TRUE COPY' : (($status === 'Certified True Copy') ? 'CERTIFIED TRUE COPY' : 'ORIGINAL');
         $qrPayload = $trackingId ?: $fileNumber;
 
@@ -473,14 +477,15 @@
                     <div class="label">TP No:</div>
                     <div class="value-line">{{ $tpNumber }}</div>
                 </div>
-                {{-- ST files carry no commissioning reason, so the row is dropped
-                     rather than printed empty. --}}
-                @unless($isSt)
+                {{-- One row, two readings. An OSS or ST file puts its plot number here;
+                     a DCIV file has no plot number but does carry the reason it was
+                     commissioned, which is why the label follows the department. The row
+                     used to be dropped entirely for ST, which left that sheet with no
+                     Plot No line at all. --}}
                 <div class="row">
-                    <div class="label">{{ $isOss ? 'Plot No:' : 'Reason:' }}</div>
-                    <div class="value-line{{ $isOss ? '' : ' wrap' }}">{{ $reason }}</div>
+                    <div class="label">{{ $isPlotNoRow ? 'Plot No:' : 'Reason:' }}</div>
+                    <div class="value-line{{ $isPlotNoRow ? '' : ' wrap' }}">{{ $reason }}</div>
                 </div>
-                @endunless
                 <div class="row">
                     <div class="label">District:</div>
                     <div class="value-line">{{ $district }}</div>

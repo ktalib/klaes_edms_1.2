@@ -27,8 +27,16 @@ class KangisLandPairService
     /**
      * "land file no (kangis file no)" when the pairing is known, in either direction;
      * otherwise the number exactly as given. Never throws — a display helper.
+     *
+     * `$excludeFileNo` is the number the document already names elsewhere — on a
+     * commissioning sheet, the file the sheet is for. A recertification is its own
+     * KANGIS alias's land file, so pairing "KN 6873" produced
+     * "RES-RC-2026-8 (KN 6873)" on the Related File line of the sheet for
+     * RES-RC-2026-8, which reads as a second, different file. Naming it excludes it:
+     * the alias prints alone, and a related number that IS the file itself prints as
+     * nothing at all so the row can be left off.
      */
-    public function format(?string $fileNo): string
+    public function format(?string $fileNo, ?string $excludeFileNo = null): string
     {
         $fileNo = trim((string) $fileNo);
         if ($fileNo === '') {
@@ -41,7 +49,15 @@ class KangisLandPairService
             if ($this->isKangisFormat($fileNo)) {
                 $land = $this->landFileForKangis($conn, $fileNo);
 
-                return $land !== null ? "{$land} ({$fileNo})" : $fileNo;
+                if ($land === null || $this->isSameNumber($land, $excludeFileNo)) {
+                    return $fileNo;
+                }
+
+                return "{$land} ({$fileNo})";
+            }
+
+            if ($this->isSameNumber($fileNo, $excludeFileNo)) {
+                return '';
             }
 
             $kangis = $this->kangisFileForLand($conn, $fileNo);
@@ -55,15 +71,37 @@ class KangisLandPairService
     /**
      * Same, for a stored related_fileno — a JSON array on newer rows, a comma list on
      * older ones, a bare number otherwise. Each number is paired, then joined for print.
+     *
+     * Numbers that collapse to nothing (the document's own file) are dropped, so a list
+     * holding only that comes back empty and the caller can leave the row out.
      */
-    public function formatList($raw): string
+    public function formatList($raw, ?string $excludeFileNo = null): string
     {
         $numbers = $this->parseRelatedFileno($raw);
         if (empty($numbers)) {
             return '';
         }
 
-        return implode(', ', array_map(fn ($n) => $this->format($n), $numbers));
+        $formatted = array_filter(
+            array_map(fn ($n) => $this->format($n, $excludeFileNo), $numbers),
+            fn ($v) => trim($v) !== ''
+        );
+
+        return implode(', ', $formatted);
+    }
+
+    /**
+     * Two written forms of the same file number. Registry numbers are quoted with and
+     * without spaces ("KN 6873" / "KN6873"), so the comparison ignores whitespace.
+     */
+    private function isSameNumber(?string $a, ?string $b): bool
+    {
+        $norm = fn ($v) => strtoupper(preg_replace('/\s+/', '', trim((string) $v)));
+
+        $a = $norm($a);
+        $b = $norm($b);
+
+        return $a !== '' && $a === $b;
     }
 
     /**

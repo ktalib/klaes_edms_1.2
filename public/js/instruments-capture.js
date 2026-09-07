@@ -459,21 +459,42 @@ document.addEventListener('DOMContentLoaded', function () {
      * runs from the first number that register ever issued in KLAES up to the one
      * its vault stands on now. The server works that out
      * (MissingRegistrationParticularsService) - nothing here re-derives it.
+     *
+     * WHERE THE QUESTION IS ASKED. In the "You are about to register" popup,
+     * beside the volume it overrides - that is the moment the officer is deciding
+     * which number this instrument takes. All three of those popups (OP type,
+     * CofO variant, family member) are built by showRegistrationNotice() below,
+     * so there is one card to change, not three. An instrument that opens no
+     * popup - Devolution Order - falls back to the panel inside the capture form,
+     * which is otherwise reduced to a standing reminder of the number chosen.
+     *
+     * HOW THE ANSWER TRAVELS. A notice cannot write its answer straight into the
+     * form: openRegistrationDialog() runs AFTER it and resets the form (a CofO
+     * capture is even reset to the Regular variant first, then corrected). So the
+     * notice parks its answer in lastNoticeBackfill and the caller applies it
+     * with applyNoticeBackfill() once the dialog is up - the same "apply
+     * afterwards" order applyOpType() and applyCofoSelection() already follow.
+     * writeBackfillState() is then the only writer of the three hidden inputs the
+     * capture posts.
      * ------------------------------------------------------------------ */
 
-    // Last report fetched, so changing the volume does not re-hit the server.
+    // The number chosen for the capture now on screen, as {volume, serial}.
+    // Cleared by every dialog open, so a capture never inherits the last one's.
+    let pendingBackfill = null;
+    // A notice's answer, waiting for the dialog it belongs to. Consumed once.
+    let lastNoticeBackfill = null;
+    // Report backing the in-form panel, so changing the volume there does not
+    // re-hit the server.
     let backfillReport = null;
-    // Guards against a slow response for a type the officer has already left.
+    // Guards against a slow response for a register the officer has already left.
     let backfillRequestToken = 0;
-    // The register the panel currently describes, as "type|opType". Repaints
-    // that leave this unchanged (picking a CofO type, say - all three Regular
-    // types share one vault) must not throw away a number already chosen.
+    // The register the in-form panel currently describes, as "type|opType".
     let backfillTargetKey = null;
 
     /**
      * The instrument type string the capture will actually post - the same
-     * resolution the submit handler applies, so the numbers offered here belong
-     * to the register the capture will really be written into.
+     * resolution the submit handler applies, so the numbers offered belong to the
+     * register the capture will really be written into.
      */
     function effectiveInstrumentTypeName() {
         if (currentInstrumentType === 'occupancy-permit') return 'Occupancy Permit (OP)';
@@ -483,16 +504,25 @@ document.addEventListener('DOMContentLoaded', function () {
         return instrumentTypes[currentInstrumentType]?.name || '';
     }
 
+    /** Whether the instrument on screen announces itself in a notice popup. */
+    function registerOwnsNotice() {
+        return currentInstrumentType === 'occupancy-permit'
+            || currentInstrumentType === 'certificate-of-occupancy'
+            || !!instrumentFamilyKeyFor(currentInstrumentType);
+    }
+
     function backfillElements() {
         return {
             panel: document.getElementById('backfill-panel'),
-            toggle: document.getElementById('backfill_registration'),
+            controls: document.getElementById('backfill-controls'),
+            toggle: document.getElementById('backfill_toggle'),
             hint: document.getElementById('backfill-panel-hint'),
             range: document.getElementById('backfill-range'),
             fields: document.getElementById('backfill-fields'),
             volume: document.getElementById('backfill_volume_select'),
             serial: document.getElementById('backfill_serial_select'),
             chosen: document.getElementById('backfill-chosen'),
+            flag: document.getElementById('backfill_registration'),
             volumeValue: document.getElementById('backfill_volume_no'),
             serialValue: document.getElementById('backfill_serial_no'),
         };
@@ -500,8 +530,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     /** Whether this capture is set to fill a missing number. */
     function isBackfillRequested() {
-        const el = document.getElementById('backfill_registration');
-        return !!(el && !el.disabled && el.checked);
+        return document.getElementById('backfill_registration')?.value === '1';
     }
     window.isBackfillRequested = isBackfillRequested;
 
@@ -515,79 +544,258 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.chosenBackfillNumber = chosenBackfillNumber;
 
-    /* The two hidden inputs are what the form posts; the selects only drive them.
-       Cleared whenever nothing valid is chosen so an abandoned pick can never
-       ride along with the next capture. */
-    function writeBackfillChoice(volume, serial) {
+    /**
+     * Push pendingBackfill into the three inputs the form posts, and repaint the
+     * panel. The single writer: nothing else touches those inputs.
+     */
+    function writeBackfillState() {
         const els = backfillElements();
-        if (els.volumeValue) els.volumeValue.value = (volume === 0 || volume) ? String(volume) : '';
-        if (els.serialValue) els.serialValue.value = (serial === 0 || serial) ? String(serial) : '';
+        if (!els.flag) return; // Side-capture pages render none of this.
+
+        els.flag.value = pendingBackfill ? '1' : '0';
+        if (els.volumeValue) els.volumeValue.value = pendingBackfill ? String(pendingBackfill.volume) : '';
+        if (els.serialValue) els.serialValue.value = pendingBackfill ? String(pendingBackfill.serial) : '';
+
         if (els.chosen) {
-            const has = !!(volume && serial);
-            els.chosen.classList.toggle('hidden', !has);
-            els.chosen.textContent = has
-                ? 'This instrument will be registered as ' + serial + '/' + serial + '/' + volume + '.'
+            els.chosen.classList.toggle('hidden', !pendingBackfill);
+            els.chosen.textContent = pendingBackfill
+                ? 'This instrument will be registered as '
+                    + pendingBackfill.serial + '/' + pendingBackfill.serial + '/' + pendingBackfill.volume + '.'
                 : '';
+        }
+
+        // Where the popup carries the picker, the panel is left as the reminder
+        // alone - it appears only once there is a number to be reminded of. A
+        // second live copy of the same question is how the two disagree.
+        if (els.panel && registerOwnsNotice()) {
+            if (els.controls) els.controls.classList.add('hidden');
+            if (els.chosen) els.chosen.classList.add('backfill-panel__chosen--solo');
+            els.panel.classList.toggle('hidden', !pendingBackfill);
         }
     }
 
-    /** Rebuild the missing-number list for whichever volume is selected. */
-    function renderBackfillSerials() {
-        const els = backfillElements();
-        if (!els.serial) return;
+    /** Take the answer a notice parked, now that its dialog is open. */
+    function applyNoticeBackfill() {
+        pendingBackfill = lastNoticeBackfill;
+        lastNoticeBackfill = null;
+        writeBackfillState();
+    }
+    window.applyNoticeBackfill = applyNoticeBackfill;
 
-        const volume = parseInt(els.volume?.value || '', 10);
-        const entry = (backfillReport?.volumes || []).find(v => v.volume === volume);
+    /** Forget any number chosen - a fresh capture starts on the vault's own. */
+    function clearBackfillChoice() {
+        pendingBackfill = null;
+        writeBackfillState();
+    }
+    window.clearBackfillChoice = clearBackfillChoice;
 
-        els.serial.innerHTML = '';
-        if (!entry) {
-            writeBackfillChoice(null, null);
-            return;
-        }
+    /**
+     * The skipped numbers for one register, or null when there are none to offer
+     * (no vault, not supported, nothing missing, or the request failed - an
+     * optional picker must never stand between the officer and a capture).
+     */
+    function fetchMissingRegistrationReport(instrumentType, opType) {
+        if (!instrumentType) return Promise.resolve(null);
+
+        const params = new URLSearchParams({ instrument_type: instrumentType });
+        if (opType) params.set('op_type', opType);
+
+        return fetch(getCaptureEndpoints().missingRegistrationParticulars + '?' + params.toString(), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(res => res.json())
+            .then(data => (data && data.success && data.configured && data.supported
+                && data.total && (data.volumes || []).length) ? data : null)
+            .catch(err => {
+                console.warn('Could not list the missing registration numbers', err);
+                return null;
+            });
+    }
+
+    /* The two selects are filled the same way wherever they are drawn - inside
+       the notice popup or inside the form - so the rendering lives here once and
+       each context only supplies its own elements and listeners. */
+
+    function fillBackfillVolumes(volumeEl, report) {
+        if (!volumeEl) return;
+        volumeEl.innerHTML = '';
+        (report?.volumes || []).forEach(v => {
+            const option = document.createElement('option');
+            option.value = String(v.volume);
+            // "1 missing" against "299 registered" is a deleted registration;
+            // "226 missing" against "2 registered" is a volume that was never
+            // captured in the first place. The officer can tell them apart
+            // without opening either list.
+            option.textContent = 'Volume ' + v.volume + ' — ' + v.missing
+                + ' missing (' + v.registered + ' registered)';
+            volumeEl.appendChild(option);
+        });
+    }
+
+    function fillBackfillSerials(volumeEl, serialEl, report) {
+        if (!serialEl) return;
+        const volume = parseInt(volumeEl?.value || '', 10);
+        const entry = (report?.volumes || []).find(v => v.volume === volume);
+
+        serialEl.innerHTML = '';
+        if (!entry) return;
 
         entry.entries.forEach(number => {
             const option = document.createElement('option');
             option.value = String(number.serial);
             option.textContent = number.formatted;
-            els.serial.appendChild(option);
+            serialEl.appendChild(option);
         });
 
         if (entry.truncated) {
             const note = document.createElement('option');
             note.disabled = true;
-            note.textContent = '\u2026 ' + (entry.missing - entry.entries.length) + ' more not listed';
-            els.serial.appendChild(note);
+            note.textContent = '… ' + (entry.missing - entry.entries.length) + ' more not listed';
+            serialEl.appendChild(note);
         }
-
-        writeBackfillChoice(volume, parseInt(els.serial.value || '', 10) || null);
     }
 
-    /** Rebuild both selects from the report just fetched. */
-    function renderBackfillReport(report) {
-        const els = backfillElements();
-        backfillReport = report;
+    function readBackfillPick(volumeEl, serialEl) {
+        const volume = parseInt(volumeEl?.value || '', 10);
+        const serial = parseInt(serialEl?.value || '', 10);
+        return (volume > 0 && serial > 0) ? { volume: volume, serial: serial } : null;
+    }
 
-        if (els.volume) {
-            els.volume.innerHTML = '';
-            (report?.volumes || []).forEach(v => {
-                const option = document.createElement('option');
-                option.value = String(v.volume);
-                // "1 missing" against "299 registered" is a deleted registration;
-                // "226 missing" against "2 registered" is a volume that was never
-                // captured in the first place. The officer can tell them apart
-                // without opening either list.
-                option.textContent = 'Volume ' + v.volume + ' \u2014 ' + v.missing
-                    + ' missing (' + v.registered + ' registered)';
-                els.volume.appendChild(option);
-            });
-        }
+    /* --- The notice popup ------------------------------------------------- */
 
-        renderBackfillSerials();
+    const NOTICE_SELECT_CLASS = 'w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none';
+
+    function backfillNoticeMarkup() {
+        return '<div class="backfill-panel backfill-panel--notice">'
+            + '<label class="backfill-panel__toggle" for="notice-backfill-toggle">'
+            + '<input type="checkbox" id="notice-backfill-toggle" style="margin-top:3px;">'
+            + '<span><span class="backfill-panel__title">Fill a missing registration number</span></span>'
+            + '</label>'
+            + '<div id="notice-backfill-fields" class="backfill-panel__fields hidden">'
+            + '<div><label class="backfill-panel__label" for="notice-backfill-volume">Volume</label>'
+            + '<select id="notice-backfill-volume" class="' + NOTICE_SELECT_CLASS + '"></select></div>'
+            + '<div><label class="backfill-panel__label" for="notice-backfill-serial">Missing number</label>'
+            + '<select id="notice-backfill-serial" class="' + NOTICE_SELECT_CLASS + ' font-mono"></select></div>'
+            + '</div>'
+            + '</div>';
+    }
+
+    /** Wire the popup's picker. Returns a reader for whatever is selected. */
+    function wireNoticeBackfill(report) {
+        const toggle = document.getElementById('notice-backfill-toggle');
+        const fields = document.getElementById('notice-backfill-fields');
+        const volumeEl = document.getElementById('notice-backfill-volume');
+        const serialEl = document.getElementById('notice-backfill-serial');
+        if (!toggle || !fields || !volumeEl || !serialEl) return () => null;
+
+        fillBackfillVolumes(volumeEl, report);
+        fillBackfillSerials(volumeEl, serialEl, report);
+
+        toggle.addEventListener('change', () => {
+            fields.classList.toggle('hidden', !toggle.checked);
+        });
+        volumeEl.addEventListener('change', () => fillBackfillSerials(volumeEl, serialEl, report));
+
+        return () => (toggle.checked ? readBackfillPick(volumeEl, serialEl) : null);
     }
 
     /**
-     * Show, hide and repopulate the panel for whatever is currently being
-     * captured. Safe to call as often as the type or sub-type changes.
+     * "You are about to register": what is being registered, the volume it lands
+     * in, and - where this register has skipped numbers - the option to fill one
+     * instead. Shared by the OP, CofO and family notices.
+     *
+     * Resolves true to carry on, false on "Change". The answer to the picker is
+     * parked in lastNoticeBackfill for applyNoticeBackfill() to collect once the
+     * capture dialog is open.
+     *
+     * @param opts {anchorId, accent, accentSoft, lineLabel, lineValue,
+     *              instrumentType, opType}
+     */
+    function showRegistrationNotice(opts) {
+        if (typeof Swal === 'undefined') return Promise.resolve(true);
+        // Only the dedicated capture page announces the registration. The same
+        // modal is embedded in the OSS Applications and Land/MLS file-number
+        // pages, where the capture is a side errand and the banner - the anchor
+        // looked for here - is not rendered.
+        if (!document.getElementById(opts.anchorId)) return Promise.resolve(true);
+
+        return Promise.all([
+            fetchRegistrationPreview(opts.instrumentType, opts.opType || null),
+            fetchMissingRegistrationReport(opts.instrumentType, opts.opType || null),
+        ]).then(([preview, report]) => {
+            const volume = (preview && (preview.volume === 0 || preview.volume))
+                ? String(preview.volume)
+                : '—';
+
+            let readPick = () => null;
+
+            return Swal.fire({
+                title: 'You are about to register',
+                html: '<div style="text-align:left;border-left:4px solid ' + opts.accent + ';'
+                    + 'background:' + opts.accentSoft + ';padding:12px 14px;border-radius:8px;">'
+                    + '<p style="margin:0;font-size:14px;color:#374151;">' + opts.lineLabel + ': '
+                    + '<strong style="color:' + opts.accent + ';">' + opts.lineValue + '</strong></p>'
+                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
+                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + opts.accent + ';">'
+                    + volume + '</strong></p>'
+                    + '</div>'
+                    + (report ? backfillNoticeMarkup() : ''),
+                width: report ? 500 : 440,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Change',
+                confirmButtonColor: opts.accent,
+                reverseButtons: true,
+                didOpen: () => {
+                    if (report) readPick = wireNoticeBackfill(report);
+                },
+                preConfirm: () => {
+                    if (!report) return { backfill: null };
+                    const toggle = document.getElementById('notice-backfill-toggle');
+                    if (!toggle || !toggle.checked) return { backfill: null };
+                    const pick = readPick();
+                    if (!pick) {
+                        Swal.showValidationMessage('Choose which missing number this instrument takes.');
+                        return false;
+                    }
+                    return { backfill: pick };
+                },
+            }).then(result => {
+                if (result.isConfirmed !== true) return false;
+                lastNoticeBackfill = (result.value && result.value.backfill) || null;
+                return true;
+            });
+        });
+    }
+    window.showRegistrationNotice = showRegistrationNotice;
+
+    /* --- The in-form panel ------------------------------------------------
+     * Only for instruments that open no notice popup. Everything else keeps the
+     * panel as a reminder line, painted by writeBackfillState().
+     * --------------------------------------------------------------------- */
+
+    /** Adopt whatever the panel's two selects currently name. */
+    function commitBackfillPick() {
+        const els = backfillElements();
+        pendingBackfill = els.toggle?.checked ? readBackfillPick(els.volume, els.serial) : null;
+        writeBackfillState();
+    }
+
+    /**
+     * Rebuild the missing-number list for whichever volume is selected. Only on
+     * a volume change or a fresh report - rebuilding it when the NUMBER changes
+     * would reset the list and snap the officer's pick back to the first entry.
+     */
+    function renderBackfillSerials() {
+        const els = backfillElements();
+        fillBackfillSerials(els.volume, els.serial, backfillReport);
+        commitBackfillPick();
+    }
+
+    /**
+     * Show, hide and repopulate the in-form panel for whatever is being
+     * captured. Safe to call as often as the register changes.
      *
      * Pass { force: true } to re-survey the same register - on opening the
      * dialog, and after a capture, where another officer may have filled a gap
@@ -596,6 +804,16 @@ document.addEventListener('DOMContentLoaded', function () {
     function syncBackfillPanel(options) {
         const els = backfillElements();
         if (!els.panel) return; // Side-capture pages do not render it.
+
+        // The popup owns the question for this instrument; writeBackfillState()
+        // has already reduced the panel to its reminder line.
+        if (registerOwnsNotice()) {
+            writeBackfillState();
+            return;
+        }
+
+        if (els.controls) els.controls.classList.remove('hidden');
+        if (els.chosen) els.chosen.classList.remove('backfill-panel__chosen--solo');
 
         const instrumentType = effectiveInstrumentTypeName();
         const opType = getSelectedOpType();
@@ -611,8 +829,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Every register change starts from "not backfilling": a number picked
         // for one register must never survive a switch to another.
         if (els.toggle) els.toggle.checked = false;
-        writeBackfillChoice(null, null);
         backfillReport = null;
+        pendingBackfill = null;
+        writeBackfillState();
         els.fields.classList.add('hidden');
         // The hint and range lines are commented out of the blade for now, so
         // every reference to them is optional - the panel works with or without.
@@ -620,16 +839,29 @@ document.addEventListener('DOMContentLoaded', function () {
         els.panel.classList.add('hidden');
 
         if (!instrumentType) return;
-        // OP cannot be surveyed until its register is known - the two paginate
-        // separately and share one instrument type in the register table.
-        if (currentInstrumentType === 'occupancy-permit' && !opType) return;
 
         // Deferred a tick so a burst of repaints while the dialog opens settles
         // on one register before the request goes out; the token discards any
         // answer that arrives for a register the officer has already left.
         setTimeout(() => {
             if (token !== backfillRequestToken) return;
-            requestBackfillReport(instrumentType, opType, token);
+            fetchMissingRegistrationReport(instrumentType, opType).then(report => {
+                if (token !== backfillRequestToken || !report) return;
+                backfillReport = report;
+                els.panel.classList.remove('hidden');
+                if (els.hint) {
+                    els.hint.textContent = report.total === 1
+                        ? '1 number is unaccounted for in this register.'
+                        : report.total + ' numbers are unaccounted for in this register.';
+                }
+                if (els.range) {
+                    els.range.classList.remove('hidden');
+                    els.range.textContent = 'This register runs from ' + report.origin.formatted
+                        + ' (where the manual workflow handed over) to ' + report.current.formatted + '.';
+                }
+                fillBackfillVolumes(els.volume, report);
+                renderBackfillSerials();
+            });
         }, 0);
     }
     window.syncBackfillPanel = syncBackfillPanel;
@@ -645,64 +877,19 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     window.invalidateBackfillPanel = invalidateBackfillPanel;
 
-    function requestBackfillReport(instrumentType, opType, token) {
-        const els = backfillElements();
-        const params = new URLSearchParams({ instrument_type: instrumentType });
-        if (opType) params.set('op_type', opType);
-
-        fetch(getCaptureEndpoints().missingRegistrationParticulars + '?' + params.toString(), {
-            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
-            credentials: 'same-origin',
-        })
-            .then(res => res.json())
-            .then(data => {
-                if (token !== backfillRequestToken) return; // A later type won.
-                if (!data || !data.success || !data.configured || !data.supported) return;
-                if (!data.total || !(data.volumes || []).length) return;
-
-                els.panel.classList.remove('hidden');
-                if (els.hint) {
-                    els.hint.textContent = data.total === 1
-                        ? '1 number is unaccounted for in this register. Use this only to re-enter an instrument whose registration was deleted.'
-                        : data.total + ' numbers are unaccounted for in this register. Use this only to re-enter an instrument whose registration was deleted.';
-                }
-                if (els.range) {
-                    els.range.classList.remove('hidden');
-                    els.range.textContent = 'This register runs from ' + data.origin.formatted
-                        + ' (where the manual workflow handed over) to ' + data.current.formatted + '.';
-                }
-                renderBackfillReport(data);
-            })
-            .catch(err => {
-                if (token !== backfillRequestToken) return;
-                // An optional picker must never stand between the officer and a
-                // capture: the next number in sequence is still available.
-                console.warn('Could not list the missing registration numbers', err);
-            });
-    }
-
     document.addEventListener('change', function (event) {
-        if (event.target.id === 'backfill_registration') {
+        if (event.target.id === 'backfill_toggle') {
             const els = backfillElements();
-            const on = event.target.checked;
-            els.fields.classList.toggle('hidden', !on);
-            if (on) {
-                renderBackfillSerials();
-            } else {
-                writeBackfillChoice(null, null);
-            }
+            els.fields.classList.toggle('hidden', !event.target.checked);
+            commitBackfillPick();
             return;
         }
         if (event.target.id === 'backfill_volume_select') {
-            renderBackfillSerials();
+            renderBackfillSerials();   // a different volume is a different list
             return;
         }
         if (event.target.id === 'backfill_serial_select') {
-            const els = backfillElements();
-            writeBackfillChoice(
-                parseInt(els.volume?.value || '', 10) || null,
-                parseInt(els.serial?.value || '', 10) || null
-            );
+            commitBackfillPick();      // the list stands; only the pick changed
         }
     });
 
@@ -808,40 +995,16 @@ document.addEventListener('DOMContentLoaded', function () {
      * consumed at registration. Resolves true to carry on, false on "Change".
      */
     function showOpTypeNotice(opType) {
-        if (typeof Swal === 'undefined') return Promise.resolve(true);
-        // Only the dedicated capture page (/instruments/create) announces the
-        // registration. The same modal is embedded in the OSS Applications and
-        // Land/MLS file-number pages, where the capture is a side errand and the
-        // banner is not rendered - so there is nothing to confirm there either.
-        if (!document.getElementById('op-type-summary')) return Promise.resolve(true);
-
         const option = OP_TYPE_OPTIONS.find(t => t.value === opType);
-        const label = option?.label || 'Not selected';
-        const accent = option?.accent || BANNER_NEUTRAL.accent;
-        const accentSoft = option?.accentSoft || BANNER_NEUTRAL.accentSoft;
 
-        return fetchRegistrationPreview('Occupancy Permit (OP)', opType).then(preview => {
-            const volume = (preview && (preview.volume === 0 || preview.volume))
-                ? String(preview.volume)
-                : '\u2014';
-
-            return Swal.fire({
-                title: 'You are about to register',
-                html: '<div style="text-align:left;border-left:4px solid ' + accent + ';'
-                    + 'background:' + accentSoft + ';padding:12px 14px;border-radius:8px;">'
-                    + '<p style="margin:0;font-size:14px;color:#374151;">Occupancy Permit (OP) Type: '
-                    + '<strong style="color:' + accent + ';">' + label + '</strong></p>'
-                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
-                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + accent + ';">'
-                    + volume + '</strong></p>'
-                    + '</div>',
-                width: 440,
-                showCancelButton: true,
-                confirmButtonText: 'Continue',
-                cancelButtonText: 'Change',
-                confirmButtonColor: accent,
-                reverseButtons: true,
-            }).then(result => result.isConfirmed === true);
+        return showRegistrationNotice({
+            anchorId: 'op-type-summary',
+            accent: option?.accent || BANNER_NEUTRAL.accent,
+            accentSoft: option?.accentSoft || BANNER_NEUTRAL.accentSoft,
+            lineLabel: 'Occupancy Permit (OP) Type',
+            lineValue: option?.label || 'Not selected',
+            instrumentType: 'Occupancy Permit (OP)',
+            opType: opType,
         });
     }
     window.showOpTypeNotice = showOpTypeNotice;
@@ -868,7 +1031,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (opTypeChangeBtn) {
         opTypeChangeBtn.addEventListener('click', () => {
             chooseOpTypeWithNotice(getSelectedOpType()).then(chosen => {
-                if (chosen) applyOpType(chosen);
+                if (!chosen) return;
+                applyOpType(chosen);
+                applyNoticeBackfill();
             });
         });
     }
@@ -1061,6 +1226,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (!answer) return;
                     openRegistrationDialog(type);   // resets to Regular, so apply afterwards
                     applyCofoSelection(answer.variant, answer.type);
+                    applyNoticeBackfill();          // ...and so is the missing number
                 });
                 return;
             }
@@ -1073,6 +1239,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 chooseInstrumentWithNotice(familyKey, '').then(chosen => {
                     if (!chosen) return;   // dismissed: the capture form stays closed
                     openRegistrationDialog(chosen);
+                    applyNoticeBackfill();
                 });
                 return;
             }
@@ -1085,6 +1252,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (!chosen) return;
                 openRegistrationDialog(type);   // may reset the form, so apply afterwards
                 applyOpType(chosen);
+                applyNoticeBackfill();
             });
         });
     });
@@ -2309,39 +2477,22 @@ document.addEventListener('DOMContentLoaded', function () {
      * Resolves true to carry on, false on "Change".
      */
     function showCofoNotice(variant, type) {
-        if (typeof Swal === 'undefined') return Promise.resolve(true);
-        // Same rule as showOpTypeNotice(): create page only.
-        if (!document.getElementById('cofo-summary')) return Promise.resolve(true);
-
         const key = cofoVariants[variant] ? variant : 'regular';
         const meta = COFO_VARIANT_META[key] || COFO_VARIANT_META.regular;
         const needsType = !!cofoVariants[key]?.hasType;
-        const label = needsType
-            ? meta.label + ' \u2014 ' + ((type || '').trim() || 'type not selected')
-            : meta.label;
 
-        return fetchRegistrationPreview(cofoVariants[key].instrumentType, null).then(preview => {
-            const volume = (preview && (preview.volume === 0 || preview.volume))
-                ? String(preview.volume)
-                : '\u2014';
-
-            return Swal.fire({
-                title: 'You are about to register',
-                html: '<div style="text-align:left;border-left:4px solid ' + meta.accent + ';'
-                    + 'background:' + meta.accentSoft + ';padding:12px 14px;border-radius:8px;">'
-                    + '<p style="margin:0;font-size:14px;color:#374151;">Certificate of Occupancy: '
-                    + '<strong style="color:' + meta.accent + ';">' + label + '</strong></p>'
-                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
-                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + meta.accent + ';">'
-                    + volume + '</strong></p>'
-                    + '</div>',
-                width: 440,
-                showCancelButton: true,
-                confirmButtonText: 'Continue',
-                cancelButtonText: 'Change',
-                confirmButtonColor: meta.accent,
-                reverseButtons: true,
-            }).then(result => result.isConfirmed === true);
+        return showRegistrationNotice({
+            anchorId: 'cofo-summary',
+            accent: meta.accent,
+            accentSoft: meta.accentSoft,
+            lineLabel: 'Certificate of Occupancy',
+            lineValue: needsType
+                ? meta.label + ' \u2014 ' + ((type || '').trim() || 'type not selected')
+                : meta.label,
+            // Each variant paginates from its own vault, so the missing numbers
+            // on offer follow the variant, not the bare "Certificate of Occupancy".
+            instrumentType: cofoVariants[key].instrumentType,
+            opType: null,
         });
     }
     window.showCofoNotice = showCofoNotice;
@@ -2361,7 +2512,9 @@ document.addEventListener('DOMContentLoaded', function () {
     if (cofoChangeBtn) {
         cofoChangeBtn.addEventListener('click', () => {
             chooseCofoWithNotice(getCofoVariant(), getCofoType()).then(answer => {
-                if (answer) applyCofoSelection(answer.variant, answer.type);
+                if (!answer) return;
+                applyCofoSelection(answer.variant, answer.type);
+                applyNoticeBackfill();
             });
         });
     }
@@ -2553,40 +2706,19 @@ document.addEventListener('DOMContentLoaded', function () {
      * the volume it would land in. Resolves true to carry on, false on "Change".
      */
     function showInstrumentChoiceNotice(typeKey) {
-        if (typeof Swal === 'undefined') return Promise.resolve(true);
-        // Create page only, like showOpTypeNotice(): the pages that embed this
-        // modal for a side capture render no banner and announce nothing.
-        if (!document.getElementById('instrument-choice-summary')) return Promise.resolve(true);
-
         const meta = instrumentChoiceMeta(typeKey);
         if (!meta || !meta.option) return Promise.resolve(true);
 
-        const accent = meta.option.accent;
-        const accentSoft = meta.option.accentSoft;
         const instrumentName = instrumentTypes[typeKey]?.name || meta.option.label;
 
-        return fetchRegistrationPreview(instrumentName, null).then(preview => {
-            const volume = (preview && (preview.volume === 0 || preview.volume))
-                ? String(preview.volume)
-                : '\u2014';
-
-            return Swal.fire({
-                title: 'You are about to register',
-                html: '<div style="text-align:left;border-left:4px solid ' + accent + ';'
-                    + 'background:' + accentSoft + ';padding:12px 14px;border-radius:8px;">'
-                    + '<p style="margin:0;font-size:14px;color:#374151;">' + meta.family.bannerLabel + ': '
-                    + '<strong style="color:' + accent + ';">' + instrumentName + '</strong></p>'
-                    + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
-                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + accent + ';">'
-                    + volume + '</strong></p>'
-                    + '</div>',
-                width: 440,
-                showCancelButton: true,
-                confirmButtonText: 'Continue',
-                cancelButtonText: 'Change',
-                confirmButtonColor: accent,
-                reverseButtons: true,
-            }).then(result => result.isConfirmed === true);
+        return showRegistrationNotice({
+            anchorId: 'instrument-choice-summary',
+            accent: meta.option.accent,
+            accentSoft: meta.option.accentSoft,
+            lineLabel: meta.family.bannerLabel,
+            lineValue: instrumentName,
+            instrumentType: instrumentName,
+            opType: null,
         });
     }
     window.showInstrumentChoiceNotice = showInstrumentChoiceNotice;
@@ -2610,7 +2742,9 @@ document.addEventListener('DOMContentLoaded', function () {
             const familyKey = instrumentFamilyKeyFor(currentInstrumentType);
             if (!familyKey) return;
             chooseInstrumentWithNotice(familyKey, currentInstrumentType).then(chosen => {
-                if (chosen && chosen !== currentInstrumentType) openRegistrationDialog(chosen);
+                if (!chosen) return;
+                if (chosen !== currentInstrumentType) openRegistrationDialog(chosen);
+                applyNoticeBackfill();
             });
         });
     }
@@ -6274,8 +6408,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         currentInstrumentType = typeKey;
-        // Every open re-surveys the missing numbers, even for the register that
-        // was on screen last time: a gap filled elsewhere must not still show.
+        // Every open starts on the vault's own next number and re-surveys the
+        // missing ones, even for the register that was on screen last time: a gap
+        // filled elsewhere must not still be on offer. Where a notice popup asked
+        // the question, its answer is applied straight after this call returns
+        // (applyNoticeBackfill), which is why clearing here is safe.
+        clearBackfillChoice();
         invalidateBackfillPanel();
         normalizeAssignmentGiftBookletCode();
         // Commissioned-file mode only makes sense for an OP; switching type leaves it.
@@ -6783,9 +6921,10 @@ document.addEventListener('DOMContentLoaded', function () {
             const cofoTypeSelect = document.getElementById('cofoType');
             if (cofoTypeSelect) cofoTypeSelect.value = keepCofoType;
         }
-        // Repaint both banners from whatever survived the reset. The missing-number
-        // panel is re-surveyed with them: the capture that led to this reset may
-        // have been the one that filled the gap it was offering.
+        // Repaint both banners from whatever survived the reset. The missing number
+        // does not survive it: the capture that led to this reset may have been the
+        // one that filled the gap, and Reset Form means start over either way.
+        clearBackfillChoice();
         invalidateBackfillPanel();
         updateOpTypeSummary();
         updateCofoSummary();
