@@ -76,11 +76,11 @@
       @endif
 
       @if($hasRole('System Settings'))
-        <a href="{{ route('sms-control.index') }}"
+        {{-- <a href="{{ route('sms-control.index') }}"
           class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('sms-control.*') ? 'active' : '' }}">
           <i data-lucide="message-square" class="h-4 w-4 text-slate-500"></i>
           <span>SMS Control Centre</span>
-        </a>
+        </a> --}}
       @endif
 
       @if($hasRole('System Settings'))

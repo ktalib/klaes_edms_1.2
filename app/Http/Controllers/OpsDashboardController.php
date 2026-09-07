@@ -212,6 +212,11 @@ class OpsDashboardController extends Controller
                 DB::raw("ISNULL(CAST(p.prop_id AS NVARCHAR(50)), '') as prop_id"),
                 DB::raw("ISNULL(CAST(p.instrument_capture_id AS NVARCHAR(50)), '') as source_capture_id"),
                 DB::raw("CAST(p.id AS NVARCHAR(50)) as pra_id"),
+                // Shared with the All OPs tab, whose renderers label a transferred
+                // record as a Transfer of Title and its action as Update ToT. Without
+                // this column those renderers see nothing and call every transfer a
+                // permit.
+                DB::raw("ISNULL(p.instrument_type, '') as instrument_type"),
             ])
             ->whereIn('p.instrument_type', ['Occupancy Permit (OP)', 'Transfer of Title (OP)'])
             ->where(function ($q) { $q->whereNull('p.is_deleted')->orWhere('p.is_deleted', 0); })

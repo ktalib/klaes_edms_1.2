@@ -79,6 +79,9 @@
                 // The one visible Category answer, whatever the instrument.
                 instrumentCategory: '',
                 opSerialNumber: '',
+                // Deed of Purchase: what was paid, and the receipt behind it.
+                considerationAmount: '',
+                receiptNo: '',
                 cofoType: '',
                 serialNo: '',
                 pageNo: '',
@@ -254,6 +257,9 @@
                     typeValue: '',
                     instrumentCategory: '',
                     opSerialNumber: '',
+                    // Deed of Purchase: what was paid, and the receipt behind it.
+                    considerationAmount: '',
+                    receiptNo: '',
                     cofoType: '',
                     serialNo: '',
                     pageNo: '',
@@ -346,6 +352,19 @@
 
             isOPTransaction(transactionType) {
                 return normalizePropertyTransactionType(transactionType) === 'Occupancy Permit (OP)';
+            },
+
+            // A Deed of Purchase records what was paid. Matched on the phrase
+            // rather than an exact name so both spellings in the lookup table --
+            // Deed of Purchase, and the older Deed of Purchase Registration --
+            // reveal the fields.
+            //
+            // NOTE: this whole component is the value of one x-data HTML
+            // attribute. A double quote anywhere inside it, comments included,
+            // closes that attribute early and dumps the rest of the script onto
+            // the page as visible text. Use single quotes here, never double.
+            isPurchaseTransaction(transactionType) {
+                return String(transactionType || '').toLowerCase().includes('deed of purchase');
             },
 
             // 'Other' is a prompt, not an instrument: it reveals the field where the
@@ -2081,6 +2100,28 @@
                                                 $event.target.value = v;
                                             ">
                                     </div>
+
+                                    {{-- Deed of Purchase only: what was paid and the
+                                         receipt behind it. Same pattern as the OP
+                                         serial above — revealed by transaction type,
+                                         one pair per transaction row. --}}
+                                    <div x-show="isPurchaseTransaction(transaction.transactionType)" x-transition
+                                        class="mt-3 grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Payment Amount</label>
+                                            <input type="text" inputmode="decimal" x-model="transaction.considerationAmount"
+                                                :name="'transactions[' + index + '][consideration_amount]'"
+                                                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
+                                                placeholder="Purchase consideration">
+                                        </div>
+                                        <div>
+                                            <label class="block text-sm font-medium text-gray-700 mb-1">Receipt No</label>
+                                            <input type="text" x-model="transaction.receiptNo"
+                                                :name="'transactions[' + index + '][receipt_no]'"
+                                                class="w-full px-3 py-2 text-sm border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 hover:border-gray-400 transition-colors"
+                                                placeholder="Payment receipt number">
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <!-- Land Use and Period -->
@@ -2727,6 +2768,9 @@
                                     typeValue: '',
                                     instrumentCategory: '',
                                     opSerialNumber: '',
+                                    // Deed of Purchase: what was paid, and the receipt behind it.
+                                    considerationAmount: '',
+                                    receiptNo: '',
                                     cofoType: '',
                                     serialNo: '',
                                     pageNo: '',
@@ -3033,6 +3077,10 @@
             cofo_type: t.cofoType || '',
             transaction_date: t.transactionDate || '',
             op_serial_number: String(t.opSerialNumber || '').trim().replace(/^0+(\d)/, '$1'),
+            // Deed of Purchase. This literal IS the payload — a field the form
+            // shows but that is missing here posts nothing and is lost silently.
+            consideration_amount: String(t.considerationAmount || '').trim(),
+            receipt_no: String(t.receiptNo || '').trim(),
             serial_no: String(t.serialNo || '').trim().replace(/^0+(\d)/, '$1'),
             page_no: String(t.pageNo || '').trim().replace(/^0+(\d)/, '$1'),
             volume_no: String(t.volumeNo || '').trim().replace(/^0+(\d)/, '$1'),

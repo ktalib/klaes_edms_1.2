@@ -85,6 +85,22 @@ class InstallLandRegistration extends Command
             "ALTER TABLE dbo.pra ADD receipt_no varchar(100) NULL"
         );
 
+        //    file_history_staging.consideration_amount / .receipt_no  the third
+        //      capture surface. A transaction entered through Create File
+        //      Indexing routes to file_history_staging, not pra, and the write
+        //      is filtered to that table's own columns — so without these the
+        //      two fields post and are dropped without any error.
+        $this->ensureColumn(
+            'file_history_staging',
+            'consideration_amount',
+            "ALTER TABLE dbo.file_history_staging ADD consideration_amount varchar(100) NULL"
+        );
+        $this->ensureColumn(
+            'file_history_staging',
+            'receipt_no',
+            "ALTER TABLE dbo.file_history_staging ADD receipt_no varchar(100) NULL"
+        );
+
         // 1. Registration-side lookup (drives the vault manager and the
         //    registration screen's type filter).
         if ($db->table('new_instrument_types')->where('name', $type)->exists()) {

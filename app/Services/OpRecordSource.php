@@ -47,6 +47,7 @@ class OpRecordSource
                 DB::raw("ISNULL(CAST(ic.prop_id AS NVARCHAR(50)), '')       as prop_id"),
                 DB::raw("ISNULL(CAST(ic.id AS NVARCHAR(50)), '')            as source_capture_id"),
                 DB::raw("''                                                 as pra_id"),
+                DB::raw("ISNULL(ic.instrument_type, '')                     as instrument_type"),
                 DB::raw("'0' as is_change_of_name"),
             ])
             ->where('ic.instrument_type', 'Occupancy Permit (OP)')
@@ -76,6 +77,7 @@ class OpRecordSource
                 DB::raw("ISNULL(CAST(p.prop_id AS NVARCHAR(50)), ISNULL(CAST(src_ic.prop_id AS NVARCHAR(50)), '')) as prop_id"),
                 DB::raw("ISNULL(CAST(p.instrument_capture_id AS NVARCHAR(50)), '') as source_capture_id"),
                 DB::raw("ISNULL(CAST(p.id AS NVARCHAR(50)), '') as pra_id"),
+                DB::raw("ISNULL(p.instrument_type, '') as instrument_type"),
                 DB::raw("'1' as is_change_of_name"),
             ])
             ->where('mfn.sub_source', 'OP Change of Name')
@@ -100,6 +102,7 @@ class OpRecordSource
                 DB::raw("ISNULL(CAST(p2.prop_id AS NVARCHAR(50)), '')       as prop_id"),
                 DB::raw("ISNULL(CAST(p2.instrument_capture_id AS NVARCHAR(50)), '') as source_capture_id"),
                 DB::raw("CAST(p2.id AS NVARCHAR(50))                        as pra_id"),
+                DB::raw("ISNULL(p2.instrument_type, '')                      as instrument_type"),
                 DB::raw("'0' as is_change_of_name"),
             ])
             ->whereIn('p2.instrument_type', ['Occupancy Permit (OP)', 'Transfer of Title (OP)'])
@@ -160,6 +163,10 @@ class OpRecordSource
                 'registration_number', 'mls_file_number', 'grantor',
                 'allottee', 'new_party_name', 'property_description',
                 'created_at', 'prop_id', 'source_capture_id', 'pra_id',
+                // Carried through so the dashboard can tell a permit from the transfer
+                // it became: once an OP is matched, the row that survives the collapse
+                // below is the Transfer of Title, and calling that an OP is wrong.
+                'instrument_type',
                 DB::raw("CAST(is_change_of_name AS NVARCHAR(1)) as is_change_of_name"),
             ]);
     }

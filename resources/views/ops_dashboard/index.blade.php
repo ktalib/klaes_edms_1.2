@@ -299,7 +299,35 @@ $(function () {
         return val.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
     }
 
-    function fmtOpType(val) {
+    /**
+     * Has this record already become a Transfer of Title?
+     *
+     * A matched OP is no longer a permit awaiting anything — the transfer has been
+     * written, and the union collapses the pair to one row per property, so the row
+     * that survives IS the Transfer of Title. Reading instrument_type rather than
+     * op_type is the point: op_type still holds "Resettlement"/"Direct Allocation"
+     * on a transferred record, because it describes how the parcel was ORIGINALLY
+     * granted and that never stops being true.
+     *
+     * Matched loosely: the data carries "Transfer of Title (OP)" and the stray
+     * capitalisation "Transfer Of Title (OP)" (122 rows), and an exact compare would
+     * silently mislabel every one of them as a permit.
+     */
+    function isTransferOfTitle(row) {
+        return String((row && row.instrument_type) || '').toLowerCase().includes('transfer of title');
+    }
+
+    function fmtOpType(val, type, row) {
+        // A transferred record is labelled for what it now is. The original grant type
+        // is kept underneath, because it is still how the parcel was allocated and the
+        // officers read this column to tell Resettlement files from Direct Allocation.
+        if (isTransferOfTitle(row)) {
+            const origin = val
+                ? `<div class="text-[10px] text-slate-400 mt-0.5">${val}</div>`
+                : '';
+            return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-700">Transfer of Title</span>${origin}`;
+        }
+
         if (!val) return '<span class="text-slate-300">—</span>';
         const cls = val.toLowerCase().includes('resettlement')
             ? 'bg-orange-100 text-orange-700'
@@ -332,11 +360,20 @@ $(function () {
         }
 
         const url = opCaptureEditUrlTemplate.replace('__ID__', encodeURIComponent(rowIdentifier));
+
+        // The action names the record it opens. Offering "Update OP" on a transferred
+        // record invites an officer to go looking for permit fields on a transfer.
+        const isToT = isTransferOfTitle(r);
+        const label = isToT ? 'Update ToT' : 'Update OP';
+        const tone  = isToT
+            ? 'text-violet-600 hover:text-violet-700 hover:bg-violet-50'
+            : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50';
+
         return `
             <div class="flex items-center justify-center gap-1">
-                <a href="${url}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 transition">
+                <a href="${url}" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold ${tone} transition">
                     <i class="fas fa-file-pen w-3 h-3"></i>
-                    <span>Update OP</span>
+                    <span>${label}</span>
                 </a>
             </div>
         `;

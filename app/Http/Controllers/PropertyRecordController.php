@@ -3127,6 +3127,8 @@ class PropertyRecordController extends Controller
                 'transactions.*.transaction_type' => 'required|string',
                 'transactions.*.transaction_date' => 'nullable|date',
                 'transactions.*.op_serial_number' => 'nullable|string|max:255',
+                'transactions.*.consideration_amount' => 'nullable|string|max:100',
+                'transactions.*.receipt_no' => 'nullable|string|max:100',
                 'transactions.*.op_type' => 'nullable|string|max:255',
                 'transactions.*.cofo_type' => 'nullable|string|max:255',
                 'transactions.*.instrument_subtype' => 'nullable|string|max:100',
@@ -3405,6 +3407,11 @@ class PropertyRecordController extends Controller
                         'instrument_subtype' => $transaction['instrument_subtype'] ?? null,
                         'instrument_category' => $transaction['instrument_category'] ?? null,
                         'op_serial_number' => $transaction['op_serial_number'] ?? null,
+                        // Deed of Purchase. Only pra carries these two columns, so
+                        // the column filter below drops them for any other
+                        // destination — the same way op_type is handled.
+                        'consideration_amount' => $transaction['consideration_amount'] ?? null,
+                        'receipt_no' => $transaction['receipt_no'] ?? null,
                         'regNo' => $registrationNumber,
                         'serialNo' => $transaction['serial_no'] ?? null,
                         'pageNo' => $transaction['page_no'] ?? null,
