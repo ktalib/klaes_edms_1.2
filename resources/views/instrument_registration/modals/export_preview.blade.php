@@ -33,7 +33,13 @@
                             <select id="modalInstrumentTypeFilter" onchange="loadExportPreviewData()" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all outline-none">
                                 <option value="">All Types</option>
                                 @foreach(($instrumentTypes ?? []) as $type)
-                                    <option value="{{ $type }}">{{ $type }}</option>
+                                    @php
+                                        $typeLabel = is_object($type) ? ($type->name ?? $type) : $type;
+                                        $typeValue = in_array(strtolower(trim((string) $typeLabel)), ['sltr cofo pagination', 'sltr pagination'], true)
+                                            ? 'SLTR Certificate of Occupancy'
+                                            : $typeLabel;
+                                    @endphp
+                                    <option value="{{ $typeValue }}">{{ $typeLabel }}</option>
                                 @endforeach
                             </select>
                         </div>

@@ -354,9 +354,14 @@
                                 <option value="">All Types</option>
                                 @if(isset($instrumentTypes) && count($instrumentTypes) > 0)
                                     @foreach($instrumentTypes as $type)
-                                        <option value="{{ is_object($type) ? ($type->name ?? $type) : $type }}">
-                                            {{ is_object($type) ? ($type->name ?? $type) : $type }}
-                                        </option>
+                                        @php
+                                            $typeLabel = is_object($type) ? ($type->name ?? $type) : $type;
+                                            // Pagination names describe numbering series; filter by the stored instrument name.
+                                            $typeValue = in_array(strtolower(trim((string) $typeLabel)), ['sltr cofo pagination', 'sltr pagination'], true)
+                                                ? 'SLTR Certificate of Occupancy'
+                                                : $typeLabel;
+                                        @endphp
+                                        <option value="{{ $typeValue }}">{{ $typeLabel }}</option>
                                     @endforeach
                                 @endif
                             </select>
