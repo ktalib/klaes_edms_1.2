@@ -28,7 +28,8 @@
 .pvc-card {
   width: 100%;
   max-width: 30rem;
-  overflow: hidden;
+  max-height: calc(100vh - 2.5rem);
+  overflow-y: auto;
   background: #ffffff;
   border-radius: 1rem;
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.45);
@@ -245,6 +246,16 @@
   color: #94a3b8;
   cursor: not-allowed;
   text-decoration: none;
+}
+
+/* The other route. Centred under the send button and separated by a rule, so it
+   reads as "or, instead of the above" rather than as a second thing to fill in —
+   email is the default and the SMS pane is the fallback, not an equal choice. */
+.pvc-switch {
+  margin-top: 1rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
 }
 
 .pvc-footnote {

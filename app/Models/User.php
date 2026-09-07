@@ -67,13 +67,16 @@ class User extends Authenticatable implements MustVerifyEmail
         'out_of_office_from',
         'out_of_office_to',
         /*
-         | otp, otp_sent_at and is_otp_verified are DELIBERATELY NOT LISTED.
+         | otp, otp_sent_at, otp_channel and is_otp_verified are DELIBERATELY NOT
+         | LISTED.
          |
-         | is_otp_verified is the flag that decides whether the phone gate holds an
-         | account, so a form that mass-assigns whatever it was posted would be a way
-         | for a user to verify themselves without ever receiving a code. Every write
-         | goes through PhoneOtpService (forceFill) or `phone:verify-status`, both of
-         | which are explicit about it. See getNeedsPhoneVerificationAttribute().
+         | is_otp_verified is the flag that decides whether the verification gate
+         | holds an account, so a form that mass-assigns whatever it was posted would
+         | be a way for a user to verify themselves without ever receiving a code.
+         | otp_channel decides WHICH address a change voids the proof of, so it is
+         | just as much a security value. Every write goes through PhoneOtpService
+         | (forceFill) or `phone:verify-status`, both of which are explicit about it.
+         | See getNeedsPhoneVerificationAttribute().
          */
     ];
 
@@ -115,24 +118,55 @@ class User extends Authenticatable implements MustVerifyEmail
         });
 
         /*
-         | A phone number that changes is a phone number nobody has proved.
+         | An address that changes is an address nobody has proved.
          |
-         | is_otp_verified says "a code sent to THIS number was typed back", so it
-         | cannot survive the number being edited — otherwise the gate is satisfied
+         | is_otp_verified says "a code sent to THIS address was typed back", so it
+         | cannot survive the address being edited — otherwise the gate is satisfied
          | once and the column then drifts back to whatever anybody types into the
          | profile form, which is the state this feature exists to end.
          |
+         | ONLY THE ADDRESS THAT DID THE PROVING COUNTS. The code now travels by
+         | email or by SMS, and users.otp_channel records which. An account verified
+         | by email loses its proof when the EMAIL changes and not when somebody
+         | corrects the phone number, and the other way round. Voiding on both would
+         | be far more destructive than it sounds: a thousand accounts still carry a
+         | placeholder email address that ICT will be editing in bulk, and every one
+         | of those edits would throw a verified user back behind the card.
+         |
+         | A missing channel means SMS — that is what every account verified before
+         | the email route existed used.
+         |
          | Two things are deliberately left alone: a caller that is setting the flag
-         | itself (PhoneOtpService, which changes the number and the flag together)
+         | itself (PhoneOtpService, which changes the address and the flag together)
          | and a code that is being written in the same save. Clearing those would
          | destroy the code on its way to the gateway.
          */
         static::saving(function (User $user) {
-            if (!$user->exists || !$user->isDirty('phone_number')) {
+            if (!$user->exists) {
                 return;
             }
 
-            if (!app(\App\Services\PhoneOtpService::class)->columnsReady()) {
+            $otp = app(\App\Services\PhoneOtpService::class);
+
+            if (!$otp->columnsReady()) {
+                return;
+            }
+
+            // recordedChannel() rather than the column alone: it also consults the
+            // short-lived cache copy, which is the only record there is in the window
+            // where users.otp_channel is not deployed yet. Unknown means SMS, which is
+            // what every account proved before the email route existed.
+            $provedBy = $otp->recordedChannel($user) === \App\Services\PhoneOtpService::CHANNEL_EMAIL
+                ? \App\Services\PhoneOtpService::CHANNEL_EMAIL
+                : \App\Services\PhoneOtpService::CHANNEL_SMS;
+
+            $addressChanged = $otp->recordedChannel($user) === \App\Services\PhoneOtpService::CHANNEL_BOTH
+                ? ($user->isDirty('email') || $user->isDirty('phone_number'))
+                : ($provedBy === \App\Services\PhoneOtpService::CHANNEL_EMAIL
+                ? $user->isDirty('email')
+                : $user->isDirty('phone_number'));
+
+            if (!$addressChanged) {
                 return;
             }
 

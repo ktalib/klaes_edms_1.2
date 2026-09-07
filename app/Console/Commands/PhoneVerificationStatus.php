@@ -8,14 +8,17 @@ use App\Services\PhoneOtpService;
 use Illuminate\Console\Command;
 
 /**
- * The phone-verification gate: who it is holding, and the way past it.
+ * The account-verification gate: who it is holding, and the way past it.
  *
  * This command exists because the gate can lock the entire Ministry out of its own
- * system through no fault of any user: the code travels by SMS, and the SMS depends
- * on a wallet with credit, a gateway that is reachable, a route that does not defer
- * everything sent after 19:45 until 08:30, and a handset that accepts bulk traffic.
- * When any of those fails there has to be a way through that does not involve editing
- * the database by hand at eight in the morning.
+ * system through no fault of any user. The code travels by EMAIL (the default) or by
+ * SMS, and each route has its own way of failing silently: email needs MAIL_* settings
+ * that .env does not carry to a new server and an address that is a real mailbox rather
+ * than one of the thousand seeded placeholders; SMS needs a wallet with credit, a
+ * reachable gateway, a route that does not defer everything sent after 19:45 until
+ * 08:30, and a handset that accepts bulk traffic. When any of those fails there has to
+ * be a way through that does not involve editing the database by hand at eight in the
+ * morning.
  *
  *   php artisan phone:verify-status                     what the gate is doing now
  *   php artisan phone:verify-status --user=42           one account, and why
@@ -37,12 +40,12 @@ class PhoneVerificationStatus extends Command
         {--limit=15 : How many held accounts to list}
         {--force : Do not ask before --verify-all}';
 
-    protected $description = 'Inspect and override the phone-number (OTP) verification gate.';
+    protected $description = 'Inspect and override the account verification gate (email / SMS codes).';
 
     public function handle(PhoneOtpService $otp, BulkSmsNgService $gateway): int
     {
         $this->line('');
-        $this->info('Phone verification gate — status');
+        $this->info('Account verification gate — status');
         $this->line(str_repeat('=', 60));
 
         // ── Switches ─────────────────────────────────────────────────────────
@@ -53,9 +56,27 @@ class PhoneVerificationStatus extends Command
         $this->comment('Switches');
         $this->status('phone_verification.enabled', $configured);
         $this->status('columns deployed (users.is_otp_verified)', $ready);
+        $this->status('email route', $otp->channelEnabled(PhoneOtpService::CHANNEL_EMAIL));
+        $this->status('SMS route', $otp->channelEnabled(PhoneOtpService::CHANNEL_SMS));
+        $this->line('  the card opens on ..... ' . $otp->defaultChannel());
         $this->line('  code expires after .... ' . $otp->ttlMinutes() . ' minutes');
         $this->line('  resend cooldown ....... ' . $otp->cooldownSeconds() . ' seconds');
         $this->line('  wrong codes allowed ... ' . $otp->maxAttempts());
+
+        if (!$otp->channelColumnReady()) {
+            $this->line('');
+            $this->warn('  users.otp_channel is not on this database.');
+            $this->line('  Codes still go out and the card still works — the account simply cannot');
+            $this->line('  remember WHICH route was used, so a resend after a page reload falls back');
+            $this->line('  to SMS and a changed email address does not void an email-proved account.');
+            $this->line('  Run database/sql/2026_09_07_add_otp_channel_to_users.sql against SQL Server.');
+        }
+
+        if ($otp->enabledChannels() === []) {
+            $this->line('');
+            $this->warn('  BOTH routes are switched off, so the gate is holding NOBODY.');
+            $this->line('  Set phone_verification.channels.email or .sms back to true.');
+        }
 
         if (!$ready) {
             $this->line('');
@@ -89,6 +110,7 @@ class PhoneVerificationStatus extends Command
 
         // ── The whole staff list ─────────────────────────────────────────────
         $this->reportPopulation($otp);
+        $this->reportMailer();
         $this->reportWallet($gateway);
 
         return self::SUCCESS;
@@ -129,14 +151,31 @@ class PhoneVerificationStatus extends Command
         $stored = (string) ($user->phone_number ?? '');
         $usable = BulkSmsNgService::normalizeNumber($stored);
 
+        $storedEmail = trim((string) ($user->email ?? ''));
+        $usableEmail = $otp->emailForCard($user);
+        $emailNote = $usableEmail !== ''
+            ? $usableEmail
+            : ($storedEmail === ''
+                ? 'NO address on the account'
+                : ($otp->isPlaceholderEmail($storedEmail)
+                    ? 'a PLACEHOLDER, not a mailbox — no code can reach it'
+                    : 'NOT a valid address'));
+
+        $channel = $otp->currentChannel($user);
+
         $this->line('');
         $this->comment('Account');
         $this->line('  id .................... ' . $user->id);
         $this->line('  name .................. ' . $user->name);
         $this->line('  active ................ ' . (((int) ($user->is_active ?? 0) === 1) ? 'yes' : 'no'));
+        $this->line('  email on file ......... ' . ($storedEmail === '' ? '(none)' : $storedEmail));
+        $this->line('  usable as ............. ' . $emailNote);
         $this->line('  phone on file ......... ' . ($stored === '' ? '(none)' : $stored));
-        $this->line('  usable as .............. ' . ($usable ?? 'NOT a usable Nigerian mobile'));
+        $this->line('  usable as ............. ' . ($usable ?? 'NOT a usable Nigerian mobile'));
         $this->status('is_otp_verified', (bool) $user->is_otp_verified);
+        $this->line('  last code sent by ..... ' . ($otp->channelColumnReady()
+            ? ($user->getAttribute('otp_channel') ?: '(none recorded — SMS, or no code yet)')
+            : '(users.otp_channel is not deployed)'));
         $this->line('  code on file .......... ' . ($user->otp ? $user->otp . ($otp->hasExpired($user) ? '  (EXPIRED)' : '  (valid)') : '(none)'));
         $this->line('  code sent at .......... ' . ($user->otp_sent_at ? $user->otp_sent_at->copy()->setTimezone(config('phone_verification.timezone', 'Africa/Lagos'))->format('d/m/Y H:i') . ' (office clock)' : '(never)'));
 
@@ -144,15 +183,21 @@ class PhoneVerificationStatus extends Command
         $this->comment('What this account meets at sign-in');
 
         if ($user->needs_profile_photo) {
-            $this->line('  The passport-photo card — that gate comes first, so the phone card is not shown yet.');
+            $this->line('  The passport-photo card — that gate comes first, so the confirmation card is not shown yet.');
         } elseif (!$otp->gateEnabled()) {
             $this->line('  Nothing: the gate is off or not deployed.');
         } elseif ($user->is_otp_verified) {
-            $this->line('  Nothing: this number has been verified.');
-        } elseif ($usable === null) {
-            $this->line('  The confirmation card, with no number it can send to — they must type a real one in.');
+            $this->line('  Nothing: this account has been verified.');
+        } elseif ($channel === PhoneOtpService::CHANNEL_EMAIL) {
+            $this->line($usableEmail !== ''
+                ? '  The confirmation card, offering to send a code to ' . $usableEmail . '.'
+                : '  The confirmation card, with no address it can send to — they must type a real one in'
+                    . ($otp->channelEnabled(PhoneOtpService::CHANNEL_SMS) ? ' or switch to SMS.' : '.'));
         } else {
-            $this->line('  The confirmation card, offering to send a code to ' . $usable . '.');
+            $this->line($usable !== null
+                ? '  The confirmation card, offering to send a code to ' . $usable . '.'
+                : '  The confirmation card, with no number it can send to — they must type a real one in'
+                    . ($otp->channelEnabled(PhoneOtpService::CHANNEL_EMAIL) ? ' or switch to email.' : '.'));
         }
 
         return self::SUCCESS;
@@ -203,47 +248,95 @@ class PhoneVerificationStatus extends Command
         $this->line('  still held ............ ' . number_format($total - $verified));
 
         // How many of the held accounts could be sent a code right now, without the
-        // user having to type a new number in. This is the number that decides
-        // whether enabling the gate is a morning of support calls or a fortnight.
-        $reachable = 0;
+        // user having to type a new address in. This is the number that decides
+        // whether enabling the gate is a morning of support calls or a fortnight —
+        // and it is counted per ROUTE, because the two reach very different halves
+        // of the staff list. Email is the default precisely because of this split.
+        $byEmail = 0;
+        $bySms = 0;
         $unreachable = [];
 
         User::query()
             ->where('is_active', 1)
             ->where('is_otp_verified', false)
-            ->select(['id', 'first_name', 'last_name', 'phone_number'])
-            ->chunkById(500, function ($chunk) use (&$reachable, &$unreachable) {
+            ->select(['id', 'first_name', 'last_name', 'phone_number', 'email'])
+            ->chunkById(500, function ($chunk) use ($otp, &$byEmail, &$bySms, &$unreachable) {
                 foreach ($chunk as $user) {
-                    if (BulkSmsNgService::normalizeNumber((string) ($user->phone_number ?? '')) !== null) {
-                        $reachable++;
-                    } elseif (count($unreachable) < 5000) {
+                    $email = $otp->emailForCard($user) !== '';
+                    $sms = BulkSmsNgService::normalizeNumber((string) ($user->phone_number ?? '')) !== null;
+
+                    if ($email) {
+                        $byEmail++;
+                    }
+
+                    if ($sms) {
+                        $bySms++;
+                    }
+
+                    if (!$email && !$sms && count($unreachable) < 5000) {
                         $unreachable[] = $user;
                     }
                 }
             });
 
-        $this->line('  held, reachable now ... ' . number_format($reachable) . '  (a code can be sent to the number on file)');
-        $this->line('  held, unreachable ..... ' . number_format(count($unreachable)) . '  (must type a real number into the card first)');
+        $this->line('  held, emailable now ... ' . number_format($byEmail) . '  (a real address is on file)');
+        $this->line('  held, textable now .... ' . number_format($bySms) . '  (a usable Nigerian mobile is on file)');
+        $this->line('  held, neither ......... ' . number_format(count($unreachable)) . '  (must type a real address into the card first)');
 
         $limit = max(0, (int) $this->option('limit'));
 
         if ($limit > 0 && $unreachable) {
             $this->line('');
-            $this->line('  First ' . min($limit, count($unreachable)) . ' with no usable number:');
+            $this->line('  First ' . min($limit, count($unreachable)) . ' with neither a mailbox nor a usable number:');
             foreach (array_slice($unreachable, 0, $limit) as $user) {
                 $this->line(sprintf(
-                    '    %-6s %-32s %s',
+                    '    %-6s %-28s %-34s %s',
                     $user->id,
-                    mb_substr($user->name, 0, 32),
-                    ($user->phone_number ?: '(none)')
+                    mb_substr($user->name, 0, 28),
+                    mb_substr((string) ($user->email ?: '(no email)'), 0, 34),
+                    ($user->phone_number ?: '(no number)')
                 ));
             }
         }
     }
 
     /**
-     * The wallet, because an empty one is the single most likely reason a code
-     * never arrives — and it fails silently from the user's side.
+     * The mailer, because the default route now runs through it.
+     *
+     * MAIL_* lives in .env, and .env does not travel with a code upload — so the
+     * single most likely state of a freshly deployed server is a mailer pointed
+     * at nothing, which turns the card's default route into a dead end. There is
+     * no way to prove delivery from here; this reports the settings and names the
+     * command that actually sends something.
+     */
+    private function reportMailer(): void
+    {
+        $this->line('');
+        $this->comment('Email');
+
+        $mailer = (string) config('mail.default', '');
+        $host = (string) config('mail.mailers.' . $mailer . '.host', '');
+        $username = (string) config('mail.mailers.' . $mailer . '.username', '');
+        $from = (string) config('mail.from.address', '');
+
+        $this->line('  transport ............. ' . ($mailer ?: '(not set)'));
+        $this->line('  host .................. ' . ($host ?: '(not set)'));
+        $this->line('  username .............. ' . ($username ?: '(not set)'));
+        $this->line('  from .................. ' . ($from ?: '(not set)'));
+
+        if ($mailer === 'smtp' && ($host === '' || $username === '')) {
+            $this->warn('  SMTP is selected but not configured. Codes cannot be emailed on this server —');
+            $this->line('  .env does not travel with a code upload, which is the usual cause.');
+        }
+
+        $this->line('  Prove it end to end with: php artisan email:test you@yourdomain.com');
+        $this->line('  NOTE: codes are sent synchronously, NOT queued — a queue worker is not needed');
+        $this->line('        and a stopped one cannot hold anybody up.');
+    }
+
+    /**
+     * The wallet, because an empty one is the single most likely reason an SMS
+     * code never arrives — and it fails silently from the user's side.
      */
     private function reportWallet(BulkSmsNgService $gateway): void
     {

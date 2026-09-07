@@ -6,15 +6,21 @@ use App\Services\PhoneOtpService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 /**
- * The two endpoints behind the phone-confirmation card: ask for a code, hand one back.
+ * The two endpoints behind the account-confirmation card: ask for a code, hand one back.
  *
  * Both stay reachable while RequirePhoneVerification has the rest of the system locked —
  * they are the only way out of it — so both are deliberately narrow: they act on the
  * SIGNED-IN user and nobody else. There is no user_id parameter to be tampered with,
  * because a request that could verify another account would be a way of switching the
  * gate off for somebody else's login.
+ *
+ * The code travels by email (the default) or by SMS. Which one is a parameter rather
+ * than a second pair of endpoints: the two differ only in where the code is posted, and
+ * a second /send would be a second place for the "who is this acting on?" rule to be
+ * got wrong.
  */
 class PhoneVerificationController extends Controller
 {
@@ -23,26 +29,54 @@ class PhoneVerificationController extends Controller
     }
 
     /**
-     * Send a code to the number the user confirmed or corrected.
+     * Send a code to the address the user confirmed or corrected.
      *
-     * The number is accepted from the request rather than read off the row on purpose:
-     * the card exists precisely because the stored number may be wrong, and a user who
+     * The address is accepted from the request rather than read off the row on purpose:
+     * the card exists precisely because the stored value may be wrong — a placeholder
+     * email at example.org, a number that belongs to somebody who left — and a user who
      * cannot correct it there has no way through at all.
+     *
+     * `target` carries whichever the chosen channel needs. `email` and `phone` are still
+     * accepted under their own names so a cached copy of the old card keeps working
+     * during a deployment. The combined card submits both contacts with channel=both.
      */
     public function send(Request $request): JsonResponse
     {
         $validated = $request->validate(
-            ['phone' => ['nullable', 'string', 'max:20']],
-            ['phone.max' => __('That does not look like a phone number.')]
+            [
+                'channel' => ['nullable', 'string', Rule::in([PhoneOtpService::CHANNEL_EMAIL, PhoneOtpService::CHANNEL_SMS, PhoneOtpService::CHANNEL_BOTH])],
+                'target' => ['nullable', 'string', 'max:191'],
+                'email' => ['required_if:channel,both', 'nullable', 'string', 'max:191'],
+                'phone' => ['required_if:channel,both', 'nullable', 'string', 'max:20'],
+            ],
+            [
+                'channel.in' => __('That is not a way of sending a code.'),
+                'phone.max' => __('That does not look like a phone number.'),
+                'target.max' => __('That is too long to be an email address or a phone number.'),
+                'email.max' => __('That is too long to be an email address.'),
+            ]
         );
 
         $user = Auth::user();
-        $result = $this->otp->sendCode($user, $validated['phone'] ?? null);
+        $channel = $validated['channel'] ?? null;
+
+        // Whichever field the card used. The service does the real validation — it is
+        // the only place that knows what a usable Nigerian number or a live mailbox is.
+        $target = $validated['target']
+            ?? ($channel === PhoneOtpService::CHANNEL_SMS ? ($validated['phone'] ?? null) : ($validated['email'] ?? null))
+            ?? $validated['phone']
+            ?? $validated['email']
+            ?? null;
+
+        $result = $channel === PhoneOtpService::CHANNEL_BOTH
+            ? $this->otp->sendToBoth($user, $validated['email'], $validated['phone'])
+            : $this->otp->sendCode($user, $target, $channel);
 
         return response()->json([
             'success' => $result['sent'],
             'message' => $result['message'],
             'data' => [
+                'channel' => $result['channel'],
                 'masked' => $result['masked'],
                 // Seconds the button stays disabled for. On a failure this is the
                 // cooldown that now applies anyway — the code was written to the row
@@ -60,7 +94,7 @@ class PhoneVerificationController extends Controller
     {
         $validated = $request->validate(
             ['code' => ['required', 'string', 'max:10']],
-            ['code.required' => __('Enter the code that was sent to your phone.')]
+            ['code.required' => __('Enter the code that was sent to you.')]
         );
 
         $user = Auth::user();

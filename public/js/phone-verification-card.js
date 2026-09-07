@@ -1,16 +1,3 @@
-/*
- * Mandatory phone-number confirmation card.
- *
- * Two steps in one card: confirm or correct the number, then type back the code
- * sent to it. The server (RequirePhoneVerification) enforces the same rule, so
- * this file is only the way through it — never the rule itself. There is no close
- * button and Escape does nothing: every other URL redirects straight back here, so
- * a dismissable card would only look like a way out.
- *
- * Written in the same plain ES5 style as js/profile-photo-card.js: these two cards
- * load on every page of the application for the accounts that owe something, and
- * they must run on whatever the counter machines have.
- */
 (function (window, document) {
   'use strict';
 
@@ -25,16 +12,18 @@
       this.verifyUrl = this.root.getAttribute('data-verify-url');
       this.codeLength = parseInt(this.root.getAttribute('data-code-length'), 10) || 6;
 
-      this.stepPhone = document.getElementById('pvcStepPhone');
+
+      this.stepTarget = document.getElementById('pvcStepTarget');
       this.stepCode = document.getElementById('pvcStepCode');
+      this.emailInput = document.getElementById('pvcEmailInput');
       this.phoneInput = document.getElementById('pvcPhoneInput');
       this.codeInput = document.getElementById('pvcCodeInput');
-      this.maskedPhone = document.getElementById('pvcMaskedPhone');
+      this.maskedTarget = document.getElementById('pvcMaskedTarget');
       this.sendBtn = document.getElementById('pvcSendBtn');
       this.verifyBtn = document.getElementById('pvcVerifyBtn');
       this.resendBtn = document.getElementById('pvcResendBtn');
       this.backBtn = document.getElementById('pvcBackBtn');
-      this.phoneMessage = document.getElementById('pvcPhoneMessage');
+      this.targetMessage = document.getElementById('pvcTargetMessage');
       this.codeMessage = document.getElementById('pvcCodeMessage');
 
       this.csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
@@ -44,26 +33,19 @@
       this.lockSidebar();
       this.open();
 
-      // A cooldown still running from a code sent on an earlier page load: the row
-      // remembers when it went out, so a reload cannot be used to skip the wait.
-      var pending = parseInt(this.root.getAttribute('data-cooldown'), 10) || 0;
-      if (pending > 0) {
-        this.showCodeStep(null);
-        this.startCooldown(pending);
-      }
     },
 
     bind: function () {
       var self = this;
 
       this.sendBtn.addEventListener('click', function () {
-        self.send(self.phoneInput.value, self.sendBtn, 'Sending…', 'Send Verification Code');
+        self.send(self.sendBtn, 'Sending…', 'Send Verification Code');
       });
 
       this.resendBtn.addEventListener('click', function () {
-        // Resend goes to the number the code was already sent to, not to whatever
-        // is sitting in the (hidden) input.
-        self.send(self.phoneInput.value, self.resendBtn, 'Sending…', 'Resend code');
+        // Resend goes to the address the code was already sent to, on the same
+        // route — not to whatever is sitting in the other (hidden) pane.
+        self.send(self.resendBtn, 'Sending…', 'Resend code');
       });
 
       this.verifyBtn.addEventListener('click', function () {
@@ -71,15 +53,20 @@
       });
 
       this.backBtn.addEventListener('click', function () {
-        self.showPhoneStep();
+        self.showTargetStep();
       });
 
       // Enter submits the step the user is on.
-      this.phoneInput.addEventListener('keydown', function (event) {
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          self.sendBtn.click();
-        }
+      this.eachTargetInput(function (input) {
+        input.addEventListener('keydown', function (event) {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            self.sendBtn.click();
+          }
+        });
+        input.addEventListener('input', function () {
+          self.clearMessage(self.targetMessage);
+        });
       });
 
       this.codeInput.addEventListener('keydown', function (event) {
@@ -90,8 +77,8 @@
       });
 
       // Digits only, and submit itself once the last one is typed — the code is
-      // read off a handset, and asking for a button press after that is friction
-      // for nothing.
+      // read off a handset or copied out of a mail, and asking for a button press
+      // after that is friction for nothing.
       this.codeInput.addEventListener('input', function () {
         var cleaned = self.codeInput.value.replace(/\D+/g, '').slice(0, self.codeLength);
         if (cleaned !== self.codeInput.value) {
@@ -106,26 +93,31 @@
 
     /* --- requests --------------------------------------------------------- */
 
-    send: function (phone, button, busyLabel, idleLabel) {
+    send: function (button, busyLabel, idleLabel) {
       var self = this;
+      if (this.sending) { return; }
+      if (!this.phoneInput.reportValidity() || !this.emailInput.reportValidity()) { return; }
+      this.sending = true;
 
-      this.clearMessage(this.phoneMessage);
+      this.clearMessage(this.targetMessage);
       this.clearMessage(this.codeMessage);
       this.setBusy(button, true, busyLabel);
 
-      this.post(this.sendUrl, { phone: phone })
+      this.post(this.sendUrl, { channel: 'both', email: this.emailInput.value, phone: this.phoneInput.value })
         .then(function (result) {
+          self.sending = false;
           self.setBusy(button, false, idleLabel);
 
           var data = (result.body && result.body.data) || {};
 
           if (!result.body || !result.body.success) {
             // A refusal here is nearly always something the user can act on — a
-            // number that is not a Nigerian mobile, a cooldown, or the network
-            // holding messages until morning. The server writes those words; this
-            // only shows them, on whichever step is on screen.
+            // placeholder address, a number that is not a Nigerian mobile, a
+            // cooldown, or the network holding messages until morning. The server
+            // writes those words; this only shows them, on whichever step is on
+            // screen.
             var target = self.stepCode.classList.contains('pvc-hidden')
-              ? self.phoneMessage
+              ? self.targetMessage
               : self.codeMessage;
             self.showMessage(target, self.messageOf(result, 'The code could not be sent. Please try again.'), false);
 
@@ -140,8 +132,9 @@
           self.startCooldown(data.retryAfter || 0);
         })
         .catch(function () {
+          self.sending = false;
           self.setBusy(button, false, idleLabel);
-          self.showMessage(self.phoneMessage, 'The code could not be sent. Check your connection and try again.', false);
+          self.showMessage(self.stepCode.classList.contains('pvc-hidden') ? self.targetMessage : self.codeMessage, 'The code could not be sent. Check your connection and try again.', false);
         });
     },
 
@@ -150,7 +143,7 @@
       var code = this.codeInput.value.replace(/\D+/g, '');
 
       if (code.length < this.codeLength) {
-        this.showMessage(this.codeMessage, 'Enter the ' + this.codeLength + '-digit code that was sent to your phone.', false);
+        this.showMessage(this.codeMessage, 'Enter the ' + this.codeLength + '-digit code that was sent to you.', false);
         return;
       }
 
@@ -171,13 +164,13 @@
             return;
           }
 
-          self.setBusy(self.verifyBtn, false, 'Verify My Number');
+          self.setBusy(self.verifyBtn, false, 'Verify My Account');
           self.showMessage(self.codeMessage, self.messageOf(result, 'That code is not correct.'), false);
           self.codeInput.value = '';
           self.codeInput.focus();
         })
         .catch(function () {
-          self.setBusy(self.verifyBtn, false, 'Verify My Number');
+          self.setBusy(self.verifyBtn, false, 'Verify My Account');
           self.showMessage(self.codeMessage, 'The code could not be checked. Check your connection and try again.', false);
         });
     },
@@ -224,28 +217,55 @@
       return fallback;
     },
 
+    targetInput: function () {
+      return this.phoneInput;
+    },
+
+    eachTargetInput: function (callback) {
+      [this.emailInput, this.phoneInput].forEach(function (input) {
+        if (input) {
+          callback(input);
+        }
+      });
+    },
+
+    focusTarget: function () {
+      var input = this.targetInput();
+      if (!input) {
+        return;
+      }
+      var self = this;
+      window.setTimeout(function () {
+        input.focus();
+        // An address already in the box is the thing most likely to need
+        // replacing, so it starts selected. Nothing is selected when it is empty.
+        if (input.value && input === self.targetInput()) {
+          input.select();
+        }
+      }, 60);
+    },
+
     /* --- steps and state -------------------------------------------------- */
 
     showCodeStep: function (masked) {
-      this.stepPhone.classList.add('pvc-hidden');
+      this.stepTarget.classList.add('pvc-hidden');
       this.stepCode.classList.remove('pvc-hidden');
 
       if (masked) {
-        this.maskedPhone.textContent = masked;
-      } else if (!this.maskedPhone.textContent) {
-        this.maskedPhone.textContent = this.root.getAttribute('data-phone') || 'your number';
+        this.maskedTarget.textContent = masked;
+      } else if (!this.maskedTarget.textContent) {
+        this.maskedTarget.textContent = 'your email address and phone number';
       }
 
       this.codeInput.value = '';
       this.codeInput.focus();
     },
 
-    showPhoneStep: function () {
+    showTargetStep: function () {
       this.stepCode.classList.add('pvc-hidden');
-      this.stepPhone.classList.remove('pvc-hidden');
-      this.clearMessage(this.phoneMessage);
-      this.phoneInput.focus();
-      this.phoneInput.select();
+      this.stepTarget.classList.remove('pvc-hidden');
+      this.clearMessage(this.targetMessage);
+      this.focusTarget();
     },
 
     /**
@@ -309,10 +329,7 @@
     open: function () {
       this.root.classList.add('pvc-open');
       this.root.setAttribute('aria-hidden', 'false');
-      var self = this;
-      window.setTimeout(function () {
-        self.phoneInput.focus();
-      }, 150);
+      this.focusTarget();
     }
   };
 

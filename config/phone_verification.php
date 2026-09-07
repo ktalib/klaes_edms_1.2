@@ -31,6 +31,75 @@ return [
     'enabled' => env('PHONE_VERIFICATION_ENABLED', true),
 
     /*
+    |--------------------------------------------------------------------------
+    | Which way the code travels
+    |--------------------------------------------------------------------------
+    |
+    | Two routes to the same code. EMAIL LEADS, and the reason is the data —
+    | counted on 2026-09-07 across 1,562 active accounts:
+    |
+    |     495  have an email address that is a real mailbox
+    |     282  have a mobile number the SMS gateway can reach
+    |   1,061  have neither, and must type something real into the card
+    |
+    | and the SMS route is worse than that near-parity suggests. It is
+    | promotional traffic: the telcos hold it between 19:45 and 08:00 (status
+    | 609) and never deliver it to a DND-blocked handset, so a code asked for at
+    | nine in the evening arrives at half past eight the next morning, and for
+    | some staff never at all. Email costs nothing per message and reaches a
+    | laptop.
+    |
+    | 1,555 accounts hold SOMETHING address-shaped; the gap between that and 495
+    | is a thousand seeded placeholders (see 'placeholder_email_domains' below).
+    | SMS therefore stays on the card underneath, because neither route reaches
+    | everybody. The user picks; the default is what the card opens on.
+    |
+    */
+
+    'default_channel' => env('PHONE_VERIFICATION_DEFAULT_CHANNEL', 'email'),
+
+    /*
+     | Either route can be closed off entirely. Turning EMAIL off falls the card
+     | back to the SMS-only behaviour it had before; turning SMS off leaves email
+     | as the only way through, which is the lever to pull when the SMS wallet
+     | empties rather than switching the whole gate off. Closing both is treated
+     | as closing the gate — nobody is held by a card with no button.
+     */
+    'channels' => [
+        'email' => env('PHONE_VERIFICATION_EMAIL_ENABLED', true),
+        'sms' => env('PHONE_VERIFICATION_SMS_ENABLED', true),
+    ],
+
+    /*
+     | Addresses the code is REFUSED to. About a thousand accounts were seeded
+     | with example.com / example.org / example.net addresses and another sixty
+     | with klaes.local — none of which is a mailbox. Sending there "succeeds":
+     | the SMTP server accepts it, the card says a code is on its way, and the
+     | user waits for something that will never arrive, with no way through.
+     | Refusing outright lets the card say the one useful thing instead — type
+     | your real address in — which is the whole point of the exercise.
+     |
+     | Matched on the domain, case-insensitively. A leading dot means "and every
+     | subdomain of it".
+     */
+    'placeholder_email_domains' => [
+        'example.com',
+        'example.org',
+        'example.net',
+        'example.edu',
+        'test.com',
+        'email.com',
+        'domain.com',
+        'localhost',
+        'klaes.local',
+        '.local',
+        '.test',
+        '.invalid',
+        '.localdomain',
+        '.example',
+    ],
+
+    /*
      | How long a code stays usable, in minutes. Short on purpose: the code is
      | stored in plain text on the user row so ICT can read it back to somebody
      | whose handset is out of coverage, and a long-lived plain code sitting in
@@ -90,6 +159,28 @@ return [
     'message_fallback' => env(
         'PHONE_VERIFICATION_MESSAGE_FALLBACK',
         'KLAES: {code}'
+    ),
+
+    /*
+    |--------------------------------------------------------------------------
+    | The email
+    |--------------------------------------------------------------------------
+    |
+    | Sent through the ordinary Laravel mailer (App\Mail\AccountVerificationCode)
+    | on whatever MAIL_* settings the server carries — which is the one thing to
+    | check before enabling this route, because .env does not travel with a code
+    | upload and an unconfigured mailer throws rather than failing quietly.
+    |
+    | DELIVERED SYNCHRONOUSLY. QUEUE_CONNECTION is `database` on this deployment
+    | and there is no guarantee a worker is running; a sign-in code that sits in
+    | a jobs table until somebody notices is the same as a code that never came.
+    | See the mailable — it must never implement ShouldQueue.
+    |
+    */
+
+    'email_subject' => env(
+        'PHONE_VERIFICATION_EMAIL_SUBJECT',
+        'Your KLAES verification code'
     ),
 
 ];
