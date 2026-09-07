@@ -1,5 +1,5 @@
 {{--
-    Deed of Purchase Registration — instrument-specific fields.
+    Deed of Purchase — instrument-specific fields.
 
     What was paid for the interest. The parties, property and file number all
     live in the shared capture form; only these two are particular to this

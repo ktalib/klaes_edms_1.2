@@ -33,7 +33,7 @@ return [
     | Changing it after go-live orphans existing rows from the module -- rename
     | the data first if it ever has to change.
     */
-    'instrument_type' => 'Deed of Purchase Registration',
+    'instrument_type' => 'Deed of Purchase',
 
     /*
     | The key the capture JS uses for this instrument (public/js/instruments-capture.js).
@@ -50,7 +50,7 @@ return [
     | Card copy on the capture screen.
     */
     'card' => [
-        'title' => 'Deed of Purchase Registration',
+        'title' => 'Deed of Purchase',
         'description' => 'A legal document that proves the transfer of ownership of a property '
             . 'or asset from a vendor to a purchaser.',
     ],

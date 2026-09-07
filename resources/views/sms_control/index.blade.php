@@ -150,6 +150,31 @@
                   </div>
                 </div>
 
+                {{--
+                  Batch wording. Shown only where one message can cover several
+                  files -- a commissioning batch for one applicant. [FileNo] then
+                  carries a range, so this form stays two pages whether it is
+                  about 2 files or 200.
+                --}}
+                <template x-if="m.has_plural">
+                  <div class="space-y-2 border-t border-slate-100 pt-3">
+                    <label class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
+                      Batch wording <span class="normal-case font-normal text-slate-400">— used when one message covers several files</span>
+                    </label>
+                    <textarea rows="3"
+                              class="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 focus:border-blue-400 focus:outline-none"
+                              x-model="m.plural_template"
+                              @input="repreviewPlural(m)"></textarea>
+                    <div class="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3">
+                      <div class="text-sm text-slate-700 whitespace-pre-wrap" x-text="m.plural_preview || '—'"></div>
+                      <div class="mt-2 text-xs" :class="m.plural_pages > 1 ? 'text-amber-700' : 'text-slate-400'">
+                        <span x-text="m.plural_characters"></span> characters &middot;
+                        <span x-text="m.plural_pages"></span> <span x-text="m.plural_pages === 1 ? 'page' : 'pages'"></span>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+
                 <div class="flex flex-wrap items-center gap-3">
                   <button type="button"
                           class="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -288,6 +313,16 @@ function smsControl() {
       m.pages = body.length ? Math.max(1, Math.ceil(body.length / 160)) : 0;
     },
 
+    /* Same approximation as repreview(), for the batch box. */
+    repreviewPlural(m) {
+      let body = m.plural_template || '';
+      body = body.replace(/\[[^\]\[]{1,40}\]/g, '');
+      body = body.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,])/g, '$1').trim();
+      m.plural_preview = body;
+      m.plural_characters = body.length;
+      m.plural_pages = body.length ? Math.max(1, Math.ceil(body.length / 160)) : 0;
+    },
+
     async save(m) {
       const res = await fetch(this.urls.updateBase + '/' + m.key, {
         method: 'PUT',
@@ -299,6 +334,7 @@ function smsControl() {
         body: JSON.stringify({
           enabled: m.enabled,
           template: m.template || '',
+          plural_template: m.plural_template || '',
           sender: m.sender_group || null,
         }),
       });

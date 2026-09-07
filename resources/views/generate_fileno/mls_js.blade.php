@@ -1983,6 +1983,7 @@
             component.relatedFileTitle = '';
             component.relatedFileIndexingId = '';
             component.isRecertificationPrefix = false;
+            component.recertificationWorkflow = false;
 
             // Reset old file fields (Re-Issuance of FileNo)
             component.oldFileNo = '';
@@ -5602,6 +5603,12 @@
                 'Other'
             ],
             isRecertificationPrefix: false,
+            // Set by the File Type dropdown's "Recertification" entry. It does not change
+            // how the number is built — an RC file numbers like a normal one — it narrows
+            // the Prefix list to the -RC prefixes so the officer cannot pick a number that
+            // contradicts the file type. isRecertificationPrefix stays the authority on
+            // whether the Related File panel is mandatory, since it reads the real prefix.
+            recertificationWorkflow: false,
 
             // Old File Properties (Re-Issuance of FileNo). Picked with the same
             // GlobalFileNoModal as a related file, but stored separately: the old
@@ -6637,11 +6644,16 @@
                         && this.appTypeRadio === 'conversion'
                     );
 
-                if (useConversionPrefixes) {
-                    return this.allAllPrefixes.filter(p => p.prefix.includes('CON-'));
-                } else {
-                    return this.allAllPrefixes.filter(p => !p.prefix.includes('CON-'));
-                }
+                const list = useConversionPrefixes
+                    ? this.allAllPrefixes.filter(p => p.prefix.includes('CON-'))
+                    : this.allAllPrefixes.filter(p => !p.prefix.includes('CON-'));
+
+                // The Recertification file type keeps only the -RC prefixes. Picking an RC
+                // prefix directly is still a valid route on its own, so this narrows the
+                // list only when the file type asks for it.
+                return this.recertificationWorkflow
+                    ? list.filter(p => String(p.prefix || '').toUpperCase().includes('-RC'))
+                    : list;
             },
 
             // Methods
@@ -7620,6 +7632,21 @@
                 // (appTypeRadio is the source of truth for that choice — applicationType
                 // may still be 'change_of_purpose' left over from CoP mode here).
                 this.applicationType = this.appTypeRadio || 'new';
+
+                // A recertification is an ordinary file number carrying an -RC prefix, so it
+                // is NOT a file_option of its own: the backend reads the RC token off the
+                // number. All this does is narrow the Prefix list and drop a prefix that no
+                // longer belongs to it.
+                this.recertificationWorkflow = val === 'recertification';
+                if (this.recertificationWorkflow) {
+                    if (!String(this.prefix || '').toUpperCase().includes('-RC')) {
+                        this.prefix = '';
+                        this.isRecertificationPrefix = false;
+                    }
+                    this.fileOption = 'normal';
+                    this.updateFileOption();
+                    return;
+                }
 
                 // Re-grant numbers like a normal file but keeps its own tag so the backend
                 // records Source as "Re-grant" instead of "Direct Allocation".

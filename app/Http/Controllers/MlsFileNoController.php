@@ -1670,7 +1670,7 @@ class MlsFileNoController extends Controller
             $tokens = $isOss
                 ? [
                     'FileNo' => $fullFileNumber,
-                    'Original Holder' => $this->commissioningOriginalHolder($validated),
+                    'Original Allottee' => $this->commissioningOriginalHolder($validated),
                 ]
                 : [
                     'FileNo' => $fullFileNumber,
@@ -1707,7 +1707,7 @@ class MlsFileNoController extends Controller
      * looks like a clerk's is recorded as skipped rather than sent -- 200 files
      * keyed by one office is exactly the case the guard exists for.
      */
-    private function sendBatchCommissioningSms(array $generatedFiles, array $validated, ?string $systemSubType): void
+    private function sendBatchCommissioningSms(array $generatedFiles, array $validated, ?string $systemSubType, ?string $batchNo = null): void
     {
         if (empty($generatedFiles)) {
             return;
@@ -1725,6 +1725,13 @@ class MlsFileNoController extends Controller
                 return;
             }
 
+            /*
+             | Read the numbers back out of mls_file_no rather than pairing them
+             | with the request by position: the batch loop skips serials that
+             | were already taken, so the Nth entry the officer typed is not
+             | reliably the Nth file created, and pairing by position would text
+             | the wrong applicant.
+             */
             $rows = \App\Models\MlsFileNo::whereIn('full_file_number', $generatedFiles)
                 ->get(['id', 'full_file_number', 'phone_no', 'source', 'system_sub_type'])
                 ->keyBy('full_file_number');
@@ -1732,27 +1739,87 @@ class MlsFileNoController extends Controller
             $resolver = app(\App\Services\Sms\ApplicantPhoneResolver::class);
             $originalHolder = $this->commissioningOriginalHolder($validated);
 
+            /*
+             | ONE MESSAGE PER APPLICANT, NOT PER FILE.
+             |
+             | A batch of five files commissioned for one person is one text
+             | naming a range, not five texts -- see App\Support\FileNumberRange.
+             | Files are grouped on the NORMALISED number, so 08031234567 and
+             | +234 803 123 4567 are recognised as the same handset; grouping on
+             | the raw string would send twice.
+             |
+             | Files with no usable number are deliberately NOT grouped: each one
+             | gets its own skipped row, so "which files was nobody told about?"
+             | stays answerable file by file.
+             */
+            $groups = [];
+            $unreachable = [];
+
             foreach ($generatedFiles as $fileNumber) {
                 $row = $rows[$fileNumber] ?? null;
-                $phone = trim((string) ($row->phone_no ?? ''));
+                $raw = trim((string) ($row->phone_no ?? ''));
 
-                if ($phone === '') {
-                    $phone = $resolver->forFileNumber($fileNumber)['phone'];
+                if ($raw === '') {
+                    $raw = (string) $resolver->forFileNumber($fileNumber)['phone'];
                 }
 
+                $normalised = \App\Services\BulkSmsNgService::normalizeNumber($raw);
+
+                if ($normalised === null) {
+                    $unreachable[] = ['file' => $fileNumber, 'phone' => $raw, 'row' => $row];
+                    continue;
+                }
+
+                $groups[$normalised]['phone'] = $raw;
+                $groups[$normalised]['files'][] = $fileNumber;
+                $groups[$normalised]['rows'][] = $row;
+            }
+
+            foreach ($groups as $normalised => $group) {
+                $files = $group['files'];
+                $label = \App\Support\FileNumberRange::describe($files);
+                $first = $group['rows'][0] ?? null;
+
                 $tokens = $isOss
-                    ? ['FileNo' => $fileNumber, 'Original Holder' => $originalHolder]
+                    ? ['FileNo' => $label, 'Original Allottee' => $originalHolder]
                     : [
-                        'FileNo' => $fileNumber,
-                        'Application Type' => $this->commissioningApplicationTypeLabel($validated, $row),
+                        'FileNo' => $label,
+                        'Application Type' => $this->commissioningApplicationTypeLabel($validated, $first),
                         'Department' => 'Land Department',
                     ];
 
-                $dispatcher->queue($key, $phone, $tokens, [
-                    'dedupe_key' => $key . ':' . $fileNumber,
-                    'file_number' => $fileNumber,
+                $dispatcher->queue($key, $group['phone'], $tokens, [
+                    /*
+                     | Keyed on the batch AND the number, so one applicant gets
+                     | one message per batch however many files they hold, and
+                     | re-submitting the batch cannot text them twice. Falls back
+                     | to the range itself when no batch number was minted.
+                     */
+                    'dedupe_key' => $key . ':batch:' . ($batchNo ?: $label) . ':' . $normalised,
+                    // The whole set, so "was this file's applicant told?" is
+                    // still answerable -- the column was widened for this.
+                    'file_number' => $label,
                     'subject_type' => 'mls_file_no',
-                    'subject_id' => $row->id ?? null,
+                    'subject_id' => $first->id ?? null,
+                    // A batch entry has no shared-number confirmation UI.
+                    'phone_confirmed' => false,
+                    // Plural wording, because [FileNo] now carries a range.
+                    'plural' => count($files) > 1,
+                ]);
+            }
+
+            // One skipped row each, so the gap is visible per file.
+            foreach ($unreachable as $miss) {
+                $dispatcher->queue($key, $miss['phone'] ?: null, [
+                    'FileNo' => $miss['file'],
+                    'Application Type' => $this->commissioningApplicationTypeLabel($validated, $miss['row']),
+                    'Department' => 'Land Department',
+                    'Original Allottee' => $originalHolder,
+                ], [
+                    'dedupe_key' => $key . ':' . $miss['file'],
+                    'file_number' => $miss['file'],
+                    'subject_type' => 'mls_file_no',
+                    'subject_id' => $miss['row']->id ?? null,
                     'phone_confirmed' => false,
                 ]);
             }
@@ -5292,7 +5359,7 @@ class MlsFileNoController extends Controller
                  | Each file carries its own number from location_entries; the
                  | resolver fills in the ones the officer left blank.
                  */
-                $this->sendBatchCommissioningSms($generatedFiles, $validated, $batchSystemSubType ?? null);
+                $this->sendBatchCommissioningSms($generatedFiles, $validated, $batchSystemSubType ?? null, $batchNo);
 
                 $edmsFolders = [];
                 foreach ($generatedFiles as $generatedFileNumber) {

@@ -72,6 +72,9 @@ class SmsSetting extends Model
         'message_key',
         'enabled',
         'template',
+        // Used when one message covers several files -- see the batch note in
+        // config/klaes_sms.php. Null means "use the shipped plural form".
+        'plural_template',
         // 'staff' | 'department' -- the GROUP, not the literal sender ID.
         'sender',
         'updated_by',
@@ -103,11 +106,12 @@ class SmsSetting extends Model
         return Cache::rememberForever(self::CACHE_KEY, function () {
             try {
                 return static::query()
-                    ->get(['message_key', 'enabled', 'template', 'sender'])
+                    ->get(['message_key', 'enabled', 'template', 'plural_template', 'sender'])
                     ->keyBy('message_key')
                     ->map(fn (self $row) => [
                         'enabled' => (bool) $row->enabled,
                         'template' => $row->template,
+                        'plural_template' => $row->plural_template,
                         'sender' => $row->sender,
                     ])
                     ->all();
@@ -157,16 +161,29 @@ class SmsSetting extends Model
      * The wording to send: the Ministry's override if one was saved, otherwise
      * the shipped default.
      */
-    public static function templateFor(string $key): ?string
+    public static function templateFor(string $key, bool $plural = false): ?string
     {
         $map = self::map();
-        $override = $map[$key]['template'] ?? null;
+        $column = $plural ? 'plural_template' : 'template';
+        $override = $map[$key][$column] ?? null;
 
         if (is_string($override) && trim($override) !== '') {
             return $override;
         }
 
-        return config('klaes_sms.messages.' . $key . '.template');
+        $shipped = config('klaes_sms.messages.' . $key . '.' . $column);
+
+        /*
+         | A message with no plural form of its own falls back to its singular
+         | one. That is right for anything never sent about more than one thing
+         | at a time -- a caveat, a Letter of Grant -- and it makes adding a
+         | plural form later purely additive.
+         */
+        if ($plural && ($shipped === null || trim((string) $shipped) === '')) {
+            return self::templateFor($key, false);
+        }
+
+        return $shipped;
     }
 
     /**
@@ -210,9 +227,25 @@ class SmsSetting extends Model
     }
 
     /** The plainer wording tried only when the gateway refuses the first. */
-    public static function fallbackFor(string $key): ?string
+    public static function fallbackFor(string $key, bool $plural = false): ?string
     {
+        if ($plural) {
+            $shipped = config('klaes_sms.messages.' . $key . '.plural_fallback');
+
+            if ($shipped !== null && trim((string) $shipped) !== '') {
+                return $shipped;
+            }
+        }
+
         return config('klaes_sms.messages.' . $key . '.fallback');
+    }
+
+    /** Does this message ship a distinct wording for the batch case? */
+    public static function hasPluralForm(string $key): bool
+    {
+        $shipped = config('klaes_sms.messages.' . $key . '.plural_template');
+
+        return is_string($shipped) && trim($shipped) !== '';
     }
 
     /** The catalogue entry for one key, or null if the key is not defined. */

@@ -126,10 +126,16 @@
         $renderer = new ImageRenderer(new RendererStyle(100), new SvgImageBackEnd());
         $qrCodeSvg = (new Writer($renderer))->writeString($cor->fileno ?: 'N/A');
 
-        // Who delivered the deed for registration: the solicitor who prepared it
-        // where there is one, otherwise the purchaser.
-        $deliveryName = $cor->solicitor_name ?: $cor->purchaser;
-        $deliveryAddress = $cor->solicitor_address ?: $cor->purchaser_address;
+        /*
+         * Who delivered the deed for registration: PARTY 2, the purchaser.
+         *
+         * This used to prefer the solicitor and fall back to the purchaser,
+         * copied from the Deeds Assignment rule. That is not what this registry
+         * wants — the certificate names the purchaser, and a deed prepared by a
+         * firm was printing the firm's name and address instead.
+         */
+        $deliveryName = $cor->purchaser;
+        $deliveryAddress = $cor->purchaser_address;
 
         // A TEMP number is an internal placeholder and is never printed on a
         // document that leaves the registry.
@@ -363,6 +369,9 @@
             line-height: 1.3;
             color: #111;
             letter-spacing: 0.02em;
+            /* The whole impression is bold, not just its heading and values —
+               a rubber stamp does not have light and heavy strokes. */
+            font-weight: 700;
             /* The wording sits at the top and the sign-off is pushed to the
                bottom by margin-top:auto below, so the space between them is
                room to sign in rather than dead centring. */

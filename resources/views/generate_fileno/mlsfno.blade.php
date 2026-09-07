@@ -595,6 +595,9 @@
                                             <option value="resettlement">Resettlement</option>
                                             <option value="regrant">Re-grant</option>
                                             <option value="reissuance">Re-Issuance of FileNo</option>
+                                            {{-- A recertification numbers like a normal file; what makes it one is
+                                                 the -RC prefix, so picking this narrows the Prefix list to those. --}}
+                                            <option value="recertification">Recertification</option>
                                             <option value="subdivision">Subdivision</option>
                                             <option value="merger">Merger</option>
                                             <option value="separation">Separation</option>

@@ -8,6 +8,7 @@ use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Services\ActivityLogService;
 use App\Services\StaffAttendanceNotificationService;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 
 class LogUserLogin
@@ -39,9 +40,38 @@ class LogUserLogin
             return;
         }
 
+        // Sign-ins a person performed, only. tinker, artisan, queue workers and
+        // the scheduler all reach Auth::login() and fire this same event: 56 of
+        // the first 66 "Sign-in recorded" cards came from scripts on the dev
+        // machine, and each one also closed the user's live session with
+        // "Session closed due to new login" — showing them Offline while they sat
+        // in the app and truncating the day's attendance duration. Nothing below
+        // this line should happen for a login nobody performed.
+        if (!ActivityLogService::isInteractiveSignIn()) {
+            // Left visible on purpose. A request with no User-Agent at all is
+            // treated as a script here, so if a real client ever loses its
+            // sign-in row this line is what says why.
+            Log::debug('Skipped a non-interactive sign-in', [
+                'user_id' => $event->user->id ?? null,
+                'console' => app()->runningInConsole(),
+                'user_agent' => request()->header('User-Agent'),
+            ]);
+
+            return;
+        }
+
         /** @var User $user */
         $user = $event->user;
         $session = null;
+
+        // A remember-me cookie re-authenticating an expired session is not a
+        // sign-in the user carried out — Laravel fires this event from
+        // SessionGuard::user() when it picks the recaller up. The session row
+        // below is still worth writing (Online Users should show them), but
+        // telling somebody they signed in when they only reloaded a page is
+        // exactly the "alert while I am still online" complaint.
+        $guard = Auth::guard($event->guard);
+        $viaRemember = method_exists($guard, 'viaRemember') && $guard->viaRemember();
 
         try {
             $session = ActivityLogService::recordLogin($user);
@@ -57,6 +87,13 @@ class LogUserLogin
                 'user_id' => $event->user->id ?? null,
                 'message' => $exception->getMessage(),
             ]);
+        }
+
+        // The session row above is worth keeping for a recaller re-authentication.
+        // The announcements below are not: both tell the user they signed in, and
+        // they did not.
+        if ($viaRemember) {
+            return;
         }
 
         // The in-app notice. Written here and now rather than after the

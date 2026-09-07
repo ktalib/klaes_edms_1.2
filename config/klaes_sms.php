@@ -162,7 +162,25 @@ return [
                 'Application Type' => 'Direct Allocation',
                 'Department' => 'Land Department',
             ],
-            'template' => 'A New File with FileNo [FileNo] has been commissioned for your [Application Type] Application with the [Department] of the Kano State Ministry of Land and Physical Planning',
+            // What the batch preview shows: five consecutive files for one
+            // applicant, written the way the commissioning screen writes them.
+            'sample_plural' => [
+                'FileNo' => 'RES-2026-3029-3033',
+            ],
+            'template' => 'A New File with FileNo [FileNo] has been commissioned for under the [Application Type] Application with the [Department] of the Kano State Ministry of Land and Physical Planning',
+
+            /*
+             | BATCH WORDING. Used when one message covers more than one file --
+             | a batch commissioned for a single applicant. [FileNo] then holds a
+             | RANGE ("RES-2026-3029-3033") rather than one number, so the plural
+             | form is a fixed length no matter how many files it covers: 200
+             | files cost the same two pages as two files.
+             |
+             | Only the singular/plural words differ. Keeping both on one card in
+             | the control centre is deliberate -- reworded separately they drift.
+             */
+            'plural_template' => 'New Files with FileNos [FileNo] have been commissioned for under the [Application Type] Application with the [Department] of the Kano State Ministry of Land and Physical Planning',
+            'plural_fallback' => 'KLAES: Files [FileNo] have been commissioned for your [Application Type] application at the Kano State Ministry of Land and Physical Planning.',
             'fallback' => 'KLAES: File [FileNo] has been commissioned for your [Application Type] application at the Kano State Ministry of Land and Physical Planning.',
         ],
 
@@ -174,13 +192,20 @@ return [
             'audience' => 'applicant',
             'recipient' => 'The applicant (the incoming owner), on the phone number captured at commissioning.',
             'default_enabled' => false,
-            'tokens' => ['FileNo', 'Original Holder'],
+            'tokens' => ['FileNo', 'Original Allottee'],
             'sample' => [
                 'FileNo' => 'IND-2026-256',
-                'Original Holder' => 'Musa Ibrahim',
+                'Original Allottee' => 'Musa Ibrahim',
             ],
-            'template' => 'A New File with FileNo [FileNo] has been commissioned for your Change of Ownership [Original Holder] Application with the One Stop Shop Unit (Land Department) of the Kano State Ministry of Land and Physical Planning',
-            'fallback' => 'KLAES: File [FileNo] has been commissioned for your Change of Ownership application from [Original Holder] at the One Stop Shop Unit.',
+            'sample_plural' => [
+                'FileNo' => 'IND-2026-256-260',
+            ],
+            'template' => 'A New File with FileNo [FileNo] has been commissioned for under Change of Ownership Application from Original Allottee "[Original Allottee]" with the One Stop Shop Unit (Land Department) of the Kano State Ministry of Land and Physical Planning',
+
+            // Batch wording -- see the note on the Land entry above.
+            'plural_template' => 'New Files with FileNos [FileNo] have been commissioned for under Change of Ownership Application from Original Allottee "[Original Allottee]" with the One Stop Shop Unit (Land Department) of the Kano State Ministry of Land and Physical Planning',
+            'plural_fallback' => 'KLAES: Files [FileNo] have been commissioned under Change of Ownership from Original Allottee [Original Allottee] at the One Stop Shop Unit.',
+            'fallback' => 'KLAES: File [FileNo] has been commissioned under Change of Ownership from Original Allottee [Original Allottee] at the One Stop Shop Unit.',
         ],
 
         SmsSetting::KEY_ST_FC => [
@@ -277,7 +302,7 @@ return [
                 'Purpose' => 'ASSIGNMENT',
                 'Timeline' => '5 days',
             ],
-            'template' => 'Your File Request including [FileNo(s)] has been logged to your office [Requester Office] @ [DateTime] for the [Purpose] with a duration of [Timeline]. Let us know immediately if this request was not placed by you. Thank you',
+            'template' => 'Your File Request including [FileNo(s)] has been logged to your office - [Requester Office] @ [DateTime] for the [Purpose] for a duration of [Timeline]. Let us know immediately if this request was not placed by you. Thank you',
             'fallback' => 'KLAES: File [FileNo(s)] was logged to [Requester Office] on [DateTime] for [Purpose], duration [Timeline].',
         ],
 
@@ -309,7 +334,7 @@ return [
                 'DateTime' => '13/07/2026 10:24 AM',
                 'FileNo' => 'RES-2016-957',
             ],
-            'template' => 'Your Instrument [Instrument Type] has been Registered @ the Deeds Department of the Kano State Ministry of Land and Physical Planning, with Registration Particulars [Registration Particulars] @ [DateTime]. Thank you',
+            'template' => 'Your Instrument, [Instrument Type] has been Registered @ the Deeds Department of the Kano State Ministry of Land and Physical Planning, with Registration Particulars [Registration Particulars] @ [DateTime]. Thank you',
             'fallback' => 'KLAES: Your [Instrument Type] was registered at the Deeds Department on [DateTime]. Particulars: [Registration Particulars].',
         ],
 

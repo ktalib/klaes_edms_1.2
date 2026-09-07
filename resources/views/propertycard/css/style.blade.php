@@ -25,17 +25,41 @@
         flex-direction: column;
     }
     
-    /* Make internal container scrollable instead of entire dialog */
+    /* Make internal container scrollable instead of entire dialog.
+       ------------------------------------------------------------------
+       The scroll host inside the form is marked `max-h-[75vh]`, which is
+       Tailwind 3 arbitrary-value syntax. This app loads the compiled
+       Tailwind 2.2.19 CDN build, which has no JIT and therefore defines no
+       such class — so the host had NO height cap at all. It grew to the
+       full height of the form, and .dialog-content's `overflow: hidden`
+       simply clipped everything past 90vh: the lower half of the property
+       form, including the Submit button, was unreachable.
+
+       The height now comes from the flex chain instead of that class. Every
+       link needs `min-height: 0`, or a flex item refuses to shrink below its
+       content and the clipping comes straight back. */
     #property-form-dialog .dialog-content form {
         display: flex;
         flex-direction: column;
-        height: 100%;
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: hidden;
+    }
+
+    /* The wrapper between .dialog-content and the form was a plain div, so it
+       broke the chain: the form's height had nothing to resolve against. */
+    #property-form-dialog .dialog-content .pra-property-form {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+        min-height: 0;
         overflow: hidden;
     }
 
     #property-form-dialog .dialog-content .max-h-\[75vh\] {
         overflow-y: auto;
-        flex-grow: 1;
+        flex: 1 1 auto;
+        min-height: 0;
         padding-right: 0.75rem; /* Give space for scrollbar */
     }
     

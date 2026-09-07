@@ -23,8 +23,31 @@ use Jenssegers\Agent\Agent;
 class ActivityLogService
 {
     /**
+     * A sign-in a person performed in a browser, as opposed to one a script caused.
+     *
+     * tinker, artisan, queue workers and the scheduler all reach Auth::login() and
+     * fire the same Login event a human sign-in fires. Their request is the one
+     * Laravel's SetRequestForConsole bootstrapper builds — User-Agent "Symfony",
+     * IP 127.0.0.1 — which is how 56 of 66 "Sign-in recorded" cards were minted
+     * without anybody signing in, each one closing the user's live session on its
+     * way past. Request::create() sub-requests (DuplexCommitService) carry that
+     * same agent inside a real HTTP request, hence the second test rather than
+     * runningInConsole() on its own.
+     */
+    public static function isInteractiveSignIn(): bool
+    {
+        if (app()->runningInConsole()) {
+            return false;
+        }
+
+        $agent = trim((string) request()->header('User-Agent'));
+
+        return $agent !== '' && $agent !== 'Symfony';
+    }
+
+    /**
      * Record user login activity
-     * 
+     *
      * Creates a new activity log entry when user logs in.
      * Marks any previous sessions as offline.
      */
@@ -72,10 +95,16 @@ class ActivityLogService
             // Clear online users cache
             self::flushOnlineCaches();
 
-            Log::info("User {$user->id} ({$user->email}) logged in from {$ipAddress}", [
+            // The RESOLVED values, not the parameters. This line used to print the
+            // unset $ipAddress, so every sign-in read "logged in from" with a null
+            // ip — and the user agent, the one field that says whether a browser or
+            // a script caused it, was not logged at all.
+            Log::info("User {$user->id} logged in from {$activityLog->ip_address}", [
                 'user_id' => $user->id,
-                'ip_address' => $ipAddress,
+                'ip_address' => $activityLog->ip_address,
                 'device' => $deviceInfo['device'],
+                'browser' => $activityLog->browser,
+                'user_agent' => $userAgentString,
             ]);
 
             return $activityLog;

@@ -25,7 +25,7 @@ class InstallLandRegistration extends Command
 {
     protected $signature = 'land-registration:install {--force-vault : Re-seed the numbering vault even if it already exists. Only safe before the first registration.}';
 
-    protected $description = 'Install the Deed of Purchase Registration instrument type, its numbering vault and its role';
+    protected $description = 'Install the Deed of Purchase instrument type, its numbering vault and its role';
 
     public function handle(): int
     {

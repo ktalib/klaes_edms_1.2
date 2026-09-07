@@ -92,7 +92,9 @@ class KlaesSmsDispatcher
                     SmsDispatchLog::SKIP_DISABLED, $context);
             }
 
-            [$body, $plain] = $this->wordings($key, $tokens);
+            // A batch message covers several files, so it uses the plural
+            // wording and [FileNo] carries a range rather than one number.
+            [$body, $plain] = $this->wordings($key, $tokens, (bool) ($context['plural'] ?? false));
 
             if ($body === null) {
                 return $this->record($key, null, null, SmsDispatchLog::STATUS_SKIPPED,
@@ -157,18 +159,18 @@ class KlaesSmsDispatcher
      *
      * @return array{0:?string, 1:?string}
      */
-    public function wordings(string $key, array $tokens): array
+    public function wordings(string $key, array $tokens, bool $plural = false): array
     {
         return [
-            $this->substitute(SmsSetting::templateFor($key), $tokens),
-            $this->substitute(SmsSetting::fallbackFor($key), $tokens),
+            $this->substitute(SmsSetting::templateFor($key, $plural), $tokens),
+            $this->substitute(SmsSetting::fallbackFor($key, $plural), $tokens),
         ];
     }
 
     /** The wording that would actually be sent, or null if there is none. */
-    public function render(string $key, array $tokens): ?string
+    public function render(string $key, array $tokens, bool $plural = false): ?string
     {
-        return $this->wordings($key, $tokens)[0];
+        return $this->wordings($key, $tokens, $plural)[0];
     }
 
     /**
@@ -176,14 +178,20 @@ class KlaesSmsDispatcher
      *
      * @return array{body:?string, characters:int, pages:int}
      */
-    public function preview(string $key, ?string $template = null): array
+    public function preview(string $key, ?string $template = null, bool $plural = false): array
     {
         $definition = SmsSetting::definition($key) ?? [];
         $tokens = (array) ($definition['sample'] ?? []);
 
+        if ($plural && isset($definition['sample_plural'])) {
+            // The batch preview shows a RANGE in [FileNo], because that is what
+            // a batch message actually carries.
+            $tokens = array_merge($tokens, (array) $definition['sample_plural']);
+        }
+
         $body = $template !== null
             ? $this->substitute($template, $tokens)
-            : $this->render($key, $tokens);
+            : $this->render($key, $tokens, $plural);
 
         return [
             'body' => $body,

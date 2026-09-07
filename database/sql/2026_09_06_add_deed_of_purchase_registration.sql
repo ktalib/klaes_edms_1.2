@@ -1,5 +1,5 @@
 /* ============================================================================
-   Land Registration -- "Deed of Purchase Registration"
+   Land Registration -- "Deed of Purchase"
    ----------------------------------------------------------------------------
    Implements the data half of
    docs/KLAES_Deed_of_Purchase_Land_Registration_Update.md.
@@ -21,8 +21,8 @@
    WHAT
      dbo.deed_registrations.registration_category    NEW COLUMN varchar(50) NULL
      dbo.instrument_number_vaults.current_volume_count  NEW COLUMN int NULL
-     dbo.new_instrument_types      'Deed of Purchase Registration'
-     dbo.InstrumentTypes           'Deed of Purchase Registration'
+     dbo.new_instrument_types      'Deed of Purchase'
+     dbo.InstrumentTypes           'Deed of Purchase'
      dbo.instrument_number_vaults  serial 4019 / page 4019 / volume 22 / 0 in volume
      dbo.user_roles                'Land Registration'
 
@@ -74,7 +74,7 @@
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-DECLARE @type           varchar(100) = 'Deed of Purchase Registration';
+DECLARE @type           varchar(100) = 'Deed of Purchase';
 DECLARE @role           varchar(100) = 'Land Registration';
 DECLARE @seed_serial    int = 4019;   /* VERIFY against the final manual entry */
 DECLARE @seed_page      int = 4019;   /* VERIFY against the final manual entry */

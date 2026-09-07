@@ -58,6 +58,11 @@ class SmsControlController extends Controller
             $template = SmsSetting::templateFor($key);
             $preview = $this->dispatcher->preview($key);
 
+            // Batch messages carry a second wording -- see the note on
+            // sms_settings.plural_template.
+            $hasPlural = SmsSetting::hasPluralForm($key);
+            $pluralPreview = $hasPlural ? $this->dispatcher->preview($key, null, true) : null;
+
             $groups[$definition['group'] ?? 'Other'][] = [
                 'key' => $key,
                 'label' => $definition['label'] ?? $key,
@@ -73,6 +78,11 @@ class SmsControlController extends Controller
                 // Which name this message goes out under, and the choices.
                 'sender_group' => SmsSetting::senderGroupFor($key),
                 'sender_id' => SmsSetting::senderFor($key),
+                'has_plural' => $hasPlural,
+                'plural_template' => $hasPlural ? SmsSetting::templateFor($key, true) : null,
+                'plural_preview' => $pluralPreview['body'] ?? null,
+                'plural_characters' => $pluralPreview['characters'] ?? 0,
+                'plural_pages' => $pluralPreview['pages'] ?? 0,
                 'tokens' => array_values((array) ($definition['tokens'] ?? [])),
                 'preview' => $preview['body'],
                 'characters' => $preview['characters'],
@@ -113,6 +123,7 @@ class SmsControlController extends Controller
         $validated = $request->validate([
             'enabled' => 'required|boolean',
             'template' => 'nullable|string|max:1000',
+            'plural_template' => 'nullable|string|max:1000',
             // The sender GROUP, not a free-text ID: allowing anything here would
             // let somebody send under a name the vendor has not registered, and
             // an unregistered sender is accepted, billed and never delivered.
@@ -135,9 +146,14 @@ class SmsControlController extends Controller
         }
 
         $template = trim((string) ($validated['template'] ?? ''));
+        $pluralTemplate = trim((string) ($validated['plural_template'] ?? ''));
 
-        if ($template !== '') {
-            $unknown = $this->unknownTokens($key, $template);
+        foreach ([$template, $pluralTemplate] as $candidate) {
+            if ($candidate === '') {
+                continue;
+            }
+
+            $unknown = $this->unknownTokens($key, $candidate);
 
             if (!empty($unknown)) {
                 /*
@@ -158,6 +174,7 @@ class SmsControlController extends Controller
             [
                 'enabled' => (bool) $validated['enabled'],
                 'template' => $template !== '' ? $template : null,
+                'plural_template' => $pluralTemplate !== '' ? $pluralTemplate : null,
                 // Null returns the message to the group it ships under, the
                 // same way a blank template returns it to the shipped wording.
                 'sender' => $validated['sender'] ?? null,

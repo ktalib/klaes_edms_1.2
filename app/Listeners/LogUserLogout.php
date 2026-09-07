@@ -39,6 +39,14 @@ class LogUserLogout
             return;
         }
 
+        // Sign-outs a person performed, only — the matching guard to the one in
+        // LogUserLogin. A script calling Auth::logout() would otherwise mark a
+        // member of staff offline mid-shift, close the session row that carries
+        // their attendance duration, and text them that their day had ended.
+        if (!ActivityLogService::isInteractiveSignIn()) {
+            return;
+        }
+
         try {
             $user = $event->user;
             $userId = null;

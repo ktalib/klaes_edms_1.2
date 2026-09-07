@@ -173,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // (nothing to choose between) and from consentGatedTypes.
         'deed-of-purchase': {
             id: 'deed-of-purchase',
-            name: 'Deed of Purchase Registration',
+            name: 'Deed of Purchase',
             firstParty: 'Vendor',
             secondParty: 'Purchaser',
             needsRootReg: true,
