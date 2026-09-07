@@ -364,7 +364,8 @@
 
                                         {{-- Removal is a flag on this form rather than its own request: the card
                                              sits inside the edit form, and a nested form is invalid HTML. The
-                                             list screen's action menu posts to users.profile-photo.destroy. --}}
+                                             list screen's action menu opens its own Profile Picture card, which
+                                             posts to users.profile-photo.update instead. --}}
                                         <input type="hidden" name="remove_profile" id="removeProfileFlag" value="0">
                                         @if ($user->profile_url)
                                             <div class="mt-2">

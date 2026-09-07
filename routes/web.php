@@ -236,6 +236,8 @@ Route::group(['prefix' => 'users', 'middleware' => ['auth', 'XSS']], function ()
     Route::post('/import', [\App\Http\Controllers\UserImportController::class, 'importUsers'])->name('users.import.process');
     Route::post('/clear-test-data', [\App\Http\Controllers\UserImportController::class, 'clearTestData'])->name('users.clear.test');
     Route::get('/import-stats', [\App\Http\Controllers\UserImportController::class, 'getImportStats'])->name('users.import.stats');
+    Route::get('/{user}/profile-photo', [UserController::class, 'editProfilePhoto'])->name('users.profile-photo.edit');
+    Route::post('/{user}/profile-photo', [UserController::class, 'updateProfilePhoto'])->name('users.profile-photo.update');
     Route::delete('/{user}/profile-photo', [UserController::class, 'removeProfilePhoto'])->name('users.profile-photo.destroy');
     Route::patch('/{user}/suspend', [UserController::class, 'suspend'])->name('users.suspend');
     Route::patch('/{user}/unsuspend', [UserController::class, 'unsuspend'])->name('users.unsuspend');

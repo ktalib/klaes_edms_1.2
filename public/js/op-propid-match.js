@@ -70,7 +70,6 @@
             propId: document.getElementById('opm-prop-id'),
             plotNo: document.getElementById('opm-plot-no'),
             hideMatched: document.getElementById('opm-hide-matched'),
-            unlinkedOnly: document.getElementById('opm-unlinked-only'),
             opSearchBtn: document.getElementById('opm-op-search-btn'),
             opClear: document.getElementById('opm-op-clear'),
             opCount: document.getElementById('opm-op-count'),
@@ -379,7 +378,6 @@
                 plot_no: el.plotNo.value.trim()
             };
 
-            if (el.unlinkedOnly.checked) params.unlinked_only = 1;
             if (el.hideMatched.checked && target && target.prop_id) params.exclude_prop_id = target.prop_id;
 
             el.opResults.classList.remove('hidden');

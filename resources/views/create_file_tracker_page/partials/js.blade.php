@@ -3994,6 +3994,60 @@
             : '';
     }
 
+    /**
+     * Passport photo of the officer named on a log row, or null when there is none.
+     *
+     * The map is keyed by officer id (tracker.officerPhotos, built server-side for this
+     * tracker's own log AND its prior-cycle rows). Rows that store only a name fall back
+     * to the tracker-level holder photo, and then ONLY when the names match — a row must
+     * never borrow another officer's face.
+     */
+    function officerPhotoUrl(tracker, officerId, officerName) {
+        const photos = (tracker && tracker.officerPhotos) || {};
+        const byId = officerId !== null && officerId !== undefined && officerId !== ''
+            ? photos[String(officerId)]
+            : null;
+
+        if (byId) {
+            return byId;
+        }
+
+        const trackerName = (tracker && tracker.receivingOfficerName) || '';
+        const sameOfficer = officerName && trackerName
+            && officerName.trim().toLowerCase() === trackerName.trim().toLowerCase();
+
+        return sameOfficer ? ((tracker && tracker.receivingOfficerPhoto) || null) : null;
+    }
+
+    /**
+     * The Receiving Officer cell's leading avatar. Rendered only when a photo is actually
+     * on file — an officer without one keeps the plain name the table has always shown,
+     * and rows naming a place ("Archive", "N/A") never get a face.
+     *
+     * Carries the same data-user-card attributes as the name beside it, so clicking the
+     * face opens the shared profile card too rather than being dead space.
+     */
+    function officerAvatarHtml(tracker, officerId, officerName) {
+        if (!officerName || !window.UserAvatar) {
+            return '';
+        }
+
+        const url = officerPhotoUrl(tracker, officerId, officerName);
+
+        if (!url) {
+            return '';
+        }
+
+        const idAttr = (officerId !== null && officerId !== undefined && officerId !== '')
+            ? ' data-user-id="' + escapeHtml(String(officerId)) + '"'
+            : '';
+
+        return '<span data-user-card' + idAttr + ' data-user-name="' + escapeHtml(officerName) + '"'
+            + ' style="cursor:pointer;display:inline-flex;" title="View profile">'
+            + window.UserAvatar.html(url, officerName, 24)
+            + '</span>';
+    }
+
     function resolveStatusDisplay(entry, fallbackStatus = '') {
         const toTrimmed = (value) => typeof value === 'string' ? value.trim() : '';
         const overrideRaw = entry
@@ -6316,7 +6370,11 @@
                                     const nameHtml = isPerson
                                         ? '<span class="upc-trigger" data-user-card' + (officerId ? ' data-user-id="' + sanitize(String(officerId)) + '"' : '') + ' data-user-name="' + sanitize(officerName) + '" title="View profile">' + displayName + '</span>'
                                         : '<span>' + displayName + '</span>';
-                                    return '<div class="flex items-center gap-2">' + nameHtml + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
+                                    // Passport photo beside the name when one is on file — same
+                                    // UserAvatar the Quick Search timeline uses, so one officer
+                                    // reads identically everywhere.
+                                    const avatarHtml = isPerson ? officerAvatarHtml(tracker, officerId, officerName) : '';
+                                    return '<div class="flex items-center gap-2">' + avatarHtml + nameHtml + (badge ? '<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">' + badge + '</span>' : '') + '</div>';
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-700">
@@ -6529,7 +6587,8 @@
                                     const nameHtml = isPerson
                                         ? `<span class="upc-trigger" data-user-card${officerId ? ` data-user-id="${sanitize(String(officerId))}"` : ''} data-user-name="${sanitize(officerName)}" title="View profile">${finalDisplayName}</span>`
                                         : `<span>${finalDisplayName}</span>`;
-                                    return `<div class="flex items-center gap-2">${nameHtml}${finalBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${finalBadge}</span>` : ''}</div>`;
+                                    const avatarHtml = isPerson ? officerAvatarHtml(tracker, officerId, officerName) : '';
+                                    return `<div class="flex items-center gap-2">${avatarHtml}${nameHtml}${finalBadge ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-mono text-blue-700">${finalBadge}</span>` : ''}</div>`;
                                 })()}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-600">

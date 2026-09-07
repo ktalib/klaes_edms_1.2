@@ -208,11 +208,6 @@
                        class="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
                 Hide permits already on the target Property ID
               </label>
-              <label class="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
-                <input type="checkbox" id="opm-unlinked-only"
-                       class="h-3.5 w-3.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
-                Only permits with no Transfer of Title yet
-              </label>
             </div>
           </div>
 

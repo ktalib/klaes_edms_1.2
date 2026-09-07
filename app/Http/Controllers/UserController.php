@@ -851,6 +851,49 @@ class UserController extends Controller
     }
 
 
+    private function authorizeProfilePhoto(User $user): void
+    {
+        $actor = Auth::user();
+        abort_unless($actor && ($actor->isSuperAdmin() || $actor->can('edit user')), 403);
+        $parentId = parentId();
+        if (!$actor->isSuperAdmin() && $actor->type !== 'owner' && !empty($parentId)) {
+            abort_unless((string) $user->parent_id === (string) $parentId, 403);
+        }
+    }
+
+    public function editProfilePhoto(User $user)
+    {
+        $this->authorizeProfilePhoto($user);
+
+        return view('user.profile-photo', compact('user'));
+    }
+
+    public function updateProfilePhoto(Request $request, User $user)
+    {
+        $this->authorizeProfilePhoto($user);
+        $request->validate([
+            'action' => ['required', Rule::in(['update', 'remove'])],
+            'profile' => $this->profileUploadRules($request->input('action') === 'update'),
+        ]);
+
+        $oldValues = $user->only(['profile', 'passport_photo_path']);
+        $photos = app(ProfilePhotoService::class);
+        if ($request->input('action') === 'remove') {
+            $photos->remove($user);
+            $message = __('Profile picture removed. This user will be asked to upload a new photo before using the system.');
+        } else {
+            $photos->store($request->file('profile'), $user);
+            $message = __('Profile picture updated successfully.');
+        }
+        $user->save();
+        app(\App\Services\AuditService::class)->logAction(
+            'UPDATE', 'users', $user->id, $oldValues,
+            $user->only(['profile', 'passport_photo_path']), $message
+        );
+
+        return response()->json(['success' => true, 'message' => $message, 'photoUrl' => $user->profile_url]);
+    }
+
     /**
      * Clear a user's passport photo from the row action menu.
      *

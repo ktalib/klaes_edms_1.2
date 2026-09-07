@@ -3422,10 +3422,22 @@ HTML;
             $tracker->receiving_officer_name
         ));
 
+        // Movement entries from EARLIER tracking cycles of the same file. The front-end
+        // renders these read-only between the Archive home row and this tracker's own
+        // rows so a file that is re-tracked after being logged back into the registry
+        // shows one continuous timeline instead of a fresh, disconnected log.
+        // The DIIT "File Commissioning" line is prepended here, so a commissioned
+        // file's timeline always opens where the file actually began.
+        $priorMovements = $this->withCommissioningLine($tracker);
+        $tracker->setAttribute('prior_movements', $priorMovements);
+
         // The KANGIS sheet takes its holder from the latest movement entry when the
-        // tracker-level officer is blank, so those officers need photos too. One
-        // primed query covers the whole log; ids with no photo are dropped.
+        // tracker-level officer is blank, so those officers need photos too, and the
+        // log table draws a face beside every Receiving Officer cell — including the
+        // read-only prior-cycle rows, whose officers are not in this tracker's own log.
+        // One primed query covers both lists; ids with no photo are dropped.
         $logOfficerIds = collect($tracker->movement_log ?: [])
+            ->merge($priorMovements)
             ->pluck('receiving_officer_id')
             ->filter()
             ->unique();
@@ -3453,14 +3465,6 @@ HTML;
         // Original file-indexing created_at — used as the "home location" row's
         // Date & Time / Log In on the Movement History sheet.
         $tracker->setAttribute('file_indexing_created_at', $this->getFileIndexingCreatedAt($tracker->file_number));
-
-        // Movement entries from EARLIER tracking cycles of the same file. The front-end
-        // renders these read-only between the Archive home row and this tracker's own
-        // rows so a file that is re-tracked after being logged back into the registry
-        // shows one continuous timeline instead of a fresh, disconnected log.
-        // The DIIT "File Commissioning" line is prepended here, so a commissioned
-        // file's timeline always opens where the file actually began.
-        $tracker->setAttribute('prior_movements', $this->withCommissioningLine($tracker));
 
         // DIIT flags for the front end:
         //   is_commissioned — the file was commissioned through KLAES, so its history

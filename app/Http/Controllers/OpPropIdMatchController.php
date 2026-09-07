@@ -217,7 +217,6 @@ class OpPropIdMatchController extends Controller
             ? $request->query('serial_mode')
             : 'exact';
         $excludePropId = trim((string) $request->query('exclude_prop_id', ''));
-        $unlinkedOnly = $request->boolean('unlinked_only');
 
         $serials = $this->splitList($serialInput);
 
@@ -239,8 +238,8 @@ class OpPropIdMatchController extends Controller
         $conn = DB::connection(self::CONNECTION);
 
         try {
-            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $unlinkedOnly);
-            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $unlinkedOnly);
+            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId);
+            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId);
         } catch (\Throwable $e) {
             Log::channel('op_batch')->error('OP prop_id match: OP search failed', [
                 'serials' => $serials,
@@ -405,7 +404,7 @@ class OpPropIdMatchController extends Controller
 
     // ---------------------------------------------------------------- search internals
 
-    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $unlinkedOnly)
+    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId)
     {
         $query = $conn->table('pra as o')
             ->where('o.instrument_type', 'LIKE', OpPropIdMatchService::PRA_OP_TYPE_LIKE)
@@ -432,9 +431,10 @@ class OpPropIdMatchController extends Controller
             });
         }
 
-        if ($unlinkedOnly) {
-            $this->applyUnlinkedFilter($query, 'pra', 'o.id', 'o.prop_id');
-        }
+        // Always. A permit that already carries a Transfer of Title has been matched, and
+        // there is nothing left for this page to do with it — offering it again invites
+        // an officer to move a settled parcel onto a second file.
+        $this->applyUnlinkedFilter($query, 'pra', 'o.id', 'o.prop_id');
 
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.fileno', 'o.temp_fileno',
@@ -470,7 +470,7 @@ class OpPropIdMatchController extends Controller
             ]);
     }
 
-    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $unlinkedOnly)
+    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId)
     {
         $query = $conn->table('instrument_capture as o')
             ->where('o.instrument_type', OpPropIdMatchService::IC_OP_TYPE)
@@ -500,9 +500,8 @@ class OpPropIdMatchController extends Controller
             });
         }
 
-        if ($unlinkedOnly) {
-            $this->applyUnlinkedFilter($query, 'instrument_capture', 'o.id', 'o.prop_id');
-        }
+        // Always — same rule as the pra arm above.
+        $this->applyUnlinkedFilter($query, 'instrument_capture', 'o.id', 'o.prop_id');
 
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.temp_fileno',
