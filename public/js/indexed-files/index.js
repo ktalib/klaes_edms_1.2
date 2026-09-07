@@ -465,7 +465,6 @@ function buildLandUseBadge(landUse) {
 function buildActionsMenu(row, viewUrl) {
   const id = row.id;
   const editUrl = buildEditUrl(id);
-  const deleteUrl = buildDeleteUrl(id);
   const trackingUrl = buildTrackingUrl(id);
   const safeFileNumber = escapeHtml(row.file_number ?? `File #${id}`);
 
@@ -481,12 +480,13 @@ function buildActionsMenu(row, viewUrl) {
         </button>`
     : '';
 
-  const viewButton = viewUrl
-    ? `<button type="button" class="view-file-btn block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" data-file-id="${id}" data-view-url="${escapeHtml(viewUrl)}">
+  // Always offered: View Details now needs only the row id — it opens the File
+  // Snapshot card rather than navigating to a URL. viewUrl is kept on the element
+  // for anything still reading it, but handleView() no longer uses it.
+  const viewButton = `<button type="button" class="view-file-btn block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors" data-file-id="${id}" data-view-url="${escapeHtml(viewUrl || '')}">
           <i data-lucide="eye" class="h-4 w-4 mr-2.5 inline text-blue-500"></i>
           View Details
-        </button>`
-    : '';
+        </button>`;
 
   const editButton = editUrl
     ? `<button type="button" class="edit-file-btn block w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors font-semibold" data-file-id="${id}" data-edit-url="${escapeHtml(editUrl)}">
@@ -494,6 +494,23 @@ function buildActionsMenu(row, viewUrl) {
           Edit Record
         </button>`
     : '';
+
+  // Opens the shared cross-module Property Timeline card (public/js/property-timeline-modal.js)
+  // — the same modal Legal Search, Instrument Registration, the Property Card and the PHS
+  // dashboard open, so this menu cannot show a history that disagrees with theirs.
+  //
+  // Passes the FILE NUMBER only, never a prop_id: file_indexings.prop_id holds row ordinals
+  // on a large share of legacy rows, so keying the timeline on it would pull another
+  // property's transactions. PropertySearchController resolves the real prop_id from the
+  // file number instead.
+  //
+  // Disabled when the row has no usable file number (the timeline endpoint 404s without one).
+  const timelineFileNumber = String(row.file_number ?? '').trim();
+  const hasTimelineTarget = timelineFileNumber !== '' && timelineFileNumber !== '-';
+  const viewTransactionsButton = `<button type="button" class="view-transactions-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm ${hasTimelineTarget ? 'text-violet-700 hover:bg-violet-50' : 'text-gray-400 cursor-not-allowed opacity-40'} transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" ${hasTimelineTarget ? '' : 'disabled="disabled"'}>
+          <i data-lucide="history" class="h-4 w-4 mt-0.5 shrink-0 ${hasTimelineTarget ? 'text-violet-600' : 'text-gray-300'}"></i>
+          <span class="leading-snug">View File Transactions</span>
+        </button>`;
 
   const isKangisVariant = (config.tableVariant || '') === 'kangis';
   const trackingLabel = isKangisVariant ? 'Print Tracking Sheet' : 'View Tracking Sheet';
@@ -592,10 +609,18 @@ function buildActionsMenu(row, viewUrl) {
           KANGIS FileNo Placeholder
         </button>` : '';
 
-  const deleteButton = deleteUrl
-    ? `<button type="button" class="indexed-delete-btn block w-full text-left px-4 py-2.5 text-sm text-gray-400 cursor-not-allowed opacity-40 transition-colors" data-delete-url="${deleteUrl}" data-file-number="${safeFileNumber}" disabled="disabled">
-          <i data-lucide="trash-2" class="h-4 w-4 mr-2.5 inline text-gray-300"></i>
-          Delete Record
+  // Master Delete. Erases the record from file_indexings, fileNumber,
+  // customers_staging, entities_staging, pra, CofO_staging and the queue/link
+  // tables, with no indexing_duplicates archive behind it — the audit entry is all
+  // that survives. Two-step typed confirmation via the shared MasterDelete flow.
+  //
+  // Hidden entirely from non-admins, the same as "Move to Indexing Duplicates"
+  // above it; IndexedFileTableController::masterDelete re-checks the role, since
+  // the endpoint is reachable directly.
+  const deleteButton = config.canMasterDelete
+    ? `<button type="button" class="master-delete-btn flex items-start gap-2.5 w-full text-left px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition-colors" data-file-id="${id}" data-file-number="${safeFileNumber}" data-file-title="${escapeHtml(row.file_title ?? '')}">
+          <i data-lucide="trash-2" class="h-4 w-4 mt-0.5 shrink-0 text-red-600"></i>
+          <span class="leading-snug font-semibold">Master Delete</span>
         </button>`
     : '';
 
@@ -659,6 +684,7 @@ function buildActionsMenu(row, viewUrl) {
           </div>
           ${editButton}
           ${viewButton}
+          ${viewTransactionsButton}
           ${trackingButton}
           ${commissionSheetButton}
           ${moveToDuplicatesButton}
@@ -686,22 +712,6 @@ function buildEditUrl(id) {
 
   if (typeof config.editUrl === 'string') {
     return config.editUrl;
-  }
-
-  return null;
-}
-
-function buildDeleteUrl(id) {
-  if (!id) {
-    return null;
-  }
-
-  if (typeof config.deleteUrlTemplate === 'string') {
-    return config.deleteUrlTemplate.replace('__ID__', String(id));
-  }
-
-  if (typeof config.deleteUrl === 'string') {
-    return config.deleteUrl;
   }
 
   return null;
@@ -803,6 +813,16 @@ function handleTableBodyClick(event) {
     return;
   }
 
+  const viewTransactionsBtn = event.target.closest('.view-transactions-btn');
+  if (viewTransactionsBtn) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (viewTransactionsBtn.disabled) return;
+    closeAllActionMenus();
+    handleViewTransactions(viewTransactionsBtn);
+    return;
+  }
+
   const trackingButton = event.target.closest('.print-tracking-btn');
   if (trackingButton) {
     event.preventDefault();
@@ -888,11 +908,12 @@ function handleTableBodyClick(event) {
     return;
   }
 
-  const deleteButton = event.target.closest('.indexed-delete-btn');
+  const deleteButton = event.target.closest('.master-delete-btn');
   if (deleteButton) {
     event.preventDefault();
     event.stopPropagation();
-    handleDelete(deleteButton);
+    closeAllActionMenus();
+    handleMasterDelete(deleteButton);
     return;
   }
 
@@ -2468,19 +2489,70 @@ function closeAllActionMenus() {
   });
 }
 
-function handleView(button) {
-  const viewUrl = button.getAttribute('data-view-url');
+/**
+ * View Details — opens the File Snapshot card, the same card the indexing form
+ * shows after a save.
+ *
+ * It used to open route('fileindex.show') in a new tab. That route renders
+ * fileindexing.show if the view exists and otherwise redirects to the index, and
+ * the view has never existed — so the tab opened, bounced back to the file list
+ * and looked like nothing happened. Reusing the snapshot card replaces a dead tab
+ * with the file's whole captured state, and the two screens can no longer disagree
+ * about what was saved.
+ *
+ * The endpoint answers for every file, not just the handful with history:
+ * file_snapshots began on 2026-08-26 and holds 9 of 133,808 files, so it composes
+ * the current state live for the rest and flags it (see
+ * FileIndexingController::snapshot). Either way one card renders.
+ *
+ * Falls back to the cached row's own fields if the request fails outright — the
+ * operator gets the row they clicked rather than an error they cannot act on.
+ */
+async function handleView(button) {
   const fileId = button.getAttribute('data-file-id');
+  closeAllActionMenus();
 
-  if (viewUrl && viewUrl !== '#' && viewUrl !== '') {
-    window.open(viewUrl, '_blank');
-    closeAllActionMenus();
+  if (!fileId) {
     return;
   }
 
-  const row = getRowFromCache(fileId);
-  if (row) {
-    showRowDetails(row);
+  if (typeof window.showFileSnapshotCard !== 'function') {
+    showRowDetails(getRowFromCache(fileId));
+    return;
+  }
+
+  let loading = false;
+  if (window.Swal) {
+    loading = true;
+    window.Swal.fire({
+      title: 'Loading file…',
+      allowOutsideClick: false,
+      didOpen: () => window.Swal.showLoading(),
+    });
+  }
+
+  try {
+    const response = await fetch(`/fileindexing/${encodeURIComponent(fileId)}/snapshot`, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    const payload = await response.json();
+
+    if (loading) {
+      window.Swal.close();
+    }
+
+    if (payload && payload.success && payload.snapshot) {
+      window.showFileSnapshotCard(payload.snapshot);
+      return;
+    }
+
+    showRowDetails(getRowFromCache(fileId));
+  } catch (error) {
+    if (loading) {
+      window.Swal.close();
+    }
+    console.warn('File snapshot could not be loaded', error);
+    showRowDetails(getRowFromCache(fileId));
   }
 }
 
@@ -2493,6 +2565,27 @@ function handleEdit(button) {
   }
 
   alert('Edit route is not configured for this record.');
+}
+
+/**
+ * Opens the shared Property Timeline card for the row's file.
+ *
+ * Keyed on the file number alone — see viewTransactionsButton in buildActionsMenu()
+ * for why file_indexings.prop_id must not be used here.
+ */
+function handleViewTransactions(button) {
+  const fileNumber = (button.getAttribute('data-file-number') || '').trim();
+  if (fileNumber === '' || fileNumber === '-') {
+    return;
+  }
+
+  if (typeof window.openPropertyTimeline === 'function') {
+    window.openPropertyTimeline('', fileNumber);
+    return;
+  }
+
+  // property-timeline-modal.js not on the page: fall back to the standalone timeline page.
+  window.open(`/property-search/timeline?file_number=${encodeURIComponent(fileNumber)}`, '_blank');
 }
 
 function handleTracking(button) {
@@ -2786,45 +2879,88 @@ async function generateMatchedFileCommissioningSheetPDF(row, watermarkText = 'OR
   }
 }
 
-function handleDelete(button) {
-  const deleteUrl = button.getAttribute('data-delete-url');
-  const fileNumber = button.getAttribute('data-file-number') || 'this file';
-  if (!deleteUrl) {
+/**
+ * Master Delete an indexed file.
+ *
+ * Asks the server what the delete would remove FIRST (the same read-only preview
+ * "Move to Indexing Duplicates" uses — both remove the same rows), so the
+ * confirmation quotes real counts for this record instead of a generic warning.
+ * A file the preview reports as blocked never reaches the confirmation.
+ *
+ * The typed-confirmation dialog and the DELETE call are MasterDelete.confirm()'s,
+ * shared with the Recommendation and RofO master deletes.
+ */
+async function handleMasterDelete(button) {
+  const fileId = button.getAttribute('data-file-id');
+  const fileNumber = (button.getAttribute('data-file-number') || '').trim();
+  const fileTitle = button.getAttribute('data-file-title') || '';
+
+  if (!fileId) {
     return;
   }
 
-  const confirmation = window.confirm(`Delete ${fileNumber}? This action cannot be undone.`);
-  if (!confirmation) {
-    closeAllActionMenus();
+  if (typeof window.MasterDelete === 'undefined') {
+    alert('The Master Delete dialog did not load. Refresh the page and try again.');
     return;
   }
 
-  const csrfToken = getCsrfToken();
-  if (!csrfToken) {
-    alert('Unable to locate CSRF token. Please refresh the page and try again.');
-    return;
+  let preview = null;
+  try {
+    const response = await fetch(`/api/indexed-files/${encodeURIComponent(fileId)}/indexing-duplicate-preview`, {
+      headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+    });
+    const payload = await response.json();
+
+    if (payload && payload.success) {
+      if (payload.blocked) {
+        const blocking = Object.values(payload.preview?.blocking || {}).join(', ');
+        window.Swal?.fire({
+          icon: 'error',
+          title: 'Cannot delete this file',
+          text: `${fileNumber} still has ${blocking || 'attached work'}. Detach or delete those first.`,
+        });
+        return;
+      }
+      preview = payload.preview;
+    }
+  } catch (error) {
+    // Preview is an aid, not a gate — the server re-runs every check on the
+    // delete itself, so a failed preview falls through to a generic warning.
+    console.warn('Master Delete preview failed', error);
   }
 
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = deleteUrl;
-  form.style.display = 'none';
+  const targets = [];
+  Object.values(preview?.deletions || {}).forEach((entry) => {
+    const label = entry?.label ?? entry;
+    const count = entry?.count;
+    targets.push(count === undefined ? String(label) : `${label} — ${count} row(s)`);
+  });
+  if (!targets.length) {
+    targets.push('The indexed file record and its file-number registry entry');
+  }
 
-  const tokenInput = document.createElement('input');
-  tokenInput.type = 'hidden';
-  tokenInput.name = '_token';
-  tokenInput.value = csrfToken;
+  const retained = Object.values(preview?.retained || {})
+    .map((entry) => (entry?.label ?? entry))
+    .filter(Boolean);
 
-  const methodInput = document.createElement('input');
-  methodInput.type = 'hidden';
-  methodInput.name = '_method';
-  methodInput.value = 'DELETE';
+  const transactionTotal = Number(preview?.transaction_total || 0);
+  const lead = transactionTotal > 0
+    ? `This permanently deletes <b>${escapeHtml(fileNumber)}</b>${fileTitle ? ' (' + escapeHtml(fileTitle) + ')' : ''}. `
+      + `<b style="color:#b91c1c">It carries ${transactionTotal} registered transaction(s)</b> — check this is not the original file.`
+    : `This permanently deletes <b>${escapeHtml(fileNumber)}</b>${fileTitle ? ' (' + escapeHtml(fileTitle) + ')' : ''}. Nothing is archived and there is no undo.`;
 
-  form.appendChild(tokenInput);
-  form.appendChild(methodInput);
-  document.body.appendChild(form);
-
-  form.submit();
+  window.MasterDelete.confirm({
+    url: `/api/indexed-files/${encodeURIComponent(fileId)}/master-delete`,
+    reference: fileNumber,
+    title: 'Master Delete indexed file',
+    lead,
+    targets,
+    keeps: retained.length ? `Kept: ${retained.join(', ')}.` : undefined,
+    onDone: async () => {
+      await loadTable();
+      loadStats();
+    },
+  });
 }
 
 async function handleMarkDuplicate(button) {
@@ -4262,26 +4398,67 @@ function getRowFromCache(id) {
   return rowCache.get(String(id)) || null;
 }
 
+/**
+ * Last-resort detail view: the row the table already holds, when the snapshot
+ * endpoint could not be reached at all. Everything here is client-side, so it
+ * works even when the server does not.
+ */
 function showRowDetails(row) {
-  const details = [
-    `File Number: ${row.file_number || '-'}`,
-    `File Name: ${row.file_title || '-'}`,
-    `Gen. Registry: ${row.general_registry || '-'}`,
-    `Registry: ${getRegistryDisplayValue(row)}`,
-    `Sys Batch No: ${row.sys_batch_no || '-'}`,
-    `MDC Batch No: ${row.batch_no || '-'}`,
-    `Tracking ID: ${row.tracking_id || '-'}`,
-    `Plot Number: ${row.plot_number || '-'}`,
-    `TP Number: ${row.tp_no || '-'}`,
-    `Land Use: ${row.land_use_type || '-'}`,
-    `District: ${row.district || '-'}`,
-    `LGA: ${row.lga || '-'}`,
-    `Indexed Date: ${row.indexed_at || '-'}`,
-    `Indexed By: ${row.indexed_by || '-'}`,
-  ].join('\n');
-
-  alert(`Indexed File Details\n\n${details}`);
   closeAllActionMenus();
+
+  if (!row) {
+    window.Swal?.fire({
+      icon: 'error',
+      title: 'Details unavailable',
+      text: 'This file could not be loaded. Refresh the page and try again.',
+    });
+    return;
+  }
+
+  const fields = [
+    ['File Number', row.file_number],
+    ['File Name', row.file_title],
+    ['Gen. Registry', row.general_registry],
+    ['Registry', getRegistryDisplayValue(row)],
+    ['Sys Batch No', row.sys_batch_no],
+    ['MDC Batch No', row.batch_no],
+    ['Tracking ID', row.tracking_id],
+    ['Plot Number', row.plot_number],
+    ['TP Number', row.tp_no],
+    ['Land Use', row.land_use_type],
+    ['District', row.district],
+    ['LGA', row.lga],
+    ['Indexed Date', row.indexed_at],
+    ['Indexed By', row.indexed_by],
+  ];
+
+  if (!window.Swal) {
+    alert(`Indexed File Details\n\n${fields.map(([k, v]) => `${k}: ${v || '-'}`).join('\n')}`);
+    return;
+  }
+
+  const rows = fields.map(([label, value]) => (
+    '<tr>'
+    + '<td style="padding:4px 8px;color:#64748b;white-space:nowrap;vertical-align:top;">'
+    + escapeHtml(label) + '</td>'
+    + '<td style="padding:4px 8px;color:#0f172a;font-weight:600;word-break:break-word;">'
+    + escapeHtml(value || '-') + '</td>'
+    + '</tr>'
+  )).join('');
+
+  window.Swal.fire({
+    title: 'Indexed File Details',
+    html:
+      '<p style="font-size:11px;color:#94a3b8;text-align:left;margin-bottom:8px;">'
+      + 'The full File Snapshot could not be loaded, so this shows what the table already holds.'
+      + '</p>'
+      + '<table style="width:100%;font-size:12px;text-align:left;border-collapse:collapse;">'
+      + rows
+      + '</table>',
+    width: 560,
+    confirmButtonText: 'Close',
+    confirmButtonColor: '#334155',
+  });
 }
 
 function getCsrfToken() {

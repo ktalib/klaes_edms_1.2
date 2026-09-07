@@ -493,6 +493,7 @@ class LandRecommendationController extends Controller
                 'id', 'batch_seq', 'file_number', 'applicant_name', 'plot_number', 'location',
                 'purpose_of_clause', 'purpose_id', 'land_use', 'land_use_id',
                 'status', 'rofo_status', 'land_rofo_serial_no', 'batch_mother_file_no',
+                'is_existing_recommendation',
             ]);
 
         if ($children->isEmpty()) {
@@ -508,6 +509,22 @@ class LandRecommendationController extends Controller
             ? LandRecommendationBatchDocument::where('rofo_batch_id', $batchId)->first()
             : null;
 
+        // Approving one child at a time is held to exactly the rules the whole-batch
+        // approval is held to, so the row can say why it is shut instead of the
+        // officer finding out from a 422. Two rules apply, and they are different
+        // things: the mother's letter is the batch's, and covers every child at once
+        // (motherRecommendationGate); an already-approved letter is one child's own,
+        // and only that child waits on it (approvedLetterGate). Both are still
+        // enforced server-side — this only saves the round trip.
+        $motherSatisfied = !$isSubdivision || $document !== null;
+
+        $ownLetters = LandRecommendationDocument::whereIn(
+                'land_recommendation_id',
+                $children->where('is_existing_recommendation', 1)->pluck('id')->all()
+            )
+            ->pluck('land_recommendation_id')
+            ->flip();
+
         return response()->json([
             'success'  => true,
             'batch_id' => $batchId,
@@ -520,11 +537,17 @@ class LandRecommendationController extends Controller
                 'view_url'      => route('land-recommendations.batch-document.show', $batchId),
                 'original_name' => $document->original_name,
                 'summary'       => $document->summary(),
+                // Tells the preview card whether to draw an <img> or a PDF frame.
+                'mime_type'     => $document->mime_type,
                 'uploaded_at'   => optional($document->uploaded_at)->format('d/m/Y H:i'),
             ] : null,
             'upload_url' => $isSubdivision
                 ? route('land-recommendations.batch-document.store', $batchId)
                 : null,
+            // The batch-wide half of the approval gate, and how much is left to do.
+            'mother_satisfied' => $motherSatisfied,
+            'pending_count'    => $children->where('status', '!=', LandRecommendation::STATUS_APPROVED)->count(),
+            'batch_approve_url' => route('land-recommendations.batch-approve'),
             'children' => $children->map(fn ($c, $i) => [
                 'id'             => $c->id,
                 'seq'            => $c->batch_seq ?: ($i + 1),
@@ -538,6 +561,12 @@ class LandRecommendationController extends Controller
                 'serial_no'      => $c->land_rofo_serial_no,
                 'edit_url'       => route('land-recommendations.edit', $c->id),
                 'print_url'      => route('land-recommendations.print', $c->id),
+                'approve_url'    => route('land-recommendations.approve', $c->id),
+                // This child's own letter, not the mother's: a record captured from
+                // the OP-holder Match flow stands for a recommendation already
+                // approved on paper, and waits for that scan on its own.
+                'needs_letter'     => (bool) $c->is_existing_recommendation,
+                'letter_uploaded'  => $ownLetters->has($c->id),
             ])->values(),
         ]);
     }
@@ -2383,7 +2412,11 @@ class LandRecommendationController extends Controller
                     'plot_number'       => (string) ($child->plot_number ?? ''),
                     'location'          => (string) ($child->location ?? ''),
                     'land_use_id'       => $child->land_use_id,
-                    'purpose_id'        => $child->purpose_id,
+                    // "Other" is stored as a free-text purpose_of_clause with a
+                    // null purpose_id. Rehydrate it as the select's Other option
+                    // so the batch editor exposes the accompanying text field.
+                    'purpose_id'        => $child->purpose_id ?: ($child->purpose_of_clause ? 'other' : null),
+                    'purpose_id_other'  => (string) ($child->purpose_of_clause ?? ''),
                     'page'              => (string) ($child->page ?? ''),
                     'page_2'            => (string) ($child->page_2 ?? ''),
                     'page_3'            => (string) ($child->page_3 ?? ''),
@@ -3054,10 +3087,22 @@ class LandRecommendationController extends Controller
         $generator = app(\App\Services\LandRofoGenerator::class);
         $generated = 0;
 
+        $rofoSms = app(\App\Services\Sms\RofoSmsNotifier::class);
+
         foreach ($members as $member) {
             try {
                 $generator->generate($member);
                 $generated++;
+
+                // Batch children never pass through LandRofoController::generate,
+                // so without this the whole batch-approval path would be silent
+                // while single-record generation texted the applicant.
+                $rofoSms->send(
+                    \App\Services\Sms\RofoSmsNotifier::SOURCE_LAND,
+                    $member->file_number,
+                    $member->id,
+                    'Lands Department'
+                );
             } catch (\Throwable $e) {
                 // One child failing to sync must not strand the rest of the batch
                 // as approved-but-ungenerated.

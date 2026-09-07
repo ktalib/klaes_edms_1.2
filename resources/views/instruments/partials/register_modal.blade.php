@@ -303,6 +303,78 @@
                 </div>
                 @endif
 
+                {{--
+                    Fill a missing registration number.
+
+                    A registration deleted outright leaves a serial in the paper book that
+                    nothing in KLAES accounts for. Recapturing that instrument the normal way
+                    burns the NEXT number and makes the hole permanent, so this panel offers
+                    the hole instead — and the vault stays exactly where it is.
+
+                    The list is not "everything from 1": each register was taken over
+                    part-way through the manual workflow (Deed of Assignment picks up at
+                    121/121/73, Certificate of Occupancy at 266/266/173), so the numbers on
+                    offer run from the first number that register ever issued in KLAES up to
+                    the one its vault stands on now. MissingRegistrationParticularsService
+                    works that out, per vault — which is what makes the answer follow the
+                    instrument type AND its sub-type, since the two Occupancy Permit
+                    registers paginate separately.
+
+                    Rendered only on the dedicated capture page: the side-capture pages
+                    (OSS Applications, Land/MLS) hand-type their particulars already.
+                --}}
+                @if ($showCaptureBanner ?? false)
+                <div id="backfill-panel" class="backfill-panel hidden mb-6">
+                    <label for="backfill_registration" class="backfill-panel__toggle">
+                        <input type="checkbox" id="backfill_registration" name="backfill_registration" value="1"
+                            class="mt-0.5 h-4 w-4 rounded border-gray-300 text-amber-600 focus:ring-amber-500">
+                        <span>
+                            <span class="backfill-panel__title">
+                                Fill a missing registration number
+                            </span>
+                            {{-- Held back for now. Restore by uncommenting: the JS that fills
+                                 both lines is still in place (syncBackfillPanel /
+                                 requestBackfillReport) and simply skips whichever element is
+                                 absent, so nothing else has to change.
+
+                            <span id="backfill-panel-hint" class="backfill-panel__hint">
+                                Use this only to re-enter an instrument whose registration was deleted.
+                            </span>
+                            --}}
+                        </span>
+                    </label>
+
+                    {{-- Where this register starts and where it stands: the two facts that
+                         decide which numbers can be missing at all. Held back with the hint
+                         above; uncomment to bring it back.
+
+                    <p id="backfill-range" class="backfill-panel__range hidden"></p>
+                    --}}
+
+                    <div id="backfill-fields" class="backfill-panel__fields hidden">
+                        <div>
+                            <label for="backfill_volume_select" class="backfill-panel__label">Volume</label>
+                            <select id="backfill_volume_select"
+                                class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm focus:ring-1 focus:ring-amber-500 outline-none">
+                            </select>
+                        </div>
+                        <div>
+                            <label for="backfill_serial_select" class="backfill-panel__label">Missing number</label>
+                            <select id="backfill_serial_select"
+                                class="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm font-mono focus:ring-1 focus:ring-amber-500 outline-none">
+                            </select>
+                        </div>
+                    </div>
+
+                    <p id="backfill-chosen" class="backfill-panel__chosen hidden"></p>
+
+                    {{-- What the capture actually posts. Set by JS from the two selects so
+                         the selects themselves never submit anything of their own. --}}
+                    <input type="hidden" id="backfill_volume_no" name="backfill_volume_no" value="">
+                    <input type="hidden" id="backfill_serial_no" name="backfill_serial_no" value="">
+                </div>
+                @endif
+
                 <div id="cofo-variant-container" class="hidden mb-6">
                     <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
                         Certificate of Occupancy Variant
@@ -706,7 +778,35 @@
 
                 <hr class="my-6 border-gray-200">
 
-                <!-- Row 2b: Property Details -->
+                {{-- Row 2b: instrument-specific fields.
+
+                     Sits above Property Details because on the registries that
+                     show it these are the terms of the dealing itself (for a
+                     Deed of Purchase: the amount paid and the receipt), which
+                     belong with the parties rather than after the description
+                     of the land.
+
+                     Hidden for every Deeds instrument, so the order change is
+                     invisible there. Revealed per host page via
+                     InstrumentCaptureConfig.showAdditionalDetails; the heading
+                     is overridden by additionalDetailsTitle. --}}
+                <div id="additional-details-section" class="hidden border-l-4 border-sky-500 pl-4">
+                    <h3 class="text-sm font-semibold text-gray-800 mb-4">Additional Details</h3>
+                    <div id="instrument-fields" class="space-y-4">
+                        @if(isset($record))
+                            <!-- Pre-populate some fields if we have a record -->
+                             <div class="grid grid-cols-3 gap-4">
+                                <x-instrument-input id="rootRegNo" label="Registration Number" icon="file-text" value="{{ $record->root_reg_number ?? '' }}" />
+                             </div>
+                        @else
+                            <div class="text-sm text-gray-500 italic py-2">Select an instrument type to view specific fields</div>
+                        @endif
+                    </div>
+                </div>
+
+                <hr class="my-6 border-gray-200">
+
+                <!-- Row 2c: Property Details -->
                 <div class="border-l-4 border-teal-500 pl-4">
                     <div class="flex items-center justify-between mb-4">
                         <h3 class="text-sm font-semibold text-gray-800">Property Details</h3>
@@ -842,24 +942,6 @@
 
                     <div id="solicitor-container" class="{{ isset($record->solicitor_name) ? '' : 'hidden' }} space-y-3">
                         {{-- Fields relocated to sidebar partial --}}
-                    </div>
-                </div>
-
-                <hr class="my-6 border-gray-200">
-
-                <!-- Row 4: Instrument Main Details -->
-                <!-- Row 4: Instrument Main Details -->
-                <div id="additional-details-section" class="hidden border-l-4 border-sky-500 pl-4">
-                    <h3 class="text-sm font-semibold text-gray-800 mb-4">Additional Details</h3>
-                    <div id="instrument-fields" class="space-y-4">
-                        @if(isset($record))
-                            <!-- Pre-populate some fields if we have a record -->
-                             <div class="grid grid-cols-3 gap-4">
-                                <x-instrument-input id="rootRegNo" label="Registration Number" icon="file-text" value="{{ $record->root_reg_number ?? '' }}" />
-                             </div>
-                        @else
-                            <div class="text-sm text-gray-500 italic py-2">Select an instrument type to view specific fields</div>
-                        @endif
                     </div>
                 </div>
 

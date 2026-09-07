@@ -62,6 +62,11 @@ class CaveatController extends Controller
             'file_number_type' => 'nullable|string|max:50',
             'location' => 'nullable|string|max:255',
             'petitioner' => 'required|string|max:255',
+            // The caveator's own number, for the placed/lifted messages. caveats
+            // recorded a petitioner and their address and no way to reach them
+            // until 2026_09_06_000300 added this column.
+            'petitioner_phone' => 'nullable|string|max:100',
+            'phone_confirmed' => 'nullable|boolean',
             'petitioner_address' => 'nullable|string|max:500',
             'grantee' => 'nullable|string|max:255',
             'grantee_address' => 'nullable|string',
@@ -208,7 +213,10 @@ class CaveatController extends Controller
                 $caveatData['grantee_name'] = $caveatData['grantee'];
                 unset($caveatData['grantee']); // Remove the frontend field name
             }
-            unset($caveatData['source_table'], $caveatData['source_id']);
+            // phone_confirmed is a decision the officer made on the form, not a
+            // column -- it rides in the request so the SMS dispatcher knows the
+            // shared-number warning was cleared.
+            unset($caveatData['source_table'], $caveatData['source_id'], $caveatData['phone_confirmed']);
             
             $caveat->fill($caveatData);
             $caveat->caveat_number = $caveatNumber;
@@ -259,6 +267,22 @@ class CaveatController extends Controller
         } catch (\Throwable $e) {
             DB::connection('sqlsrv')->rollBack();
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+
+        /*
+         | Tell the caveator their caveat is on the property.
+         |
+         | After the commit: a message saying a caveat exists must not go out on
+         | a transaction that then rolled back. An expired (back-captured
+         | historical) caveat sends nothing -- it was never placed today, and
+         | nobody is waiting to hear about a caveat from 2019.
+         */
+        if (!$isExpired) {
+            app(\App\Services\Sms\CaveatSmsNotifier::class)->placed(
+                $caveat,
+                $validated['petitioner_phone'] ?? null,
+                (bool) ($validated['phone_confirmed'] ?? false)
+            );
         }
 
         return response()->json([
@@ -443,9 +467,7 @@ class CaveatController extends Controller
             if (!empty($validated['lift_remarks'])) {
                 $caveat->remarks = trim(($caveat->remarks ? $caveat->remarks . "\n\n" : '') . 'LIFT REMARKS: ' . $validated['lift_remarks']);
             }
-            $caveat->status = 'released';
-            $caveat->updated_by = Auth::user()->name ?? 'System';
-            $caveat->save();
+            $liftedBy = Auth::user()->name ?? 'System';
 
             // Try to load file number string from fileNumber tables using stored id
             $fileNo = null;
@@ -472,10 +494,24 @@ class CaveatController extends Controller
                 }
             }
 
-            if ($fileNo) {
-                $comment = "Caveat Lifted\nCaveat No: " . $caveat->caveat_number . "\nDate: " . now()->format('M d, Y, h:i A');
-                $this->setCaveatedFlags($fileNo, false, $comment, null);
-            }
+            /*
+             | One shared lift path -- see App\Services\CaveatLiftService for why
+             | this and removeByFile() go through the same method while still
+             | writing their own historical status strings ('released' here,
+             | 'lifted' there). It also queues the caveator's SMS.
+             */
+            app(\App\Services\CaveatLiftService::class)->lift(
+                $caveat,
+                \App\Services\CaveatLiftService::MODE_MANUAL,
+                function ($caveat) use ($fileNo) {
+                    if ($fileNo) {
+                        $comment = "Caveat Lifted\nCaveat No: " . $caveat->caveat_number . "\nDate: " . now()->format('M d, Y, h:i A');
+                        $this->setCaveatedFlags($fileNo, false, $comment, null);
+                    }
+                },
+                $liftedBy,
+                $validated['release_date']
+            );
 
             DB::connection('sqlsrv')->commit();
         } catch (\Throwable $e) {
@@ -602,13 +638,12 @@ class CaveatController extends Controller
             if (!empty($validated['remarks'])) {
                 $caveat->remarks = trim(($caveat->remarks ? $caveat->remarks . "\n\n" : '') . 'REMOVE REMARKS: ' . $validated['remarks']);
             }
-            $caveat->release_date = $caveat->release_date ?: now()->toDateString();
-            $caveat->status = 'lifted';
-            $caveat->updated_by = Auth::user()->name ?? 'System';
-            $caveat->save();
+            $liftedBy = Auth::user()->name ?? 'System';
 
-            $comment = "Caveat Removed\nCaveat No: " . $caveat->caveat_number . "\nDate: " . now()->format('M d, Y, h:i A');
             $flagFileNo = $this->firstNonEmpty([
+                // NOTE: caveats has no `file_number` column, so this first entry
+                // is always null. Left in place because removing it would change
+                // which variant wins, and the order below is load-bearing.
                 $caveat->file_number ?? null,
                 $caveat->file_number_mlsf ?? null,
                 $caveat->file_number_kangis ?? null,
@@ -616,11 +651,23 @@ class CaveatController extends Controller
                 $fileNo,
             ]) ?? $fileNo;
 
-            if ($targetSourceTable && $targetSourceId) {
-                $this->setCaveatedFlagForRecord($targetSourceTable, $targetSourceId, false, $comment, null);
-            } else {
-                $this->setCaveatedFlags($flagFileNo, false, $comment, null);
-            }
+            // Shared with lift() -- see App\Services\CaveatLiftService. This path
+            // keeps writing status 'lifted' rather than lift()'s 'released';
+            // both are historical and neither was normalised.
+            app(\App\Services\CaveatLiftService::class)->lift(
+                $caveat,
+                \App\Services\CaveatLiftService::MODE_REMOVE_BY_FILE,
+                function ($caveat) use ($targetSourceTable, $targetSourceId, $flagFileNo) {
+                    $comment = "Caveat Removed\nCaveat No: " . $caveat->caveat_number . "\nDate: " . now()->format('M d, Y, h:i A');
+
+                    if ($targetSourceTable && $targetSourceId) {
+                        $this->setCaveatedFlagForRecord($targetSourceTable, $targetSourceId, false, $comment, null);
+                    } else {
+                        $this->setCaveatedFlags($flagFileNo, false, $comment, null);
+                    }
+                },
+                $liftedBy
+            );
 
             DB::connection('sqlsrv')->commit();
         } catch (\Throwable $e) {

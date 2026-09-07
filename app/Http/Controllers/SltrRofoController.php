@@ -106,6 +106,16 @@ class SltrRofoController extends Controller
 
         app(RofoPraSyncer::class)->syncSltr($rec->fresh());
 
+        // sltr_recommendations has no phone column, so the number comes from the
+        // resolver's file_indexings fallback -- and its shared-number guard is
+        // what stops a Letter of Grant going to whoever indexed the file.
+        app(\App\Services\Sms\RofoSmsNotifier::class)->send(
+            \App\Services\Sms\RofoSmsNotifier::SOURCE_SLTR,
+            $rec->sltr_number,
+            $rec->id,
+            'SLTR Department'
+        );
+
         return response()->json(['success' => true, 'message' => 'SLTR RofO generated successfully.']);
     }
 

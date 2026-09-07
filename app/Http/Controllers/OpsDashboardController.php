@@ -149,6 +149,14 @@ class OpsDashboardController extends Controller
         $from = $request->input('from');
         $to   = $request->input('to');
 
+        // DataTables applies its global search after OpRecordSource has reduced the
+        // union to one row per property. OP serial numbers are not property keys,
+        // so a valid older OP could be hidden by a later transaction on the same
+        // property before the serial search gets a chance to see it. Push a
+        // numeric serial search into the source union before it is ranked.
+        $globalSearch = trim((string) $request->input('search.value', ''));
+        $serialSearch = preg_match('/^\d+$/', $globalSearch) ? $globalSearch : null;
+
         // Row set is built by OpRecordSource so this tab and OP Verification
         // always resolve the same records.
 
@@ -160,7 +168,7 @@ class OpsDashboardController extends Controller
             . "(SELECT COUNT(*) FROM CofO_staging WHERE CAST(prop_id AS NVARCHAR(50)) = ranked.prop_id) "
             . "ELSE 1 END";
 
-        $query = $this->opRecords->rankedQuery($from, $to)
+        $query = $this->opRecords->rankedQuery($from, $to, $serialSearch)
             ->addSelect(DB::raw("({$timelineCountExpr}) as timeline_count"));
 
         return DataTables::of($query)

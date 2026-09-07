@@ -4,10 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Models\LandRecommendation;
 use App\Models\LandRecommendationBatchDocument;
+use App\Services\EdmsScanUploadFolderService;
 use App\Support\LandRecommendationLog as RecLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\File;
 
 /**
  * The mother's scanned recommendation letter for a subdivision batch.
@@ -25,6 +26,27 @@ use Illuminate\Support\Facades\Storage;
  * Uploading again replaces the file and the row, and deletes the scan it replaced
  * — a batch has one current letter, and the old scan is not evidence of anything
  * once a corrected one is signed.
+ *
+ * ── Where the scan lives ─────────────────────────────────────────────────────
+ *
+ * In the mother file's own EDMS folder, the same one the scanning and page-typing
+ * modules use:
+ *
+ *      EDMS/SCAN_UPLOAD/{Registry_Slug}/{MOTHER FILE NO}/Recommendation/
+ *
+ * created if it is not already there. It used to go to a folder of this module's
+ * own (LandRecommendationBatchDocument::DIRECTORY), which put the one document
+ * that belongs to a file somewhere nobody looking at that file would find it.
+ * EdmsScanUploadFolderService supplies the registry slug and the file-number
+ * sanitiser, so this folder is byte-identical to the one a scan operator writes
+ * into — two spellings of the same file number would otherwise be two folders.
+ *
+ * The absolute path is resolved through file_storage_path(), NOT storage_path():
+ * STORAGE_PATH in .env is what points the EDMS tree at the F: drive on production,
+ * and only that helper reads it (the storage_path() override in app/Helper is dead
+ * — Laravel defines the function first, so the !function_exists guard never
+ * passes). Reading goes back through the model, which tries the EDMS root first
+ * and the public disk second, so rows written before this change still open.
  */
 class LandRecommendationBatchDocumentController extends Controller
 {
@@ -65,6 +87,13 @@ class LandRecommendationBatchDocumentController extends Controller
 
         $file = $request->file('document');
 
+        // Read before the move below. storeAs() left the uploaded temp file where it
+        // was, so these could be asked afterwards; move() consumes it, and getSize()
+        // stats a path that no longer exists.
+        $originalName = $file->getClientOriginalName();
+        $mimeType     = $file->getClientMimeType();
+        $sizeBytes    = $file->getSize();
+
         // Named for the batch, so the file is identifiable on disk on its own — a
         // scan found in a backup should not need the database to say what it is.
         // The random tail is not decoration: a replace within the same second would
@@ -74,16 +103,38 @@ class LandRecommendationBatchDocumentController extends Controller
             . '-' . strtolower(substr(bin2hex(random_bytes(3)), 0, 6))
             . '.' . strtolower($file->getClientOriginalExtension() ?: 'jpg');
 
-        $path = $file->storeAs(LandRecommendationBatchDocument::DIRECTORY, $name, 'public');
+        $directory = $this->edmsDirectoryFor($batch->batch_mother_file_no);
 
-        if (!$path) {
+        if (!$directory) {
+            return $this->fail($request, 'This batch has no usable mother file number, so there is no '
+                . 'EDMS folder to file the letter in.', 422);
+        }
+
+        $absoluteDirectory = $this->absolute($directory);
+
+        try {
+            // Created here rather than left to the uploader: the mother of an old
+            // subdivision may never have been scanned, so its EDMS folder need not
+            // exist yet — and a letter with nowhere to go is how this ends up back
+            // in a folder of its own.
+            File::ensureDirectoryExists($absoluteDirectory);
+
+            $file->move($absoluteDirectory, $name);
+        } catch (\Throwable $e) {
             RecLog::error('Batch document upload failed to store', [
                 'rofo_batch_id' => $batchId,
-                'original_name' => $file->getClientOriginalName(),
+                'original_name' => $originalName,
+                'directory'     => $absoluteDirectory,
+                'error'         => $e->getMessage(),
             ]);
 
-            return $this->fail($request, 'The file could not be saved. Try again.', 500);
+            return $this->fail($request, 'The file could not be saved to the EDMS folder for '
+                . $batch->batch_mother_file_no . '. Check that the EDMS drive is reachable, then try again.', 500);
         }
+
+        // Stored relative to app/public, the same shape scannings.document_path
+        // uses — so the row survives the EDMS tree moving to another drive.
+        $path = $directory . '/' . $name;
 
         $existing = LandRecommendationBatchDocument::where('rofo_batch_id', $batchId)->first();
         $replaced = $existing?->path;
@@ -93,9 +144,9 @@ class LandRecommendationBatchDocumentController extends Controller
             [
                 'mother_file_no' => $batch->batch_mother_file_no,
                 'path'           => $path,
-                'original_name'  => $file->getClientOriginalName(),
-                'mime_type'      => $file->getClientMimeType(),
-                'size_bytes'     => $file->getSize(),
+                'original_name'  => $originalName,
+                'mime_type'      => $mimeType,
+                'size_bytes'     => $sizeBytes,
                 'uploaded_by'    => Auth::id(),
                 'uploaded_at'    => now(),
             ]
@@ -104,7 +155,7 @@ class LandRecommendationBatchDocumentController extends Controller
         // Only once the new row is committed. Deleting first would leave the batch
         // with no letter at all if the write below it failed.
         if ($replaced && $replaced !== $path) {
-            Storage::disk('public')->delete($replaced);
+            $this->deleteScan($replaced);
         }
 
         RecLog::info($replaced ? 'Mother recommendation replaced' : 'Mother recommendation uploaded', [
@@ -133,14 +184,25 @@ class LandRecommendationBatchDocumentController extends Controller
     {
         $document = LandRecommendationBatchDocument::where('rofo_batch_id', $batchId)->first();
 
-        if (!$document || !Storage::disk('public')->exists($document->path)) {
+        // Resolved through the model, which tries the EDMS root before the public
+        // disk — a scan uploaded before the move to EDMS still opens from here.
+        $absolute = $document?->absolutePath();
+
+        if (!$absolute) {
+            if ($document) {
+                RecLog::warning('Mother recommendation row has no file behind it', [
+                    'rofo_batch_id' => $batchId,
+                    'path'          => $document->path,
+                ]);
+            }
+
             abort(404, 'No mother recommendation has been uploaded for this batch.');
         }
 
         // Images and PDFs open in the tab the officer clicked from; anything else is
         // handed over as a download rather than dumped into the browser as bytes.
         return response()->file(
-            Storage::disk('public')->path($document->path),
+            $absolute,
             $document->isViewableInline()
                 ? ['Content-Disposition' => 'inline; filename="' . addslashes($document->original_name ?: basename($document->path)) . '"']
                 : []
@@ -158,7 +220,7 @@ class LandRecommendationBatchDocumentController extends Controller
             return $this->fail($request, 'Nothing has been uploaded for this batch.', 404);
         }
 
-        Storage::disk('public')->delete($document->path);
+        $this->deleteScan($document->path);
         $document->delete();
 
         RecLog::warning('Mother recommendation removed', [
@@ -184,6 +246,83 @@ class LandRecommendationBatchDocumentController extends Controller
             ->selectRaw('MAX(batch_mother_file_no) AS batch_mother_file_no, COUNT(*) AS children')
             ->havingRaw('COUNT(*) > 0')
             ->first();
+    }
+
+    /**
+     * The mother file's EDMS folder for this letter, relative to app/public.
+     *
+     * The registry slug and the file-number sanitiser come from
+     * EdmsScanUploadFolderService rather than being spelled out again here: that
+     * service is what commissioning and indexing use to make these folders, and a
+     * second copy of the rule is how a letter ends up in "IND-1990-63" while the
+     * scans sit in "IND 1990 63".
+     *
+     * Lands Registry, because a subdivision mother is a land file — the same
+     * assumption the OSS passport upload makes for the same reason.
+     */
+    private function edmsDirectoryFor(?string $motherFileNo): ?string
+    {
+        $service = app(EdmsScanUploadFolderService::class);
+
+        $folder = $service->folderName((string) $motherFileNo);
+
+        if ($folder === '') {
+            return null;
+        }
+
+        return EdmsScanUploadFolderService::BASE_PATH
+            . '/' . $service->registrySlug(EdmsScanUploadFolderService::FOLIO_HOME_REGISTRY)
+            . '/' . $folder
+            . '/' . LandRecommendationBatchDocument::EDMS_CATEGORY;
+    }
+
+    /**
+     * A path relative to app/public, as an absolute path on this server.
+     *
+     * file_storage_path() and not storage_path(): STORAGE_PATH in .env is what puts
+     * the EDMS tree on the F: drive, and only this helper reads it. With
+     * STORAGE_PATH unset the two are the same path, so a dev box is unaffected.
+     */
+    private function absolute(string $relative): string
+    {
+        $relative = ltrim($relative, '/\\');
+
+        return function_exists('file_storage_path')
+            ? file_storage_path('app/public/' . $relative)
+            : storage_path('app/public/' . $relative);
+    }
+
+    /**
+     * Delete a scan wherever it actually is — EDMS or the old public-disk folder.
+     *
+     * Never fatal: the row is the record of the letter, and failing to remove a
+     * superseded file must not leave the batch without a current one.
+     */
+    private function deleteScan(?string $relative): void
+    {
+        $relative = ltrim((string) $relative, '/\\');
+
+        if ($relative === '') {
+            return;
+        }
+
+        $document = new LandRecommendationBatchDocument(['path' => $relative]);
+        $document->path = $relative;
+
+        $absolute = $document->absolutePath();
+
+        if (!$absolute) {
+            return;
+        }
+
+        try {
+            File::delete($absolute);
+        } catch (\Throwable $e) {
+            RecLog::warning('Could not delete a superseded mother recommendation', [
+                'path'  => $absolute,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

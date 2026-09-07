@@ -294,6 +294,31 @@
   color: #64748b;
 }
 
+/* The picture already on the account, shown only when the face check rejected it, so
+   the person can see exactly which image is being refused and why. */
+.ppc-current {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.625rem;
+}
+
+.ppc-current-thumb {
+  width: 3.25rem;
+  height: 3.25rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #fecaca;
+  background: #fff;
+}
+
+.ppc-current-reason {
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #b91c1c;
+}
+
 .ppc-rows {
   margin-top: 0.625rem;
   border-top: 1px solid #e2e8f0;

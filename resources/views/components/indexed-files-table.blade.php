@@ -29,6 +29,9 @@
         ? $tableUser->assign_role
         : array_filter(array_map('trim', explode(',', (string) ($tableUser->assign_role ?? ''))));
     $mergedConfig['canMoveToIndexingDuplicates'] = in_array('Supper Admin', $tableAssignRoles, true);
+    // Master Delete sits in the same menu and erases the record outright, so it
+    // answers to the same role test. The controller re-checks it.
+    $mergedConfig['canMasterDelete'] = in_array('Supper Admin', $tableAssignRoles, true);
 
     $hiddenColumns = $mergedConfig['hiddenColumns'] ?? [];
     $columnLabels = $mergedConfig['columnLabels'] ?? [];
@@ -501,6 +504,15 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     @include('components.global-fileno-modal')
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+    {{-- Shared cross-module Property Timeline card, opened by the action menu's
+         "View File Transactions" item. --}}
+    <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
+    {{-- Two-step typed confirmation shared with the Recommendation / RofO master
+         deletes, used by the action menu's "Master Delete" item. --}}
+    <script src="{{ asset('js/master-delete.js') }}"></script>
+    {{-- The File Snapshot card, reused by the action menu's "View Details" item so
+         it shows the same card the indexing form shows after a save. --}}
+    <script src="{{ asset('js/fileindexing/file-snapshot-card.js') }}?v={{ @filemtime(public_path('js/fileindexing/file-snapshot-card.js')) }}"></script>
     <script>
         window.indexedFilesConfig = Object.assign({}, @json($mergedConfig));
     </script>

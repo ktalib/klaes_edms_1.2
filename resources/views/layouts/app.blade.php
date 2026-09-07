@@ -157,6 +157,22 @@
       };
     </script>
     <script src="{{ asset('js/face-detection/loader.js') }}?v={{ filemtime(public_path('js/face-detection/loader.js')) }}"></script>
+
+    {{-- One-time check of the picture this user ALREADY has on file, emitted only while
+         no verdict has been recorded for it. An account carrying a stock cartoon avatar
+         is held exactly like one carrying no picture at all, and this is how the server
+         learns which is which — detection has no PHP implementation, so a browser has to
+         judge the stored picture once and report it. Recorded once, never emitted again. --}}
+    @if (auth()->user()->needs_photo_face_check)
+      <script>
+        window.ProfilePhotoSelfCheck = {
+          photoUrl: @json(auth()->user()->profile_url),
+          endpoint: @json(route('profile.picture.face-check')),
+          csrf: @json(csrf_token())
+        };
+      </script>
+      <script src="{{ asset('js/profile-photo-self-check.js') }}?v={{ filemtime(public_path('js/profile-photo-self-check.js')) }}" defer></script>
+    @endif
   @endauth
   <script src="{{ asset('js/print-manager.js') }}"></script>
   <script src="{{ asset('js/tailwind-modal.js') }}?v={{ time() }}"></script>

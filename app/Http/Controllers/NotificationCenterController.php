@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Notification;
 use App\Models\UserNotificationSetting;
+use App\Services\StaffAttendanceNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -173,6 +174,7 @@ class NotificationCenterController extends Controller
             'title' => $notification->title ?? $notification->subject ?? 'Notification',
             'body' => $notification->body ?? $notification->message ?? '',
             'type' => $notification->type,
+            'icon' => $this->iconFor($notification),
             'isRead' => (bool) $notification->is_read,
             'createdAt' => optional($notification->created_at)->toIso8601String(),
             'meta' => [
@@ -181,6 +183,23 @@ class NotificationCenterController extends Controller
                 'source' => $notification->module,
             ],
         ];
+    }
+
+    /**
+     * The lucide icon notification-center.js draws for a row.
+     *
+     * Null keeps the default bell, which is right for every module that has no
+     * icon of its own. Sign-in and sign-out notices arrive twice a day for
+     * every member of staff, so they are the one kind worth being able to skip
+     * past at a glance.
+     */
+    protected function iconFor(Notification $notification): ?string
+    {
+        return match ($notification->type) {
+            StaffAttendanceNotificationService::TYPE_LOGIN => 'log-in',
+            StaffAttendanceNotificationService::TYPE_LOGOUT => 'log-out',
+            default => null,
+        };
     }
 
     protected function ensureOwnership($user, Notification $notification): void

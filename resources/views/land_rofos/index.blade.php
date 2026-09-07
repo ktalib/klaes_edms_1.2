@@ -641,8 +641,11 @@
                                                     $wcIssueDate = optional($rec->date_issued)->format('Y-m-d') ?? '';
 
                                                     $pmOptions = [
-                                                        'recordId'  => (int) $rec->id,
-                                                        'issueDate' => $wcIssueDate,
+                                                        'recordId'     => (int) $rec->id,
+                                                        'issueDate'    => $wcIssueDate,
+                                                        // Keep the manager bound to the Land RofO date writer.
+                                                        // The shared component serves other document modules too.
+                                                        'issueDateUrl' => route('land-rofos.issue-date'),
                                                         // Tells the manager the date of issue is not its to
                                                         // edit, and gives it somewhere to send an operator
                                                         // whose letter has none yet. The RofO is one of the
@@ -1831,7 +1834,16 @@ function rofoOpenBatchManagerFor(ids, label, splitPasses) {
         var rows    = (res[1] && res[1].data) ? res[1].data : [];
         var missing = rows.filter(function (r) { return !r.date_issued; }).length;
 
-        openRofoBatchManager(ids, label, status, missing, splitPasses);
+        // The dates themselves, not just how many are missing. A batch is normally
+        // issued on one day, so there is usually a single date to show — and the
+        // operator is about to spend security paper on it, so it belongs in front
+        // of them rather than behind a count.
+        var dates = rows.map(function (r) { return r.date_issued; })
+            .filter(Boolean)
+            .filter(function (d, i, a) { return a.indexOf(d) === i; })
+            .sort();
+
+        openRofoBatchManager(ids, label, status, missing, splitPasses, dates);
     });
 }
 
@@ -1839,10 +1851,10 @@ function rofoOpenBatchManagerFor(ids, label, splitPasses) {
 // proofread question belongs — a batch is the run that puts the most paper through
 // the printer at once, and the most security stock. Answering "no" prints white
 // copies of the whole batch instead, which is the thing that was actually needed.
-function openRofoBatchManager(ids, label, status, missing, splitPasses) {
+function openRofoBatchManager(ids, label, status, missing, splitPasses, dates) {
     WhiteCopy.confirmProofread({
         subject: ids.length + ' RofO' + (ids.length === 1 ? '' : 's') + ' in ' + label,
-        onYes: function () { openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses); },
+        onYes: function () { openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses, dates); },
         // No window is opened here: submitBatchWhiteCopy posts a form with
         // target=_blank, which a pop-up blocker leaves alone — unlike a
         // window.open() this far from the original click.
@@ -1850,7 +1862,7 @@ function openRofoBatchManager(ids, label, status, missing, splitPasses) {
     });
 }
 
-function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses) {
+function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses, dates) {
     window.SmartPrintManager.open(label, 'Land RofO', null, {
         // The date of issue belongs to the White Copy for a batch exactly as it does
         // for a row: the manager shows how the batch stands and sends the operator
@@ -1864,6 +1876,8 @@ function openRofoBatchManagerConfirmed(ids, label, status, missing, splitPasses)
             ids: ids,
             count: ids.length,
             missingDates: missing,
+            // The distinct dates these letters already carry, earliest first.
+            dates: dates || [],
             status: status,
             // The batch pipeline stays where it is; the manager only names the pass.
             onPass: function (copies, extras) {
@@ -2424,11 +2438,20 @@ function rofoBatchWhiteCopyFor(ids, label) {
         var rows    = (res && res.data) ? res.data : [];
         var missing = rows.length ? rows.filter(function (r) { return !r.date_issued; }).length : ids.length;
 
+        // The dates the letters already carry, so the card shows what will print
+        // rather than only how many are still blank — the date is one of the things
+        // the proof exists to have read back.
+        var dates = rows.map(function (r) { return r.date_issued; })
+            .filter(Boolean)
+            .filter(function (d, i, a) { return a.indexOf(d) === i; })
+            .sort();
+
         WhiteCopy.open({
             ref:          label,
             ownsDate:     true,
             count:        ids.length,
             missingDates: missing,
+            dates:        dates,
             onGenerate:   function (date) {
                 var extras = {};
                 if (date && missing > 0) {

@@ -29,7 +29,14 @@ class InstrumentController extends Controller
         $PageDescription = '';
 
         // Base statistics query (independent)
+        //
+        // Land Registration captures are excluded throughout this screen. They
+        // live in the same table, separated only by instrument type, and belong
+        // to the Land Registry's own register - not to Digitization.
+        $landType = config('land_registration.instrument_type');
+
         $statsBase = DB::connection('sqlsrv')->table('instrument_capture')
+            ->where('instrument_type', '<>', $landType)
             ->where(function ($q) {
                 $q->where('is_deleted', 0)
                     ->orWhereNull('is_deleted');
@@ -50,6 +57,7 @@ class InstrumentController extends Controller
                     ->orWhereNull('ic.is_deleted');
             })
             ->leftJoin('users as u', 'ic.created_by', '=', 'u.id')
+            ->where('ic.instrument_type', '<>', $landType)
             ->select(
                 'ic.*',
                 'dr.volume_no',
@@ -79,6 +87,7 @@ class InstrumentController extends Controller
 
         // Fetch unique instrument types for filtering
         $baseTypes = DB::connection('sqlsrv')->table('instrument_capture')
+            ->where('instrument_type', '<>', $landType)
             ->where(function ($q) {
                 $q->where('is_deleted', 0)
                     ->orWhereNull('is_deleted');
@@ -1482,6 +1491,44 @@ class InstrumentController extends Controller
         } catch (\Throwable $e) {
             // Never block the capture screen over a preview.
             Log::warning('Could not preview registration particulars', [
+                'instrument_type' => $instrumentType,
+                'op_type' => $opType,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 200);
+        }
+    }
+
+    /**
+     * The registration numbers this register skipped — read-only.
+     *
+     * Feeds the "Fill a missing registration number" picker on the capture
+     * screen, which exists because a registration deleted outright leaves a
+     * serial in the paper book that nothing in KLAES accounts for. Recapturing
+     * it normally would burn the NEXT number and make the hole permanent.
+     *
+     * Scoped exactly as allocation is: by the vault the instrument type resolves
+     * to, with op_type separating the two Occupancy Permit registers.
+     */
+    public function missingRegistrationParticulars(Request $request): JsonResponse
+    {
+        $instrumentType = trim((string) $request->query('instrument_type', ''));
+        $opType = trim((string) $request->query('op_type', ''));
+
+        if ($instrumentType === '') {
+            return response()->json(['success' => false, 'message' => 'instrument_type is required.'], 422);
+        }
+
+        try {
+            $report = app(\App\Services\MissingRegistrationParticularsService::class)
+                ->report($instrumentType, $opType !== '' ? $opType : null);
+
+            return response()->json(array_merge(['success' => true], $report));
+        } catch (\Throwable $e) {
+            // Never block the capture screen over an optional picker: the officer
+            // can still register on the next number in sequence.
+            Log::warning('Could not list missing registration particulars', [
                 'instrument_type' => $instrumentType,
                 'op_type' => $opType,
                 'error' => $e->getMessage(),

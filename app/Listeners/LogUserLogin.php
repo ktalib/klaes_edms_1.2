@@ -7,6 +7,7 @@ use App\Jobs\SendStaffAttendanceSms;
 use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Services\ActivityLogService;
+use App\Services\StaffAttendanceNotificationService;
 use Illuminate\Support\Facades\Log;
 
 class LogUserLogin
@@ -38,10 +39,14 @@ class LogUserLogin
             return;
         }
 
-        try {
-            $result = ActivityLogService::recordLogin($event->user);
+        /** @var User $user */
+        $user = $event->user;
+        $session = null;
 
-            if (!$result) {
+        try {
+            $session = ActivityLogService::recordLogin($user);
+
+            if (!$session) {
                 Log::warning('Login event fired but activity log entry was not created', [
                     'user_id' => $event->user->id,
                     'reason' => 'recordLogin returned null',
@@ -49,6 +54,21 @@ class LogUserLogin
             }
         } catch (\Throwable $exception) {
             Log::error('Failed to record login activity', [
+                'user_id' => $event->user->id ?? null,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        // The in-app notice. Written here and now rather than after the
+        // response: the post-login flash (notification-flash.js) asks for
+        // unread notifications as soon as the dashboard paints and would miss a
+        // row written later. Unlike the SMS below it fires on EVERY sign-in,
+        // and the session row carries the IP and browser the notice names — a
+        // failed recordLogin above only costs those details, not the notice.
+        try {
+            app(StaffAttendanceNotificationService::class)->login($user, $session);
+        } catch (\Throwable $exception) {
+            Log::error('Failed to record login notification', [
                 'user_id' => $event->user->id ?? null,
                 'message' => $exception->getMessage(),
             ]);

@@ -44,6 +44,15 @@ class UserController extends Controller
         'mlpp' => "UPPER(LTRIM(RTRIM(ISNULL([staff_type_category], '')))) IN ('MLPP', '')",
     ];
 
+    /**
+     * The whole-system grant, spelled exactly as the guards across the app expect.
+     *
+     * Dozens of call sites compare `assign_role` to this literal (`!== 'Supper Admin'`),
+     * so it is stored ALONE — never merged into the Step 4 role list — and the misspelling
+     * is deliberate: it is the value already in production.
+     */
+    public const SUPPER_ADMIN_ROLE = 'Supper Admin';
+
     /** Sort key => the columns it orders by, in order. */
     private const SORTABLE_COLUMNS = [
         'name'       => ['first_name', 'last_name'],
@@ -312,6 +321,14 @@ class UserController extends Controller
 
         $columns = ['id', 'first_name', 'last_name', 'username', 'phone_number', 'profile', 'passport_photo_path'];
 
+        // Only ask for the face-check columns once they exist: code reaches production
+        // ahead of the SQL script, and naming a missing column fails the whole query.
+        if (ProfilePhotoService::faceColumnsExist()) {
+            $columns[] = 'photo_face_status';
+            $columns[] = 'photo_face_reason';
+            $columns[] = 'photo_face_path';
+        }
+
         if ($id !== '' && ctype_digit($id)) {
             $user = User::find((int) $id, $columns);
         }
@@ -348,6 +365,17 @@ class UserController extends Controller
             'profile_url' => $user->profile_url,
             // Drives the verified tick / missing-photo mark on the card.
             'has_photo' => $user->has_profile_photo,
+            // The recorded face-check verdict, so the card states what the system
+            // actually believes about this picture rather than re-deciding it on every
+            // open: 'pass' | 'fail' | 'override', or null when nobody has checked it.
+            'face_status' => $user->photo_face_verdict,
+            'face_reason' => $user->photo_face_reason,
+            // A Super Admin opening an unchecked picture is a chance to judge it now,
+            // rather than waiting for that person to sign in. Nobody else may report a
+            // verdict on somebody else's account — it locks them out of the system.
+            'can_report_face' => $user->photo_face_verdict === null
+                && $user->has_profile_photo
+                && optional($request->user())->isSuperAdmin() === true,
         ]);
     }
 
@@ -436,10 +464,12 @@ class UserController extends Controller
                         'first_name' => 'required',
                         'last_name' => 'required',
                         'password' => 'required|min:6',
-                        'department_id' => 'required',
-                        'user_type' => 'required|string|in:Management,Operations,ALL,User,System',
+                        // A Supper Admin is not scoped to a department and carries no role
+                        // grid, so Step 1 and Step 4 are optional for that user type only.
+                        'department_id' => 'required_unless:user_type,' . self::SUPPER_ADMIN_ROLE,
+                        'user_type' => 'required|string|in:Management,Operations,ALL,User,System,' . self::SUPPER_ADMIN_ROLE,
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,High,Highest',
-                        'user_role' => 'required|array',
+                        'user_role' => ['required_unless:user_type,' . self::SUPPER_ADMIN_ROLE, 'array'],
                         'rank' => 'nullable|string|max:255',
                         'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
                         'work_station' => $this->workStationValidationRule(false),
@@ -479,6 +509,8 @@ class UserController extends Controller
                     }
                 }
                 
+                $isSupperAdmin = trim((string) $request->user_type) === self::SUPPER_ADMIN_ROLE;
+
                 $user = new User();
                 $user->first_name = $request->first_name;
                 $user->last_name = $request->last_name;
@@ -487,7 +519,8 @@ class UserController extends Controller
                 // allow either phone or phone_number
                 $user->phone_number = $request->input('phone_number', $request->input('phone'));
                 $user->password = \Hash::make($request->password);
-                $user->department_id = $request->department_id;
+                // Blank rather than absent when Step 1 was skipped for a Supper Admin.
+                $user->department_id = $request->filled('department_id') ? $request->department_id : null;
                 $user->user_level = $request->user_level;
                 $user->work_station = $request->input('work_station');
                 $user->type = $request->user_type; // Use the selected user type
@@ -543,7 +576,12 @@ class UserController extends Controller
                 $user->deputy_user_id = $request->filled('deputy_user_id') ? (int) $request->deputy_user_id : null;
                 $user->out_of_office_from = $request->filled('out_of_office_from') ? $request->out_of_office_from : null;
                 $user->out_of_office_to = $request->filled('out_of_office_to') ? $request->out_of_office_to : null;
-                $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
+                // Supper Admin is a whole-system grant, never one entry among others: the
+                // guards compare assign_role to the bare string, so anything ticked in
+                // Step 4 is discarded rather than appended.
+                $user->assign_role = $isSupperAdmin
+                    ? self::SUPPER_ADMIN_ROLE
+                    : (isset($request->user_role) ? implode(',', $request->user_role) : null);
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
                 $user->fr_permissions = $request->input('fr_permissions') === 'SCB' ? 'SCB' : null;
@@ -678,10 +716,12 @@ class UserController extends Controller
                     [
                         'first_name' => 'required',
                         'last_name' => 'required',
-                        'department_id' => 'required',
-                        'user_type' => 'required|string|in:Management,Operations,ALL,User,System',
+                        // A Supper Admin is not scoped to a department and carries no role
+                        // grid, so Step 1 and Step 4 are optional for that user type only.
+                        'department_id' => 'required_unless:user_type,' . self::SUPPER_ADMIN_ROLE,
+                        'user_type' => 'required|string|in:Management,Operations,ALL,User,System,' . self::SUPPER_ADMIN_ROLE,
                         'user_level' => 'required|string|in:Administrative,Technical,Finance,Lowest,Highest,High',
-                        'user_role' => 'required|array',
+                        'user_role' => ['required_unless:user_type,' . self::SUPPER_ADMIN_ROLE, 'array'],
                         'rank' => 'nullable|string|max:255',
                         'rank_other' => 'nullable|string|max:255|required_if:rank,' . \App\Models\OfficerRank::OTHER_VALUE,
                         'work_station' => $this->workStationValidationRule(false),
@@ -709,17 +749,18 @@ class UserController extends Controller
                     return redirect()->back()->with('error', $messages->first());
                 }
 
-                // Get the first selected role to set as the user type
-                $firstRoleName = $request->user_role[0];
-                $userRole = UserRole::where('name', $firstRoleName)->first();
-                
+                // A Supper Admin skips Step 1 and Step 4, so user_role can legitimately be
+                // absent here — nothing below may assume it holds at least one entry.
+                $isSupperAdmin = trim((string) $request->user_type) === self::SUPPER_ADMIN_ROLE;
+
                 $user = User::findOrFail($id);
                 $user->first_name = $request->first_name;
                 $user->last_name = $request->last_name;
                 $user->username = $request->username; // update username
                 $user->email = $request->filled('email') ? $request->email : uniqid('temp') . '@klaes.com.ng';
                 $user->phone_number = $request->phone_number;
-                $user->department_id = $request->department_id;
+                // Blank rather than absent when Step 1 was skipped for a Supper Admin.
+                $user->department_id = $request->filled('department_id') ? $request->department_id : null;
                 // Seniority for file-request priority; "Other (specify)" adds to the lookup table.
                 $user->rank = \App\Models\OfficerRank::resolveSubmittedRank($request->input('rank'), $request->input('rank_other'));
                 $user->user_level = $request->user_level;
@@ -788,7 +829,12 @@ class UserController extends Controller
                     : ($structureId ? 'structure' : null);
                 $user->type = $request->user_type;
                 $user->user_type = $request->user_type; // keep canonical column in sync for edit prefill
-                $user->assign_role = isset($request->user_role) ? implode(',', $request->user_role) : null;
+                // Supper Admin is a whole-system grant, never one entry among others: the
+                // guards compare assign_role to the bare string, so anything ticked in
+                // Step 4 is discarded rather than appended.
+                $user->assign_role = $isSupperAdmin
+                    ? self::SUPPER_ADMIN_ROLE
+                    : (isset($request->user_role) ? implode(',', $request->user_role) : null);
                 $user->user_actions = isset($request->user_actions) ? implode(',', $request->user_actions) : null;
                 $user->dfr_permissions = isset($request->dfr_permissions) ? implode(',', $request->dfr_permissions) : null;
                 $user->fr_permissions = $request->input('fr_permissions') === 'SCB' ? 'SCB' : null;

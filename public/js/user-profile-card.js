@@ -35,6 +35,8 @@
       }
 
       this.endpoint = this.root.dataset.endpoint;
+      this.faceEndpoint = this.root.dataset.faceEndpoint;
+      this.csrf = this.root.dataset.csrf;
       this.photo = document.getElementById('upcPhoto');
       this.fallback = document.getElementById('upcPhotoFallback');
       this.name = document.getElementById('upcName');
@@ -160,20 +162,39 @@
         this.fallback.textContent = this.initials(data.full_name || data.username || '');
       }
 
-      this.setPhotoBadge(data.has_photo !== undefined ? !!data.has_photo : !!data.profile_url);
+      // A rejected picture is not a profile picture, however present the file is: the
+      // green tick has to say what the system believes, and the system holds this
+      // account exactly as it holds one with nothing on file.
+      var hasPhoto = data.has_photo !== undefined ? !!data.has_photo : !!data.profile_url;
+      var rejected = hasPhoto && data.face_status === 'fail';
+      this.setPhotoBadge(hasPhoto && !rejected, rejected);
       this.runFaceCheck(data);
     },
 
     /**
-     * Report whether the profile picture on screen actually contains a single human
-     * face. Purely informational: it never changes the stored photo, and a detector
-     * that will not load simply leaves the line hidden.
+     * State whether the profile picture on screen actually contains a single human face.
+     *
+     * It never changes the stored photo, and a detector that will not load simply leaves
+     * the line hidden. It CAN, for a Super Admin looking at a picture nobody has judged
+     * yet, record the verdict — the server says so with can_report_face — and a rejection
+     * is what holds that account until a real photograph is uploaded.
      */
     runFaceCheck: function (data) {
       var self = this;
       this.setFaceCheck('', '');
 
-      if (!data.profile_url || !window.FaceDetection) {
+      if (!data.profile_url) {
+        return;
+      }
+
+      // A recorded verdict is what the system actually acts on, so show that rather than
+      // re-deciding it on every open — and skip the model download entirely.
+      if (data.face_status) {
+        this.setFaceCheck.apply(this, this.recordedFaceCheck(data));
+        return;
+      }
+
+      if (!window.FaceDetection) {
         return;
       }
 
@@ -209,6 +230,10 @@
 
               data._faceCheck = result;
               self.setFaceCheck(result.state, result.message);
+
+              if (data.can_report_face) {
+                self.reportFaceCheck(data, verdict);
+              }
             });
           });
         })
@@ -216,6 +241,53 @@
           console.warn('[face-detection] profile card check skipped', error);
           self.setFaceCheck('', '');
         });
+    },
+
+    /**
+     * The [state, message] pair for a verdict already stored against this account.
+     */
+    recordedFaceCheck: function (data) {
+      if (data.face_status === 'fail') {
+        return ['is-fail', 'Face check: ' + (data.face_reason || 'not a photograph of a face')
+          + ' — this account is locked until a real photo is uploaded'];
+      }
+      if (data.face_status === 'override') {
+        return ['is-pass', 'Face check: accepted by an administrator'];
+      }
+      return ['is-pass', 'Face check passed'];
+    },
+
+    /**
+     * Save the verdict this card just computed against the person it belongs to.
+     *
+     * Only ever sent when the server marked the record can_report_face — it grants that
+     * to a Super Admin looking at a picture nobody has judged yet, and to nobody else,
+     * because a 'fail' locks that person out of the whole system. Best-effort: a failed
+     * report leaves the account unjudged, and the owner's own browser checks it at their
+     * next sign-in.
+     */
+    reportFaceCheck: function (data, verdict) {
+      if (!this.faceEndpoint || !data.id) {
+        return;
+      }
+
+      // Once per card open: the record is now judged, whatever this call returns.
+      data.can_report_face = false;
+
+      var body = new FormData();
+      body.append('status', verdict.accepted ? 'pass' : 'fail');
+      body.append('reason', verdict.reason || '');
+      body.append('user_id', data.id);
+      if (this.csrf) {
+        body.append('_token', this.csrf);
+      }
+
+      fetch(this.faceEndpoint, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        credentials: 'same-origin',
+        body: body
+      }).catch(function () { /* Best-effort. */ });
     },
 
     setFaceCheck: function (state, message) {
@@ -230,19 +302,22 @@
      * Verified tick once a passport photo is on file; an alert mark while it is missing,
      * matching the mandatory-upload rule the account itself is held to.
      */
-    setPhotoBadge: function (verified) {
+    setPhotoBadge: function (verified, rejected) {
       var TICK = '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
       var ALERT = '<svg viewBox="0 0 24 24" aria-hidden="true"><line x1="12" y1="7" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 
       this.badge.className = 'upc-badge ' + (verified ? 'upc-badge-verified' : 'upc-badge-missing');
       this.badge.innerHTML = verified ? TICK : ALERT;
-      this.badge.setAttribute('aria-label', verified ? 'Profile picture uploaded' : 'No profile picture uploaded');
-      this.badge.setAttribute('title', verified ? 'Profile picture uploaded' : 'No profile picture uploaded');
+      this.badge.setAttribute('aria-label', verified ? 'Profile picture uploaded' : 'No usable profile picture');
+      this.badge.setAttribute('title', verified ? 'Profile picture uploaded' : 'No usable profile picture');
 
       // Only the missing case needs saying — a photo that is there speaks for itself,
-      // and the tick badge already marks it.
+      // and the tick badge already marks it. The face-check line below carries the
+      // detail when the picture is present but was rejected.
       this.photoState.className = 'upc-photo-state ' + (verified ? 'is-verified' : 'is-missing');
-      this.photoState.textContent = verified ? '' : 'No profile picture';
+      this.photoState.textContent = verified
+        ? ''
+        : (rejected ? 'Picture rejected — not a photograph' : 'No profile picture');
     },
 
     initials: function (value) {

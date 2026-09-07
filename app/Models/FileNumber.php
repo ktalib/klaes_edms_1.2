@@ -44,6 +44,12 @@ class FileNumber extends Model
         'temp_file_no',
         'kangis_fileno_placeholder',
         'kangis_fileno_resolved',
+        // Applicant contact. Same story as MlsFileNo: the columns were added in
+        // Feb 2026 but never listed here, so every mass-assignment dropped them
+        // and both stayed empty (phone_no had 117 rows, 47 of them the literal
+        // string "080"). The commissioning SMS writes them for real now.
+        'phone_no',
+        'rep_phone_no',
     ];
 
     protected $dates = [

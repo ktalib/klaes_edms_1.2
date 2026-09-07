@@ -49,6 +49,9 @@
                             }
                             $coverTemplateUrl = asset('storage/' . $coverTemplateFile);
                             $storagePreviewUrl = $file->storage_preview_url ?? null;
+                            $cardPreviewUrl = $storagePreviewUrl ?: ($coverPage
+                                ? route('filearchive.cover-image', ['pageTyping' => $coverPage->id])
+                                : null);
                         @endphp
                         <div 
                             class="h-8 bg-green-600 flex items-center justify-between px-3 file-card-status-header transition-colors duration-200" 
@@ -66,9 +69,9 @@
                                 </span>
                             </div>
                         </div>
-                        @if($storagePreviewUrl)
+                        @if($cardPreviewUrl)
                             <div class="flex-1 p-2 overflow-hidden">
-                                <img src="{{ $storagePreviewUrl }}"
+                                <img src="{{ $cardPreviewUrl }}"
                                      alt="Cover page for {{ $file->file_number }}"
                                      class="w-full h-full object-contain bg-gray-50 rounded-sm"
                                      loading="lazy"

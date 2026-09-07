@@ -3,6 +3,11 @@
      js/user-profile-card.js. Mounted once in the app layout so every table
      that shows a creator can use it without its own markup. --}}
 <div id="userProfileCard" class="upc-overlay" data-endpoint="{{ route('users.profile-card') }}"
+    {{-- Where a Super Admin's card reports its face-check verdict on somebody else's
+         picture, so a stock avatar spotted here is flagged without waiting for that
+         person to sign in. The server decides whether the report is accepted. --}}
+    data-face-endpoint="{{ route('profile.picture.face-check') }}"
+    data-csrf="{{ csrf_token() }}"
     role="dialog" aria-modal="true" aria-labelledby="upcName" aria-hidden="true">
     <div class="upc-card">
         <button type="button" class="upc-close" data-upc-close aria-label="{{ __('Close') }}">&times;</button>

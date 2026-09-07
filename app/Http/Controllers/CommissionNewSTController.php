@@ -643,6 +643,10 @@ class CommissionNewSTController extends Controller
                 'applicant_title' => 'nullable|string',
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
+                // Applicant contact, for the ST commissioning SMS. st_file_numbers
+                // had no phone column at all until 2026_09_06_000200.
+                'applicant_phone' => 'nullable|string|max:100',
+                'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',
                 'property_house_no' => 'nullable|string',
@@ -781,6 +785,7 @@ class CommissionNewSTController extends Controller
                     'surname' => $validated['surname'] ?? null,
                     'corporate_name' => $validated['corporate_name'] ?? null,
                     'rc_number' => $validated['rc_number'] ?? null,
+                    'applicant_phone' => $validated['applicant_phone'] ?? null,
                     'multiple_owners_names' => null,
                     'created_by' => Auth::id(),
                     'created_at' => $commissionedAt,
@@ -1053,6 +1058,14 @@ class CommissionNewSTController extends Controller
 
             $edmsFolder = $this->ensureEdmsScanFolder($commissionedFileNo);
 
+            // After the transaction, like the scan folder above it: a message
+            // saying the file exists must not go out on work that rolled back.
+            $this->sendStCommissioningSms(
+                $commissionedFileNo,
+                $validated,
+                $transactionResult['st_file_number_id'] ?? null
+            );
+
             return response()->json([
                 'success' => true,
                 'fileNumber' => $commissionedFileNo,
@@ -1083,6 +1096,68 @@ class CommissionNewSTController extends Controller
                 'success' => false,
                 'message' => 'Error commissioning file number: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Tell the ST applicant their file has been commissioned.
+     *
+     * One helper for all three paths -- ST Primary, Standalone Unit (SuA) and
+     * Personal Unit (PuA) -- because the message is the same and only the file
+     * number differs.
+     *
+     * The number comes from the form (st_file_numbers.applicant_phone, added
+     * alongside this feature). When it is blank the resolver falls back to
+     * file_indexings, which is a prefill of last resort rather than a source of
+     * truth -- one number there sits on 1,211 different files, so a shared number
+     * is recorded as skipped rather than sent.
+     *
+     * Never throws: a commissioning that succeeded must not be reported as
+     * failed because a text message could not be composed.
+     */
+    private function sendStCommissioningSms(?string $fileNumber, array $validated, $stFileNumberId): void
+    {
+        $fileNumber = trim((string) $fileNumber);
+
+        if ($fileNumber === '') {
+            return;
+        }
+
+        try {
+            $key = \App\Models\SmsSetting::KEY_ST_FC;
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $phone = trim((string) ($validated['applicant_phone'] ?? ''));
+            $confirmed = (bool) ($validated['phone_confirmed'] ?? false);
+
+            if ($phone === '') {
+                $phone = app(\App\Services\Sms\ApplicantPhoneResolver::class)
+                    ->forFileNumber($fileNumber)['phone'];
+                $confirmed = false;
+            }
+
+            $dispatcher->queue($key, $phone, [
+                'FileNo' => $fileNumber,
+                // 'Direct Allocation' or 'Conversion' -- the values
+                // st_file_numbers.application_type is constrained to. SuA and
+                // PuA do not collect one, so they fall back to the unit wording.
+                'ST Application Type' => trim((string) ($validated['application_type'] ?? '')) ?: 'Sectional Titling',
+            ], [
+                'dedupe_key' => $key . ':' . $fileNumber,
+                'file_number' => $fileNumber,
+                'subject_type' => 'st_file_numbers',
+                'subject_id' => $stFileNumberId,
+                'phone_confirmed' => $confirmed,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('CommissionNewSTController: ST commissioning SMS not queued', [
+                'file_number' => $fileNumber,
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 
@@ -1680,6 +1755,10 @@ class CommissionNewSTController extends Controller
                 'applicant_title' => 'nullable|string',
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
+                // Applicant contact, for the ST commissioning SMS. st_file_numbers
+                // had no phone column at all until 2026_09_06_000200.
+                'applicant_phone' => 'nullable|string|max:100',
+                'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',
                 'property_house_no' => 'nullable|string',
@@ -1750,6 +1829,7 @@ class CommissionNewSTController extends Controller
                     'surname' => $validated['surname'] ?? null,
                     'corporate_name' => $validated['corporate_name'] ?? null,
                     'rc_number' => $validated['rc_number'] ?? null,
+                    'applicant_phone' => $validated['applicant_phone'] ?? null,
                     'multiple_owners_names' => null,
                     'created_by' => Auth::id(),
                     'created_at' => $commissionedAt,
@@ -1811,6 +1891,12 @@ class CommissionNewSTController extends Controller
 
             $edmsFolder = $this->ensureEdmsScanFolder($transactionResult['unit_file_number']);
 
+            $this->sendStCommissioningSms(
+                $transactionResult['unit_file_number'],
+                $validated,
+                $transactionResult['sua_file_number_id'] ?? null
+            );
+
             return response()->json([
                 'success' => true,
                 'suaFileNumber' => $transactionResult['unit_file_number'],
@@ -1863,6 +1949,10 @@ class CommissionNewSTController extends Controller
                 'applicant_title' => 'nullable|string',
                 'corporate_name' => 'nullable|string',
                 'rc_number' => 'nullable|string',
+                // Applicant contact, for the ST commissioning SMS. st_file_numbers
+                // had no phone column at all until 2026_09_06_000200.
+                'applicant_phone' => 'nullable|string|max:100',
+                'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',
                 'property_house_no' => 'nullable|string',
@@ -1961,6 +2051,7 @@ class CommissionNewSTController extends Controller
                     'surname' => $validated['surname'] ?? null,
                     'corporate_name' => $validated['corporate_name'] ?? null,
                     'rc_number' => $validated['rc_number'] ?? null,
+                    'applicant_phone' => $validated['applicant_phone'] ?? null,
                     'multiple_owners_names' => null,
                     'created_by' => Auth::id(),
                     'created_at' => $commissionedAt,
@@ -2020,6 +2111,12 @@ class CommissionNewSTController extends Controller
             ]);
 
             $edmsFolder = $this->ensureEdmsScanFolder($unitFileNo);
+
+            $this->sendStCommissioningSms(
+                $unitFileNo,
+                $validated,
+                $transactionResult['pua_file_number_id'] ?? null
+            );
 
             return response()->json([
                 'success' => true,

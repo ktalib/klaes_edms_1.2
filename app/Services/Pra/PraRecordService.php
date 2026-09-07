@@ -419,6 +419,8 @@ class PraRecordService
             'pageNo',
             'volumeNo',
             'op_serial_number',
+            'consideration_amount',
+            'receipt_no',
             'op_type',
             'purpose',
             'land_use',

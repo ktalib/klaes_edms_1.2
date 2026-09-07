@@ -1661,19 +1661,78 @@ class FileIndexingController extends Controller
     }
 
     /**
-     * The newest snapshot for a file, for re-opening the File Snapshot card away
-     * from a save. The save responses already embed the snapshot they just wrote,
-     * so this is the fallback path, not the usual one.
+     * The File Snapshot card for a file, for re-opening it away from a save. The
+     * save responses already embed the snapshot they just wrote, so this is the
+     * re-open path, not the usual one.
+     *
+     * Two answers, and the difference is stated in the response rather than hidden:
+     *
+     *   STORED  the newest row in file_snapshots — a real version, with the list of
+     *           what changed since the version before it.
+     *
+     *   LIVE    the file's current state, composed on the fly and persisted nowhere.
+     *
+     * The live branch is not a nicety. file_snapshots only began on 2026-08-26, so
+     * 9 of the 133,808 indexed files have any history at all; a plain 404 for the
+     * rest would make the File Indexing "View Details" action — which is what sends
+     * most of the traffic here — dead for practically every row. buildPayload()
+     * reads the same sections the stored snapshot holds, so both answers render
+     * through one card.
      */
     public function snapshot(FileIndexing $fileIndexing)
     {
         $snapshot = $this->fileSnapshotService->latestFor((int) $fileIndexing->id);
 
+        if ($snapshot) {
+            return response()->json([
+                'success' => true,
+                'live' => false,
+                'file_number' => $fileIndexing->file_number,
+                'snapshot' => $snapshot->toCardPayload(),
+            ]);
+        }
+
+        // Composed, never written: reading a file must not create a version, or the
+        // history would fill with entries recording that somebody looked.
+        try {
+            $payload = $this->fileSnapshotService->buildPayload($fileIndexing);
+        } catch (\Throwable $e) {
+            Log::warning('Live file snapshot could not be composed', [
+                'file_indexing_id' => $fileIndexing->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'file_number' => $fileIndexing->file_number,
+                'snapshot' => null,
+            ], 500);
+        }
+
         return response()->json([
-            'success' => (bool) $snapshot,
+            'success' => true,
+            'live' => true,
             'file_number' => $fileIndexing->file_number,
-            'snapshot' => $snapshot ? $snapshot->toCardPayload() : null,
-        ], $snapshot ? 200 : 404);
+            'snapshot' => [
+                'id' => null,
+                'file_indexing_id' => (int) $fileIndexing->id,
+                'file_number' => $fileIndexing->file_number,
+                'temp_file_no' => $fileIndexing->temp_file_no,
+                'tracking_id' => $fileIndexing->tracking_id,
+                // No version and no author: nothing recorded this state, so claiming
+                // "v1, captured by X" would be inventing a history that never ran.
+                // The card reads is_live and badges it LIVE instead.
+                'version' => null,
+                'is_live' => true,
+                'event_type' => 'live',
+                'event_label' => 'Current state — no snapshot history for this file',
+                'changed_field_count' => 0,
+                'performed_by_name' => null,
+                'performed_at' => optional($fileIndexing->updated_at)->toDateTimeString(),
+                'payload' => $payload,
+                'changes' => [],
+            ],
+        ]);
     }
 
     /**

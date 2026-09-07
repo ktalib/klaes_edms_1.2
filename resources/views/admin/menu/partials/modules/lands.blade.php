@@ -9,7 +9,8 @@
     $hasRole('Parcel/Title Management-Land') ||
     $hasRole('Generate New FileNo (MLSFileNo)') ||
     $hasRole('EDMS Update')||
-    $hasRole('Regrant')
+    $hasRole('Regrant') ||
+    $hasRole('Land Registration')
 )
   <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
     <div
@@ -258,7 +259,40 @@
         </div>
       @endif
 
-      <!-- d. File History (parent menu: History View + Related Files + File Search) -->
+
+      <!-- d. Land Registration -->
+      @if($hasRole('Land Registration') || $hasRole('Supper Admin'))
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+          data-section="land-registration">
+          <div class="flex items-center gap-2">
+            <i data-lucide="book-marked" class="h-4 w-4 text-orange-500"></i>
+            <span>Land Registration</span>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="land-registration"></i>
+        </div>
+
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="land-registration">
+          {{-- Two registers, two sources. "Land Registry" lists the historical
+               Deeds of Purchase backfilled through PRA; "New Registration" lists
+               the ones registered through this system, which hold a number from
+               the vault. They are deliberately not merged. --}}
+
+          <!-- i. Land Registry (historical, from PRA) -->
+          <a href="{{ route('land-registration.capture.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-registration.capture.index') ? 'active' : '' }}">
+            <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Land Registry</span>
+          </a>
+
+          <!-- ii. Land Registry (New Registration) -->
+          <a href="{{ route('land-registration.registration.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-registration.registration.*') ? 'active' : '' }}">
+            <i data-lucide="book-open" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Land Registry (New Registration)</span>
+          </a>
+        </div>
+      @endif
+      <!-- e. File History (parent menu: History View + Related Files + File Search) -->
       @if($hasRole('File History View') || $hasRole('File Search'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="fileHistory-lands">
@@ -311,7 +345,7 @@
         </div>
       @endif
 
-      <!-- e. Problem Files -->
+      <!-- f. Problem Files -->
       @if($hasRole('File History View') || $hasRole('File Search'))
         <a href="{{ route('file-search-db.index') }}"
           class="sidebar-submodule-header flex items-center gap-2 py-1.5 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-search-db.index') ? 'active' : '' }}">
@@ -320,7 +354,7 @@
         </a>
       @endif
 
-      <!-- f. Parcel/Title Management -->
+      <!-- g. Parcel/Title Management -->
       @if($hasRole('Parcel/Title Management-Land'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="otherApplications-lands">
@@ -432,7 +466,7 @@
         </div>
       @endif
 
-      <!-- g. Digital Archive (standalone) -->
+      <!-- h. Digital Archive (standalone) -->
       @if($hasRole('File History View') || $hasRole('File Search'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="digitalArchive-lands">
@@ -482,7 +516,7 @@
         </div>
       @endif
 
-      <!-- h. EDMS Update -->
+      <!-- i. EDMS Update -->
       @if($hasRole('EDMS Update'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="edmsUpdate-lands">

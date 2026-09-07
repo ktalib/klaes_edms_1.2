@@ -3805,10 +3805,11 @@
     /**
      * The approval, with its consequences stated before it is given.
      *
-     * Only ever reached from an ENABLED Approval item, which the register now gates on
-     * the whole chain — stages, KNUPDA/Physical Planning, conveyance, memo, site plan.
-     * So this no longer has to explain why approving is impossible; when it opens,
-     * it is possible. Reject has its own menu item and is no longer carried here.
+     * Only ever reached from an ENABLED Approval item, which the register gates on the
+     * chain up to this point — stages, KNUPDA/Physical Planning, recommendation, site
+     * plan. The conveyance is not among them: it reports this decision, so it comes
+     * after. So this no longer has to explain why approving is impossible; when it
+     * opens, it is possible. Reject has its own menu item and is no longer carried here.
      */
     window.openApprovalDecision = async function (id) {
         if (!window.Swal) {
@@ -3818,9 +3819,9 @@
         const r = await Swal.fire({
             icon: 'question',
             title: 'Approve this duplex?',
-            html: '<p style="font-size:13px;color:#475569;line-height:1.6">Approving lists the '
-                + 'duplex for commissioning and closes the KNUPDA/Physical Planning answer, '
-                + 'the memo and the conveyance as they stand.</p>',
+            html: '<p style="font-size:13px;color:#475569;line-height:1.6">Approving closes the '
+                + 'KNUPDA/Physical Planning answer and the recommendation as they stand, opens '
+                + 'the conveyance, and lists the duplex for commissioning.</p>',
             showCancelButton: true,
             confirmButtonText: 'Approve',
             confirmButtonColor: '#059669',
@@ -3838,8 +3839,8 @@
             const r = await Swal.fire({
                 icon: 'question',
                 title: 'Approve this duplex?',
-                html: 'Approving unlocks KNUPDA, the application, the memo and the conveyance, '
-                    + 'and lists the duplex for commissioning.',
+                html: 'Approving closes the KNUPDA answer and the recommendation, opens the '
+                    + 'conveyance, and lists the duplex for commissioning.',
                 showCancelButton: true,
                 confirmButtonText: 'Yes, approve',
                 confirmButtonColor: '#059669',

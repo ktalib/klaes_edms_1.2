@@ -10,6 +10,7 @@ use App\Http\Controllers\PlanningRecommendationController;
 use App\Http\Controllers\SubPlanningRecommendationController;
 use App\Http\Controllers\FileIndexController;
 use App\Http\Controllers\PageTypingController;
+use App\Http\Controllers\PhoneVerificationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PropertyRecordController;
 use App\Http\Controllers\ScanningController;
@@ -243,6 +244,29 @@ Route::middleware(['auth'])->group(function () {
         Route::put('/update', [ProfileController::class, 'update'])->name('profile.update');
         // Reachable while RequireProfilePhoto has the rest of the system locked.
         Route::post('/picture', [ProfileController::class, 'storePicture'])->name('profile.picture.store');
+        // Where the browser reports what the face check made of a picture already on
+        // file — the only way that verdict can reach the server-side gate, since the
+        // detector runs client-side. Also reachable while locked.
+        Route::post('/picture/face-check', [ProfileController::class, 'storeFaceCheck'])->name('profile.picture.face-check');
+    });
+
+    /*
+     | Phone-number confirmation. Both are reachable while RequirePhoneVerification has
+     | the rest of the system locked — they are the only way out of it.
+     |
+     | Throttled per signed-in user, because each send costs a page of SMS credit and
+     | the verify endpoint is a guessing target: a 6-digit code has a million values,
+     | but 10 tries a minute against an unthrottled endpoint is a different problem.
+     | PhoneOtpService counts wrong answers as well; this is the backstop that does not
+     | depend on the cache surviving.
+     */
+    Route::prefix('phone-verification')->name('phone.verification.')->group(function () {
+        Route::post('/send', [PhoneVerificationController::class, 'send'])
+            ->middleware('throttle:6,10')
+            ->name('send');
+        Route::post('/verify', [PhoneVerificationController::class, 'verify'])
+            ->middleware('throttle:20,10')
+            ->name('verify');
     });
 
     // Property Record Routes - Keep only these relevant routes

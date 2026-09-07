@@ -862,6 +862,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/mark-duplicate', [IndexedFileTableController::class, 'markAsDuplicate'])->name('mark-duplicate');
         Route::get('/{id}/indexing-duplicate-preview', [IndexedFileTableController::class, 'previewIndexingDuplicateMove'])->name('indexing-duplicate-preview');
         Route::post('/{id}/move-to-indexing-duplicates', [IndexedFileTableController::class, 'moveToIndexingDuplicates'])->name('move-to-indexing-duplicates');
+        // Master Delete — Supper Admin only, re-checked in the controller.
+        Route::delete('/{id}/master-delete', [IndexedFileTableController::class, 'masterDelete'])->name('master-delete');
         Route::post('/{id}/set-temp-file', [IndexedFileTableController::class, 'setTempFile'])->name('set-temp-file');
         Route::post('/{id}/match-correspondence', [IndexedFileTableController::class, 'matchCorrespondence'])->name('match-correspondence');
         Route::post('/{id}/unmatch-correspondence', [IndexedFileTableController::class, 'unmatchCorrespondence'])->name('unmatch-correspondence');

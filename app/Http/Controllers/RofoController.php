@@ -1347,6 +1347,17 @@ class RofoController extends Controller
 
             app(RofoPraSyncer::class)->syncStUnits($summary['affected_sub_application_ids'] ?? []);
 
+            /*
+             | Tell each unit holder their Letter of Grant is ready.
+             |
+             | A batch RofO covers every sibling unit of one application, so this
+             | is per unit, not per request -- each has its own file number and,
+             | unusually for this codebase, its own phone number on
+             | subapplications.phone_number. The dispatcher's per-file dedupe key
+             | means re-saving the batch does not text anyone twice.
+             */
+            $this->sendStRofoSms($summary['affected_sub_application_ids'] ?? []);
+
             if ($isModal) {
                 $message = 'RoFO details saved successfully';
             } elseif ($isBatch) {
@@ -1392,6 +1403,49 @@ class RofoController extends Controller
 
             return back()->with('error', 'An error occurred while saving ROFO data: ' . $e->getMessage())
                 ->withInput();
+        }
+    }
+
+    /**
+     * Tell each ST unit holder their Letter of Grant is ready.
+     *
+     * Sectional Titling is the one flow in this codebase where the applicant's
+     * own phone number is genuinely on file -- subapplications.phone_number, with
+     * the mother application's as a fallback for a jointly-held unit -- so this
+     * does not depend on the file_indexings guesswork the Land and SLTR paths
+     * fall back to.
+     *
+     * Never throws. A saved RofO must not be reported as failed because a text
+     * message could not be composed.
+     */
+    private function sendStRofoSms(array $subApplicationIds): void
+    {
+        if (empty($subApplicationIds)) {
+            return;
+        }
+
+        try {
+            $notifier = app(\App\Services\Sms\RofoSmsNotifier::class);
+
+            $units = DB::connection('sqlsrv')->table('subapplications')
+                ->select('id', 'fileno', 'main_application_id')
+                ->whereIn('id', $subApplicationIds)
+                ->get();
+
+            foreach ($units as $unit) {
+                $notifier->send(
+                    \App\Services\Sms\RofoSmsNotifier::SOURCE_ST,
+                    $unit->fileno,
+                    $unit->id,
+                    'Department of Sectional Titling',
+                    $notifier->phoneForStUnit($unit->id, $unit->main_application_id)
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('RofoController: ST RofO SMS not queued', [
+                'units' => count($subApplicationIds),
+                'message' => $e->getMessage(),
+            ]);
         }
     }
 

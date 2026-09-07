@@ -136,13 +136,22 @@
                     }
                 },
 
+                // A Supper Admin holds the whole system, so Step 1 (Department) and
+                // Step 4 (Roles) stop applying — the grant is the user type itself.
+                get isSupperAdmin() {
+                    return this.userTypeName === 'Supper Admin';
+                },
+
                 // Auto-determine user level based on user type (Step 3)
                 autoSetUserLevel(userTypeName) {
                     // Clear previous level
                     this.userLevelName = '';
-                    
+
                     // Auto-determine level based on user type
                     switch(userTypeName) {
+                        case 'Supper Admin':
+                            this.userLevelName = 'Highest';
+                            break;
                         case 'Management':
                             this.userLevelName = 'Highest';
                             break;
@@ -752,12 +761,14 @@
                                     <div class="w-full md:w-1/2 px-2 mb-4">
                                         <div>
                                             {{ Form::label('department_id', __('Step 1: Select Department'), ['class' => 'block text-sm font-medium text-blue-800 mb-1']) }}
-                                            <div class="text-xs text-blue-600 mb-2">Choose the department to filter available roles</div>
+                                            <div class="text-xs text-blue-600 mb-2" x-show="!isSupperAdmin">Choose the department to filter available roles</div>
+                                            <div class="text-xs text-amber-600 mb-2" x-show="isSupperAdmin" style="display: none;">Optional for a Supper Admin — the grant is not scoped to a department.</div>
+                                            {{-- Required for every user type except Supper Admin, which is not department-scoped. --}}
                                             {{ Form::select('department_id', $departments, null, [
                                                 'class' => 'w-full p-2 border border-blue-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500',
-                                                'required' => 'required',
                                                 'id' => 'department_id',
                                                 'placeholder' => 'Select Department',
+                                                'x-bind:required' => '!isSupperAdmin',
                                                 '@change' => 'selectedDept = $event.target.value; selectedDeptName = $event.target.selectedOptions[0].text; showAll = !$event.target.value;'
                                             ]) }}
                                         </div>
@@ -775,7 +786,13 @@
                                                 @foreach($userTypes as $userType)
                                                     <option value="{{ $userType->name }}">{{ $userType->name }}</option>
                                                 @endforeach
+                                                {{-- Not a user_types row: the whole-system grant lives in assign_role, so it
+                                                     is offered here directly rather than through the lookup table. --}}
+                                                <option value="Supper Admin">Supper Admin (full system access)</option>
                                             </select>
+                                            <div class="text-xs text-amber-700 mt-2" x-show="isSupperAdmin" style="display: none;">
+                                                <i class="fas fa-shield-alt mr-1"></i>Steps 1 and 4 are skipped — this account is saved with <strong>Supper Admin</strong> as its only role.
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -805,6 +822,7 @@
                                     <div class="w-full md:w-1/2 px-2 mb-4">
                                         <div class="text-xs text-blue-700 bg-blue-100 p-3 rounded-md">
                                             <strong>Auto-Level Mapping:</strong><br>
+                                            • Supper Admin → Highest<br>
                                             • Management → Highest<br>
                                             • Operations → High<br>
                                             • System → Highest<br>
@@ -889,8 +907,19 @@
                                 </div>
                             </div>
 
+                            {{-- Step 4 stands down for a Supper Admin: the grant is not made of roles. --}}
+                            <div class="mt-6 p-4 rounded-lg border border-amber-300 bg-amber-50" x-show="isSupperAdmin" style="display: none;">
+                                <h4 class="text-md font-medium text-amber-800 mb-1">
+                                    <i class="fas fa-shield-alt mr-2"></i>Step 4: Not required for a Supper Admin
+                                </h4>
+                                <p class="text-sm text-amber-700">
+                                    This account is saved with <strong>Supper Admin</strong> in its role field, which grants access
+                                    to every module. Any individual roles ticked below are discarded on save.
+                                </p>
+                            </div>
+
                             {{-- Step 4: Available Roles --}}
-                            <div class="mt-6" id="roles_container">
+                            <div class="mt-6" id="roles_container" x-show="!isSupperAdmin">
                                 {{ Form::label('user_role', __('Step 4: Select Available Roles'), ['class' => 'block text-sm font-medium text-gray-700 mb-2']) }}
                                 
                                 <!-- Selection Summary -->
@@ -1047,8 +1076,7 @@
                                 <div class="mt-2 text-sm" x-show="!showAll && (selectedDept || userTypeName)">
                                     <span class="text-green-600">✓ Hierarchical filters applied - showing relevant roles only</span>
                                 </div>
-                                <div class="mt-2 text-sm" x-show
-                                showAll">
+                                <div class="mt-2 text-sm" x-show="showAll">
                                     <span class="text-orange-600">⚠ Showing all roles - hierarchical filtering disabled</span>
                                 </div>
                             </div>

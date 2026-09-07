@@ -87,6 +87,7 @@
                            class="w-full px-3 py-2 bg-white rounded-lg text-sm font-semibold text-slate-800 outline-none focus:ring-2 focus:ring-slate-500 border border-slate-300">
                     <div id="whiteCopyDateFixed" class="hidden">
                         <p id="whiteCopyDateFixedValue" class="text-[15px] font-black text-slate-800 font-mono"></p>
+                        <p id="whiteCopyDateFixedNote" class="hidden text-[10px] font-black uppercase tracking-wider text-slate-400 mt-0.5"></p>
                     </div>
                     <p id="whiteCopyDateHelp" class="text-[11px] text-slate-500 leading-relaxed">
                         Saved to the record and printed on the white copy as <b>DATE OF ISSUE</b>. The official
@@ -144,7 +145,7 @@
     // entered on an SLTR proof and posted to the land route would be written to a
     // land record — silently, and to whichever ids happened to match.
     var state = { id: null, url: '', ownsDate: false, onGenerate: null, count: 0,
-                  missing: 0, dateFixed: false, issueDateUrl: '' };
+                  missing: 0, dateFixed: false, issueDateUrl: '', dates: [] };
     var DEFAULT_ISSUE_DATE_URL = '{{ route('land-rofos.issue-date') }}';
 
     function csrf() {
@@ -169,6 +170,10 @@
         state.issueDateUrl = opts.issueDateUrl || DEFAULT_ISSUE_DATE_URL;
         state.count      = opts.count || 0;
         state.missing    = opts.missingDates || 0;
+        // The distinct dates a batch's letters already carry, earliest first. The
+        // caller may not know them (the lookup can fail), which is why the line
+        // below still has a count-only form to fall back to.
+        state.dates      = Array.isArray(opts.dates) ? opts.dates : [];
 
         var isBatch = state.count > 0;
 
@@ -186,8 +191,26 @@
 
         document.getElementById('whiteCopyDate').classList.toggle('hidden', state.dateFixed);
         document.getElementById('whiteCopyDateFixed').classList.toggle('hidden', !state.dateFixed);
+        // What the letters will print. A batch is normally issued on one day, so
+        // there is usually a single date to show — and showing it is the point of
+        // the proof: the date is one of the things being read back on paper.
+        // Letters issued on different days show the spread instead.
         document.getElementById('whiteCopyDateFixedValue').textContent =
-            isBatch ? ('All ' + state.count + ' letters are dated.') : issueDate;
+            !isBatch
+                ? issueDate
+                : (state.dates.length === 1
+                    ? state.dates[0]
+                    : (state.dates.length > 1
+                        ? state.dates[0] + ' — ' + state.dates[state.dates.length - 1]
+                        : 'All ' + state.count + ' letters are dated.'));
+
+        // Named under the date, so a single date does not read as one letter's and
+        // a spread does not read as a typo.
+        var fixedNote = document.getElementById('whiteCopyDateFixedNote');
+        fixedNote.classList.toggle('hidden', !isBatch || state.dates.length === 0);
+        fixedNote.textContent = state.dates.length === 1
+            ? 'All ' + state.count + ' letters carry this date.'
+            : state.dates.length + ' different dates across ' + state.count + ' letters.';
 
         document.getElementById('whiteCopyDateHelp').classList.toggle('hidden', isBatch || state.dateFixed);
         document.getElementById('whiteCopyDateBatchHelp').classList.toggle('hidden', !isBatch || state.dateFixed);

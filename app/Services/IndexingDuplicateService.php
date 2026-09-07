@@ -333,15 +333,53 @@ class IndexingDuplicateService
      */
     public function move(int $fileIndexingId, ?string $reason = null, ?string $duplicateOf = null): array
     {
+        return $this->execute($fileIndexingId, $reason, $duplicateOf, true);
+    }
+
+    /**
+     * Master Delete: the same removal as move(), with no indexing_duplicates archive
+     * behind it.
+     *
+     * Deliberately the SAME code path rather than a second purge engine — the set of
+     * tables an indexed file lives in is hard-won (see the constants above) and a
+     * parallel implementation would drift from it the first time that set changes.
+     * The only difference is that nothing is written to indexing_duplicates: a master
+     * delete is not a duplicate finding, so the record must not reappear on the
+     * Indexing Duplicates screen as though it were one.
+     *
+     * The returned `snapshot` is the whole pre-delete record; the caller writes it to
+     * the audit log, which is then the only surviving account of the file.
+     *
+     * Still refuses a file carrying scans, page typings, bills or SPAS applications
+     * (BLOCKING_REFERENCES) — being a Supper Admin does not make destroying scanned
+     * documents safe, and scan_reassignment_logs' NO_ACTION foreign key would fail
+     * the delete anyway.
+     *
+     * @return array{status:string, ...} status is 'purged', 'not_found' or 'blocked'
+     */
+    public function purge(int $fileIndexingId, ?string $reason = null): array
+    {
+        return $this->execute($fileIndexingId, $reason, null, false);
+    }
+
+    /**
+     * The shared body of move() and purge().
+     *
+     * @param bool $archive true to write (and keep) an indexing_duplicates row
+     */
+    private function execute(int $fileIndexingId, ?string $reason, ?string $duplicateOf, bool $archive): array
+    {
         $conn = DB::connection('sqlsrv');
 
         $row = $conn->table('file_indexings')->where('id', $fileIndexingId)->first();
         if (!$row) {
             // Already moved by someone else in a parallel session? Report that
-            // instead of a bare "not found" so the operator understands.
-            $archived = $conn->table('indexing_duplicates')
-                ->where('file_indexing_id', $fileIndexingId)
-                ->first();
+            // instead of a bare "not found" so the operator understands. Only the
+            // move flow can say this — a purge leaves no archive row to find, so for
+            // it a missing record is simply gone.
+            $archived = $archive
+                ? $conn->table('indexing_duplicates')->where('file_indexing_id', $fileIndexingId)->first()
+                : null;
 
             if ($archived) {
                 return [
@@ -390,55 +428,59 @@ class IndexingDuplicateService
 
         $actor = $this->resolveActorName();
         $counts = [];
+        // Built before the transaction: for a move it becomes indexing_duplicates.snapshot,
+        // for a purge it is all the caller has left to write to the audit log.
+        $snapshot = [
+            'file_indexing'     => (array) $row,
+            'fileNumber'        => array_map(fn ($r) => (array) $r, $fileNumberRows),
+            'customers_staging' => $customerRows->map(fn ($r) => (array) $r)->all(),
+            'entities_staging'  => $entityRows->map(fn ($r) => (array) $r)->all(),
+            'child_rows'        => $cleanable,
+            // pra / CofO_staging / file_indexing_staging — deleted with the
+            // record, full rows kept here so the move stays restorable.
+            'file_number_rows'  => $fileNumberRowsToDelete,
+            'matched_numbers'   => $numbers,
+            'mls_file_no_retained' => $retainedMls,
+            // Left in place on purpose — see RETAINED_REFERENCES.
+            'retained_references'  => $retained,
+            // Left in place on purpose — see TRANSACTION_TABLES.
+            'transaction_references' => $transactions,
+        ];
 
         $archiveId = $conn->transaction(function () use (
-            $conn, $row, $fileIndexingId, $numbers, $fileNumberRows, $customerRows,
-            $entityRows, $cleanable, $fileNumberRowsToDelete, $retained, $transactions,
-            $retainedMls, $actor, $reason, $duplicateOf, &$counts
+            $conn, $row, $fileIndexingId, $numbers, $fileNumberRows,
+            $retainedMls, $actor, $reason, $duplicateOf, $archive, $snapshot, &$counts
         ) {
-            $snapshot = [
-                'file_indexing'     => (array) $row,
-                'fileNumber'        => array_map(fn ($r) => (array) $r, $fileNumberRows),
-                'customers_staging' => $customerRows->map(fn ($r) => (array) $r)->all(),
-                'entities_staging'  => $entityRows->map(fn ($r) => (array) $r)->all(),
-                'child_rows'        => $cleanable,
-                // pra / CofO_staging / file_indexing_staging — deleted with the
-                // record, full rows kept here so the move stays restorable.
-                'file_number_rows'  => $fileNumberRowsToDelete,
-                'matched_numbers'   => $numbers,
-                'mls_file_no_retained' => $retainedMls,
-                // Left in place on purpose — see RETAINED_REFERENCES.
-                'retained_references'  => $retained,
-                // Left in place on purpose — see TRANSACTION_TABLES.
-                'transaction_references' => $transactions,
-            ];
+            $archiveId = null;
 
-            // Clone the record column-for-column. indexing_duplicates mirrors
-            // file_indexings, so the archive lines up with the indexed files table
-            // and a restore is a straight column-to-column insert. Anything the
-            // archive does not have a column for is dropped (it survives in the
-            // snapshot), which keeps this working if the two tables drift.
-            $archiveRow = array_intersect_key((array) $row, array_flip($this->archiveColumns()));
+            if ($archive) {
+                // Clone the record column-for-column. indexing_duplicates mirrors
+                // file_indexings, so the archive lines up with the indexed files table
+                // and a restore is a straight column-to-column insert. Anything the
+                // archive does not have a column for is dropped (it survives in the
+                // snapshot), which keeps this working if the two tables drift.
+                $archiveRow = array_intersect_key((array) $row, array_flip($this->archiveColumns()));
 
-            // created_at / updated_at stay as the ORIGINAL indexing timestamps —
-            // the move has its own moved_at.
-            unset($archiveRow['id']);
+                // created_at / updated_at stay as the ORIGINAL indexing timestamps —
+                // the move has its own moved_at.
+                unset($archiveRow['id']);
 
-            $archiveRow += [
-                'file_indexing_id'     => $fileIndexingId,
-                'duplicate_of'         => $this->clip($duplicateOf, 100),
-                'reason'               => $this->clip($reason, 500),
-                'mls_file_no_retained' => $retainedMls ? 1 : 0,
-                'snapshot'             => json_encode($snapshot),
-                'deleted_counts'       => null,
-                'moved_by'             => $this->clip($actor, 150),
-                'moved_by_id'          => Auth::id(),
-                'moved_at'             => now(),
-            ];
+                $archiveRow += [
+                    'file_indexing_id'     => $fileIndexingId,
+                    'duplicate_of'         => $this->clip($duplicateOf, 100),
+                    'reason'               => $this->clip($reason, 500),
+                    'mls_file_no_retained' => $retainedMls ? 1 : 0,
+                    'snapshot'             => json_encode($snapshot),
+                    'deleted_counts'       => null,
+                    'moved_by'             => $this->clip($actor, 150),
+                    'moved_by_id'          => Auth::id(),
+                    'moved_at'             => now(),
+                ];
 
-            // Archive first: if any delete below fails the whole move rolls back,
-            // archive row included.
-            $archiveId = $conn->table('indexing_duplicates')->insertGetId($archiveRow);
+                // Archive first: if any delete below fails the whole move rolls back,
+                // archive row included.
+                $archiveId = $conn->table('indexing_duplicates')->insertGetId($archiveRow);
+            }
 
             // Child queue/link rows first, so nothing is left pointing at a
             // file_indexings row that is about to disappear.
@@ -484,9 +526,11 @@ class IndexingDuplicateService
 
             $counts['file_indexings'] = $conn->table('file_indexings')->where('id', $fileIndexingId)->delete();
 
-            $conn->table('indexing_duplicates')
-                ->where('id', $archiveId)
-                ->update(['deleted_counts' => json_encode($counts)]);
+            if ($archive) {
+                $conn->table('indexing_duplicates')
+                    ->where('id', $archiveId)
+                    ->update(['deleted_counts' => json_encode($counts)]);
+            }
 
             return $archiveId;
         });
@@ -501,24 +545,38 @@ class IndexingDuplicateService
             ]);
         }
 
-        Log::info('Indexed file moved to indexing_duplicates', [
-            'indexing_duplicate_id' => $archiveId,
-            'file_indexing_id' => $fileIndexingId,
-            'file_number' => $row->file_number,
-            'counts' => $counts,
-            'moved_by' => $actor,
-        ]);
+        Log::warning(
+            $archive
+                ? 'Indexed file moved to indexing_duplicates'
+                : 'Indexed file MASTER DELETED (no archive kept)',
+            [
+                'indexing_duplicate_id' => $archiveId,
+                'file_indexing_id' => $fileIndexingId,
+                'file_number' => $row->file_number,
+                'counts' => $counts,
+                'moved_by' => $actor,
+            ]
+        );
 
-        $this->writeAudit($archiveId, $row, $counts, $reason);
+        // The move writes its own audit entry here. A purge does not: its caller owns
+        // the audit, because ExecutesMasterDelete::logMasterDelete() is the entry every
+        // other Master Delete in the system writes, and one shape beats two.
+        if ($archive) {
+            $this->writeAudit($archiveId, $row, $counts, $reason);
+        }
 
         return [
-            'status' => 'moved',
+            'status' => $archive ? 'moved' : 'purged',
             'indexing_duplicate_id' => $archiveId,
             'file_number' => $row->file_number,
+            'file_title' => $row->file_title ?? null,
             'counts' => $counts,
+            'matched_numbers' => $numbers,
             'mls_file_no_retained' => $retainedMls,
             'retained_references' => $retained,
             'transaction_references' => $transactions,
+            // Only a purge needs this back — nothing else survives it.
+            'snapshot' => $archive ? null : $snapshot,
         ];
     }
 

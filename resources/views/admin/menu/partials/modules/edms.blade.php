@@ -40,7 +40,7 @@
               <span>File Indexing Assistant</span>
             </a>
 
-            {{-- Match OP. It lives with indexing because that is the comparison it
+            {{-- Match OP (ToT). It lives with indexing because that is the comparison it
                  makes — the Occupancy Permit's holder against the File Indexing name —
                  and the officers who work these files are indexing officers.
 
@@ -53,18 +53,24 @@
               <a href="{{ route('land-recommendations.create') }}?match-op"
                 class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-recommendations.create') && request()->has('match-op') && request()->query('from') !== 'tot' ? 'active' : '' }}">
                 <i data-lucide="git-merge" class="h-3.5 w-3.5 text-emerald-400"></i>
-                <span>Match OP</span>
+                <span>Match OP (ToT)</span>
               </a>
 
-            {{-- OP → File Property ID Matching. A different job from Match OP above:
-                 that one writes a missing transfer, this one moves permits that were
-                 captured before their file existed onto the file's parcel id, so the
-                 file's records stop reading as separate properties. Filed here for the
-                 same reason — it is indexing officers who hold the confirmed file. --}}
+            {{-- Match OP (FC) — the OP → File Property ID Matching page. A different
+                 job from Match OP (ToT) above: that one writes a missing transfer,
+                 this one moves permits that were captured before their file existed
+                 onto the file's parcel id, so the file's records stop reading as
+                 separate properties. Filed here for the same reason — it is indexing
+                 officers who hold the confirmed file.
+
+                 The two are named as one pair on purpose: an officer looking for
+                 "Match OP" wants both halves of the job in one place, not one entry
+                 called Match OP and another called something else. Route and page
+                 keep their own op-propid-match names. --}}
             <a href="{{ route('op-propid-match.index') }}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('op-propid-match.*') ? 'active' : '' }}">
               <i data-lucide="link-2" class="h-3.5 w-3.5 text-emerald-400"></i>
-              <span>OP → File Property ID</span>
+              <span>Match OP (FC)</span>
             </a>
 
 

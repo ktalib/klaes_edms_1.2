@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Auth;
 // Log::channel('mls_batch') and Log::channel('fileno_duplicates') below keep
 // pointing at their own channels — see ChannelLog::channel().
 use App\Support\MlsFileNumberLog as Log;
+use App\Support\RecertificationFile;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
@@ -1498,9 +1499,17 @@ class MlsFileNoController extends Controller
      * - Direct Allocation + Default (no sub-option) → "Direct Allocation"
      * - File Type "Re-grant" → "Re-grant"
      * - File Type "Resettlement" → "Resettlement"
+     * - Any RC-prefixed number (IND-RC-…, CON-RES-RC-…) → "Recertification"
      */
-    private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType, $fileOption = 'normal')
+    private function resolveSourceValue($applicationType, $allocatedByFilter, $defaultAllocationType, $fileOption = 'normal', $fileNumberOrPrefix = null)
     {
+        // The RC token is decided by the prefix the officer picked, not by the allocation
+        // route, so it is read before anything else: a recertification commissioned as a
+        // Direct Allocation is still a recertification, and so is a converted one.
+        if (RecertificationFile::isRecertFileNumber($fileNumberOrPrefix)) {
+            return RecertificationFile::SOURCE_LABEL;
+        }
+
         // If application type is "conversion", always return "Conversion"
         if ($applicationType === 'conversion') {
             return 'Conversion';
@@ -1614,6 +1623,204 @@ class MlsFileNoController extends Controller
         return $ossCommission
             ? \App\Support\OssOpCommissionFilter::OSS
             : \App\Support\OssOpCommissionFilter::MLS;
+    }
+
+    /**
+     * Tell the applicant their file has been commissioned.
+     *
+     * Land and OSS Change of Ownership are two different messages raised by the
+     * SAME endpoint: the OSS entry point simply posts oss_commission=1, so
+     * system_sub_type is what separates them here.
+     *
+     * The number comes from the form, which now captures and saves it -- see the
+     * phone_no note in the validate array. When the officer left it blank the
+     * resolver looks the file up in file_indexings, which is a prefill of last
+     * resort rather than a source of truth: one number there sits on 1,211
+     * different files. A shared number is recorded as skipped, not sent.
+     *
+     * Never throws. A commissioning that succeeded must not be reported as
+     * failed because a text message could not be composed.
+     */
+    private function sendCommissioningSms($mlsRecord, array $validated, string $fullFileNumber): void
+    {
+        try {
+            $isOss = ($mlsRecord->system_sub_type ?? null) === \App\Support\OssOpCommissionFilter::OSS;
+            $key = $isOss
+                ? \App\Models\SmsSetting::KEY_OSS_FC
+                : \App\Models\SmsSetting::KEY_LAND_FC;
+
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $phone = trim((string) ($validated['phone_no'] ?? ''));
+            $confirmed = (bool) ($validated['phone_confirmed'] ?? false);
+
+            if ($phone === '') {
+                // Nothing typed on the form. Fall back to whatever the file was
+                // indexed with, and let the shared-number guard judge it.
+                $resolved = app(\App\Services\Sms\ApplicantPhoneResolver::class)
+                    ->forFileNumber($fullFileNumber);
+                $phone = $resolved['phone'];
+                $confirmed = false;
+            }
+
+            $tokens = $isOss
+                ? [
+                    'FileNo' => $fullFileNumber,
+                    'Original Holder' => $this->commissioningOriginalHolder($validated),
+                ]
+                : [
+                    'FileNo' => $fullFileNumber,
+                    'Application Type' => $this->commissioningApplicationTypeLabel($validated, $mlsRecord),
+                    'Department' => 'Land Department',
+                ];
+
+            $dispatcher->queue($key, $phone, $tokens, [
+                // One message per file number, whatever a retry or a
+                // double-clicked Generate button does.
+                'dedupe_key' => $key . ':' . $fullFileNumber,
+                'file_number' => $fullFileNumber,
+                'subject_type' => 'mls_file_no',
+                'subject_id' => $mlsRecord->id ?? null,
+                'phone_confirmed' => $confirmed,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::warning('MlsFileNoController: commissioning SMS not queued', [
+                'file_number' => $fullFileNumber,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * One commissioning SMS per file in a batch.
+     *
+     * The per-file numbers are read back out of mls_file_no rather than out of
+     * the request: the batch loop skips serials that were already taken, so the
+     * Nth entry the officer typed is not reliably the Nth file that got created,
+     * and pairing them by position would text the wrong applicant.
+     *
+     * Batch entries have no shared-number confirmation UI, so a number that
+     * looks like a clerk's is recorded as skipped rather than sent -- 200 files
+     * keyed by one office is exactly the case the guard exists for.
+     */
+    private function sendBatchCommissioningSms(array $generatedFiles, array $validated, ?string $systemSubType): void
+    {
+        if (empty($generatedFiles)) {
+            return;
+        }
+
+        try {
+            $isOss = $systemSubType === \App\Support\OssOpCommissionFilter::OSS;
+            $key = $isOss
+                ? \App\Models\SmsSetting::KEY_OSS_FC
+                : \App\Models\SmsSetting::KEY_LAND_FC;
+
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $rows = \App\Models\MlsFileNo::whereIn('full_file_number', $generatedFiles)
+                ->get(['id', 'full_file_number', 'phone_no', 'source', 'system_sub_type'])
+                ->keyBy('full_file_number');
+
+            $resolver = app(\App\Services\Sms\ApplicantPhoneResolver::class);
+            $originalHolder = $this->commissioningOriginalHolder($validated);
+
+            foreach ($generatedFiles as $fileNumber) {
+                $row = $rows[$fileNumber] ?? null;
+                $phone = trim((string) ($row->phone_no ?? ''));
+
+                if ($phone === '') {
+                    $phone = $resolver->forFileNumber($fileNumber)['phone'];
+                }
+
+                $tokens = $isOss
+                    ? ['FileNo' => $fileNumber, 'Original Holder' => $originalHolder]
+                    : [
+                        'FileNo' => $fileNumber,
+                        'Application Type' => $this->commissioningApplicationTypeLabel($validated, $row),
+                        'Department' => 'Land Department',
+                    ];
+
+                $dispatcher->queue($key, $phone, $tokens, [
+                    'dedupe_key' => $key . ':' . $fileNumber,
+                    'file_number' => $fileNumber,
+                    'subject_type' => 'mls_file_no',
+                    'subject_id' => $row->id ?? null,
+                    'phone_confirmed' => false,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('MlsFileNoController: batch commissioning SMS not queued', [
+                'count' => count($generatedFiles),
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * The previous holder named in the OSS Change of Ownership message.
+     *
+     * The commissioning form carries it as a hidden field copied off the source
+     * Occupancy Permit; when that is absent the party names on the source record
+     * are the next best thing, in the same priority the OSS application list uses.
+     */
+    private function commissioningOriginalHolder(array $validated): string
+    {
+        $owner = trim((string) ($validated['source_original_owner'] ?? ''));
+
+        if ($owner !== '') {
+            return $owner;
+        }
+
+        $sourceId = $validated['source_pra_id'] ?? null;
+
+        if ($sourceId) {
+            try {
+                $row = DB::connection('sqlsrv')->table('pra')
+                    ->select('party_1_name', 'party_2_name')
+                    ->where('id', $sourceId)
+                    ->first();
+
+                $owner = trim((string) ($row->party_2_name ?? $row->party_1_name ?? ''));
+            } catch (\Throwable $e) {
+                $owner = '';
+            }
+        }
+
+        return $owner;
+    }
+
+    /**
+     * The application type as an applicant would recognise it.
+     *
+     * mls_file_no.source already carries a human label ('Conversion',
+     * 'OP Resettlement', ...) resolved by resolveSourceValue(); the raw
+     * application_type input is a slug like 'change_of_purpose' and would read
+     * as gibberish in a text message.
+     */
+    private function commissioningApplicationTypeLabel(array $validated, $mlsRecord): string
+    {
+        // Nullsafe: the batch path looks each row back up and may not find one.
+        $source = trim((string) ($mlsRecord?->source ?? ''));
+
+        if ($source !== '') {
+            return $source;
+        }
+
+        $type = trim((string) ($validated['application_type'] ?? ''));
+
+        if ($type === '' || strtolower($type) === 'new') {
+            return 'Direct Allocation';
+        }
+
+        return ucwords(str_replace('_', ' ', $type));
     }
 
 
@@ -1735,6 +1942,16 @@ class MlsFileNoController extends Controller
                 'purpose_id' => 'nullable|integer',
                 'allocation_id' => 'nullable|integer',
                 'application_type' => 'nullable|string|max:50',
+                // The commissioning form has posted these two since it was
+                // built, but nothing validated or saved them, so mls_file_no
+                // .phone_no and fileNumber.phone_no were 100% empty. The
+                // commissioning SMS needs a number to text, so they are now
+                // captured. phone_confirmed is set by the form when the officer
+                // has cleared the shared-number warning -- see
+                // App\Services\Sms\ApplicantPhoneResolver.
+                'phone_no' => 'nullable|string|max:100',
+                'rep_phone_no' => 'nullable|string|max:100',
+                'phone_confirmed' => 'nullable|boolean',
                 'allocated_by_filter' => 'nullable|string|max:100',
                 'default_allocation_type' => 'nullable|string|max:50',
                 'require_op_source' => 'nullable|boolean',
@@ -2538,7 +2755,8 @@ class MlsFileNoController extends Controller
                     $appType,
                     $validated['allocated_by_filter'] ?? '',
                     $validated['default_allocation_type'] ?? null,
-                    $fileOption
+                    $fileOption,
+                    $fullFileNumber
                 );
 
                 Log::info('MLS generate resolved source value', [
@@ -2588,6 +2806,10 @@ class MlsFileNoController extends Controller
                     ),
                     'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
                     'source_pra_id' => $validated['source_pra_id'] ?? null,
+                    // Applicant contact, for the commissioning SMS and for
+                    // anything later that needs to reach the holder.
+                    'phone_no' => $validated['phone_no'] ?? null,
+                    'rep_phone_no' => $validated['rep_phone_no'] ?? null,
                     'sit_reason' => $fileOption === 'sit' ? ($validated['sit_reason'] ?? null) : null,
                     'old_fileno' => $fileOption === 'reissuance' ? ($validated['old_fileno'] ?? null) : null,
                 ]);
@@ -2621,6 +2843,11 @@ class MlsFileNoController extends Controller
                         'source' => 'MLS_Commissioned',
                         'type' => 'MlsFileNO',
                         'created_by' => $commissionedBy,
+                        // Kept in step with mls_file_no.phone_no. Both columns
+                        // existed and both were empty; anything reading the
+                        // compat table for a contact number found nothing.
+                        'phone_no' => $validated['phone_no'] ?? null,
+                        'rep_phone_no' => $validated['rep_phone_no'] ?? null,
                         'updated_at' => now()
                     ];
                     if (!empty($validated['related_fileno'])) {
@@ -3597,6 +3824,22 @@ class MlsFileNoController extends Controller
 
                 DB::connection('sqlsrv')->commit();
 
+                /*
+                 | Tell the applicant their file has been commissioned.
+                 |
+                 | AFTER the commit, deliberately: a message that says a file
+                 | exists must not go out on a transaction that then rolls back.
+                 | The dispatcher defers the gateway call past the response and
+                 | swallows every failure, so this cannot slow down or break the
+                 | commissioning it reports on.
+                 |
+                 | Land and OSS post to THIS SAME endpoint -- the OSS entry point
+                 | just sets oss_commission=1 -- so which of the two messages
+                 | goes out is decided by system_sub_type, the same discriminator
+                 | the MLS file list filters on.
+                 */
+                $this->sendCommissioningSms($mlsRecord, $validated, $fullFileNumber);
+
                 $edmsFolder = $this->ensureEdmsScanFolder($fullFileNumber);
                 $passportUpload = $this->storeCommissioningPassport($request, $fullFileNumber, $edmsFolder);
                 if (!empty($passportUpload['stored']) && !empty($passportUpload['path'])) {
@@ -4136,7 +4379,8 @@ class MlsFileNoController extends Controller
                     $appType,
                     $validated['allocated_by_filter'] ?? '',
                     $validated['default_allocation_type'] ?? null,
-                    $validated['file_option'] ?? 'normal'
+                    $validated['file_option'] ?? 'normal',
+                    $landUse
                 );
 
                 // Resolved once — every row in the batch shares the same origin.
@@ -4426,6 +4670,10 @@ class MlsFileNoController extends Controller
                         'sub_source' => $validated['sub_source'] ?? null,
                         'system_sub_type' => $batchSystemSubType,
                         'source_instrument_capture_id' => $validated['source_instrument_capture_id'] ?? null,
+                        // Per-file applicant contact. This was already validated
+                        // on location_entries.*.phone_no and then dropped here,
+                        // so batch-commissioned files had no number at all.
+                        'phone_no' => $entry['phone_no'] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now
                     ];
@@ -4444,6 +4692,7 @@ class MlsFileNoController extends Controller
                         'type' => 'MlsFileNO',
                         'is_deleted' => 0,
                         'created_by' => $commissionedBy,
+                        'phone_no' => $entry['phone_no'] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now
                     ];
@@ -5033,6 +5282,17 @@ class MlsFileNoController extends Controller
                 }
 
                 DB::connection('sqlsrv')->commit();
+
+                /*
+                 | One commissioning SMS per file in the batch, after the commit.
+                 |
+                 | A batch of 200 files is 200 messages and, at two pages each,
+                 | real money -- which is why the message ships switched off and
+                 | the control page shows the wallet balance beside the toggle.
+                 | Each file carries its own number from location_entries; the
+                 | resolver fills in the ones the officer left blank.
+                 */
+                $this->sendBatchCommissioningSms($generatedFiles, $validated, $batchSystemSubType ?? null);
 
                 $edmsFolders = [];
                 foreach ($generatedFiles as $generatedFileNumber) {

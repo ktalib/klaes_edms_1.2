@@ -443,6 +443,17 @@ class CreateFileTrackerController extends Controller
 
             DB::commit();
 
+            /*
+             | Tell the requesting officer their file is on its way to them.
+             |
+             | AFTER the commit, unlike the KANGIS tracker SMS a few lines above
+             | it, which sends inside the transaction and would tell an applicant
+             | about a movement that then rolled back. That one is left alone --
+             | it predates this and changing when it fires is a separate call --
+             | but the new message does not repeat the mistake.
+             */
+            $this->sendFileLoggedSms($tracker);
+
             // Logging the file resolves any open "Found" SCB request for it — mark them
             // acted so they drop out of the SCB Feedback queue. This covers logging via
             // the Quick Search result card, which doesn't hit the front-desk-acted endpoint.
@@ -1620,6 +1631,155 @@ HTML;
             && str_starts_with($normalized, 'KN')
             && strlen($normalized) > 2
             && !$this->isValidNewKangisFileNumber($normalized);
+    }
+
+    /**
+     * "Your File Request has been logged to your office" -- to the requester.
+     *
+     * Sent when the file is actually logged OUT to them, which is a different
+     * moment from the request being raised, and the one that starts the return
+     * clock. Everything the message quotes is tracker-level and was written a few
+     * lines earlier: the receiving office, the purpose, and the timeline.
+     *
+     * The recipient is the File Requester named on the tracker, whose user id the
+     * form supplies. When that names somebody outside the system -- the tracker
+     * allows a free-text officer -- there is no number to use and the dispatcher
+     * records a skipped row saying so.
+     *
+     * THE CLOCK: [DateTime] is rendered on the Lagos clock by the dispatcher, not
+     * on config('app.timezone'), which is UTC here. A message telling an officer
+     * their file was logged out an hour before it was is worse than none.
+     */
+    protected function sendFileLoggedSms(FileTracker $tracker): void
+    {
+        try {
+            $key = \App\Models\SmsSetting::KEY_FILE_REQUEST_LOGGED;
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $phone = null;
+
+            if (!empty($tracker->receiving_officer_id)) {
+                $phone = DB::connection('sqlsrv')->table('users')
+                    ->where('id', $tracker->receiving_officer_id)
+                    ->value('phone_number');
+            }
+
+            $dispatcher->queue($key, $phone, [
+                'FileNo(s)' => $tracker->file_number,
+                'Requester Office' => $tracker->receiving_office_name
+                    ?: ($tracker->destination ?: $tracker->department),
+                'DateTime' => $this->smsMoment($tracker->date_requested ?? $tracker->date_created),
+                'Purpose' => $tracker->request_purpose_name ?: 'official use',
+                'Timeline' => $this->smsTimeline($tracker),
+            ], [
+                'dedupe_key' => $key . ':' . $tracker->id,
+                'file_number' => $tracker->file_number,
+                'subject_type' => 'file_tracker',
+                'subject_id' => $tracker->id,
+                'event_at' => $tracker->date_requested ?? $tracker->date_created,
+                'phone_confirmed' => true,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('CreateFileTrackerController: file logged SMS not queued', [
+                'tracker_id' => $tracker->id ?? null,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** A moment as the office clock shows it, for an SMS body. */
+    protected function smsMoment($moment): string
+    {
+        $timezone = config('klaes_sms.timezone', 'Africa/Lagos');
+        $format = config('klaes_sms.datetime_format', 'd/m/Y h:i A');
+
+        try {
+            return \Carbon\Carbon::parse($moment ?: now())
+                ->setTimezone($timezone)
+                ->format($format);
+        } catch (\Throwable $e) {
+            return \Carbon\Carbon::now($timezone)->format($format);
+        }
+    }
+
+    /**
+     * How long the requester has the file for, in words.
+     *
+     * timeline_days is the explicit "Timeline (Days)" field; a tracker created
+     * from a purpose instead carries only a deadline, so that is counted back
+     * into days rather than left blank.
+     */
+    protected function smsTimeline(FileTracker $tracker): string
+    {
+        $days = $tracker->timeline_days;
+
+        if (!$days && !empty($tracker->deadline)) {
+            try {
+                $days = \Carbon\Carbon::parse($tracker->date_created ?: now())
+                    ->startOfDay()
+                    ->diffInDays(\Carbon\Carbon::parse($tracker->deadline)->startOfDay());
+            } catch (\Throwable $e) {
+                $days = null;
+            }
+        }
+
+        if (!$days) {
+            return 'the agreed period';
+        }
+
+        return $days . ' ' . ((int) $days === 1 ? 'day' : 'days');
+    }
+
+    /**
+     * "Your File Request has been received" -- to the officer who raised it.
+     *
+     * Goes to a member of STAFF, not the public: the wording says "your request"
+     * and "let us know if this was not placed by you", which only makes sense to
+     * the person who pressed the button. users.phone_number is therefore the
+     * source, and it is the one phone column in this database with no
+     * shared-number problem.
+     *
+     * One request is one file number -- file_search_requests.file_number is a
+     * single string, and Quick Search raises them one at a time -- so the
+     * [FileNo(s)] token renders one number. The plural is in the Ministry's
+     * wording, not in the data.
+     */
+    protected function sendFileRequestReceivedSms(FileSearchRequest $fr, $user): void
+    {
+        try {
+            $key = \App\Models\SmsSetting::KEY_FILE_REQUEST_RECEIVED;
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $phone = $user->phone_number ?? null;
+
+            $dispatcher->queue($key, $phone, [
+                'FileNo(s)' => $fr->file_number,
+            ], [
+                // Keyed on the request, not the file: a second request for the
+                // same file is a real second request and deserves its own
+                // acknowledgement.
+                'dedupe_key' => $key . ':' . $fr->id,
+                'file_number' => $fr->file_number,
+                'subject_type' => 'file_search_requests',
+                'subject_id' => $fr->id,
+                // Staff numbers are personal, so the shared-number guard has
+                // nothing to protect against here.
+                'phone_confirmed' => true,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('CreateFileTrackerController: file request SMS not queued', [
+                'request_id' => $fr->id ?? null,
+                'message' => $e->getMessage(),
+            ]);
+        }
     }
 
     protected function sendNewKangisTrackerSms(FileTracker $tracker, ?FileIndexing $linkedIndexing, ?string $officeName): array
@@ -3038,6 +3198,17 @@ HTML;
 
             $requesterName = $user->name ?? 'A registry user';
             $this->notifyScbMonitors($fr, $requesterName);
+
+            /*
+             | Acknowledge the request to the officer who raised it.
+             |
+             | Only on this branch. The two earlier returns -- updating an open
+             | request, and the missing-file shortcut that is stamped NOT_FOUND
+             | without ever reaching the SCB -- must stay silent, because the
+             | message promises the request has been "forwarded to our SCB
+             | Monitor for onward retrieval" and on those paths it has not.
+             */
+            $this->sendFileRequestReceivedSms($fr, $user);
 
             return response()->json([
                 'success' => true,

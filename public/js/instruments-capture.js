@@ -167,6 +167,17 @@ document.addEventListener('DOMContentLoaded', function () {
             needsRootReg: true,
             autoSetGrantor: true, // Will autofill Kano State Government
             description: 'A legal document issued by the government that proves ownership of land for a specified period (usually 99 years) in accordance with the Land Use Act.'
+        },
+        // Land Registration. Registered by the Land Registry, not Deeds: it has
+        // no consent step, and it is deliberately absent from INSTRUMENT_FAMILIES
+        // (nothing to choose between) and from consentGatedTypes.
+        'deed-of-purchase': {
+            id: 'deed-of-purchase',
+            name: 'Deed of Purchase Registration',
+            firstParty: 'Vendor',
+            secondParty: 'Purchaser',
+            needsRootReg: true,
+            description: 'A document recording the sale and purchase of an interest in land, transferring it from the vendor to the purchaser.'
         }
     };
 
@@ -408,7 +419,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const params = new URLSearchParams({ instrument_type: instrumentType });
         if (opType) params.set('op_type', opType);
 
-        return fetch('/instruments/next-registration-particulars?' + params.toString(), {
+        return fetch(getCaptureEndpoints().nextRegistrationParticulars + '?' + params.toString(), {
             headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
         })
@@ -433,6 +444,267 @@ document.addEventListener('DOMContentLoaded', function () {
             el.textContent = (value === 0 || value) ? String(value) : '\u2014';
         });
     }
+
+    /* ------------------------------------------------------------------
+     * Fill a missing registration number.
+     *
+     * A registration deleted outright leaves a serial the paper book still
+     * carries and the database no longer accounts for. Capturing that
+     * instrument again the normal way burns the NEXT number and makes the hole
+     * permanent, so the officer can instead pick the hole - and the vault stays
+     * where it is.
+     *
+     * The list is per register, and a register does not begin at 1/1/1: each was
+     * taken over part-way through the manual workflow, so what counts as missing
+     * runs from the first number that register ever issued in KLAES up to the one
+     * its vault stands on now. The server works that out
+     * (MissingRegistrationParticularsService) - nothing here re-derives it.
+     * ------------------------------------------------------------------ */
+
+    // Last report fetched, so changing the volume does not re-hit the server.
+    let backfillReport = null;
+    // Guards against a slow response for a type the officer has already left.
+    let backfillRequestToken = 0;
+    // The register the panel currently describes, as "type|opType". Repaints
+    // that leave this unchanged (picking a CofO type, say - all three Regular
+    // types share one vault) must not throw away a number already chosen.
+    let backfillTargetKey = null;
+
+    /**
+     * The instrument type string the capture will actually post - the same
+     * resolution the submit handler applies, so the numbers offered here belong
+     * to the register the capture will really be written into.
+     */
+    function effectiveInstrumentTypeName() {
+        if (currentInstrumentType === 'occupancy-permit') return 'Occupancy Permit (OP)';
+        if (currentInstrumentType === 'certificate-of-occupancy') {
+            return cofoVariants[getCofoVariant()]?.instrumentType || '';
+        }
+        return instrumentTypes[currentInstrumentType]?.name || '';
+    }
+
+    function backfillElements() {
+        return {
+            panel: document.getElementById('backfill-panel'),
+            toggle: document.getElementById('backfill_registration'),
+            hint: document.getElementById('backfill-panel-hint'),
+            range: document.getElementById('backfill-range'),
+            fields: document.getElementById('backfill-fields'),
+            volume: document.getElementById('backfill_volume_select'),
+            serial: document.getElementById('backfill_serial_select'),
+            chosen: document.getElementById('backfill-chosen'),
+            volumeValue: document.getElementById('backfill_volume_no'),
+            serialValue: document.getElementById('backfill_serial_no'),
+        };
+    }
+
+    /** Whether this capture is set to fill a missing number. */
+    function isBackfillRequested() {
+        const el = document.getElementById('backfill_registration');
+        return !!(el && !el.disabled && el.checked);
+    }
+    window.isBackfillRequested = isBackfillRequested;
+
+    /** The number chosen, as {serial, volume, formatted}, or null. */
+    function chosenBackfillNumber() {
+        const els = backfillElements();
+        const serial = parseInt(els.serialValue?.value || '', 10);
+        const volume = parseInt(els.volumeValue?.value || '', 10);
+        if (!Number.isInteger(serial) || !Number.isInteger(volume) || serial < 1 || volume < 1) return null;
+        return { serial: serial, volume: volume, formatted: serial + '/' + serial + '/' + volume };
+    }
+    window.chosenBackfillNumber = chosenBackfillNumber;
+
+    /* The two hidden inputs are what the form posts; the selects only drive them.
+       Cleared whenever nothing valid is chosen so an abandoned pick can never
+       ride along with the next capture. */
+    function writeBackfillChoice(volume, serial) {
+        const els = backfillElements();
+        if (els.volumeValue) els.volumeValue.value = (volume === 0 || volume) ? String(volume) : '';
+        if (els.serialValue) els.serialValue.value = (serial === 0 || serial) ? String(serial) : '';
+        if (els.chosen) {
+            const has = !!(volume && serial);
+            els.chosen.classList.toggle('hidden', !has);
+            els.chosen.textContent = has
+                ? 'This instrument will be registered as ' + serial + '/' + serial + '/' + volume + '.'
+                : '';
+        }
+    }
+
+    /** Rebuild the missing-number list for whichever volume is selected. */
+    function renderBackfillSerials() {
+        const els = backfillElements();
+        if (!els.serial) return;
+
+        const volume = parseInt(els.volume?.value || '', 10);
+        const entry = (backfillReport?.volumes || []).find(v => v.volume === volume);
+
+        els.serial.innerHTML = '';
+        if (!entry) {
+            writeBackfillChoice(null, null);
+            return;
+        }
+
+        entry.entries.forEach(number => {
+            const option = document.createElement('option');
+            option.value = String(number.serial);
+            option.textContent = number.formatted;
+            els.serial.appendChild(option);
+        });
+
+        if (entry.truncated) {
+            const note = document.createElement('option');
+            note.disabled = true;
+            note.textContent = '\u2026 ' + (entry.missing - entry.entries.length) + ' more not listed';
+            els.serial.appendChild(note);
+        }
+
+        writeBackfillChoice(volume, parseInt(els.serial.value || '', 10) || null);
+    }
+
+    /** Rebuild both selects from the report just fetched. */
+    function renderBackfillReport(report) {
+        const els = backfillElements();
+        backfillReport = report;
+
+        if (els.volume) {
+            els.volume.innerHTML = '';
+            (report?.volumes || []).forEach(v => {
+                const option = document.createElement('option');
+                option.value = String(v.volume);
+                // "1 missing" against "299 registered" is a deleted registration;
+                // "226 missing" against "2 registered" is a volume that was never
+                // captured in the first place. The officer can tell them apart
+                // without opening either list.
+                option.textContent = 'Volume ' + v.volume + ' \u2014 ' + v.missing
+                    + ' missing (' + v.registered + ' registered)';
+                els.volume.appendChild(option);
+            });
+        }
+
+        renderBackfillSerials();
+    }
+
+    /**
+     * Show, hide and repopulate the panel for whatever is currently being
+     * captured. Safe to call as often as the type or sub-type changes.
+     *
+     * Pass { force: true } to re-survey the same register - on opening the
+     * dialog, and after a capture, where another officer may have filled a gap
+     * since this list was built.
+     */
+    function syncBackfillPanel(options) {
+        const els = backfillElements();
+        if (!els.panel) return; // Side-capture pages do not render it.
+
+        const instrumentType = effectiveInstrumentTypeName();
+        const opType = getSelectedOpType();
+        const targetKey = instrumentType + '|' + opType;
+
+        if (!(options && options.force) && targetKey === backfillTargetKey) {
+            return; // Same register, nothing to rebuild - keep the officer's pick.
+        }
+        backfillTargetKey = targetKey;
+
+        const token = ++backfillRequestToken;
+
+        // Every register change starts from "not backfilling": a number picked
+        // for one register must never survive a switch to another.
+        if (els.toggle) els.toggle.checked = false;
+        writeBackfillChoice(null, null);
+        backfillReport = null;
+        els.fields.classList.add('hidden');
+        // The hint and range lines are commented out of the blade for now, so
+        // every reference to them is optional - the panel works with or without.
+        if (els.range) els.range.classList.add('hidden');
+        els.panel.classList.add('hidden');
+
+        if (!instrumentType) return;
+        // OP cannot be surveyed until its register is known - the two paginate
+        // separately and share one instrument type in the register table.
+        if (currentInstrumentType === 'occupancy-permit' && !opType) return;
+
+        // Deferred a tick so a burst of repaints while the dialog opens settles
+        // on one register before the request goes out; the token discards any
+        // answer that arrives for a register the officer has already left.
+        setTimeout(() => {
+            if (token !== backfillRequestToken) return;
+            requestBackfillReport(instrumentType, opType, token);
+        }, 0);
+    }
+    window.syncBackfillPanel = syncBackfillPanel;
+
+    /**
+     * Forget which register the panel describes, so the next syncBackfillPanel()
+     * re-surveys even if the register has not changed. Called when the dialog
+     * opens and after a capture: another officer may have filled a gap since
+     * this list was built, and a filled gap must not still be on offer.
+     */
+    function invalidateBackfillPanel() {
+        backfillTargetKey = null;
+    }
+    window.invalidateBackfillPanel = invalidateBackfillPanel;
+
+    function requestBackfillReport(instrumentType, opType, token) {
+        const els = backfillElements();
+        const params = new URLSearchParams({ instrument_type: instrumentType });
+        if (opType) params.set('op_type', opType);
+
+        fetch(getCaptureEndpoints().missingRegistrationParticulars + '?' + params.toString(), {
+            headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin',
+        })
+            .then(res => res.json())
+            .then(data => {
+                if (token !== backfillRequestToken) return; // A later type won.
+                if (!data || !data.success || !data.configured || !data.supported) return;
+                if (!data.total || !(data.volumes || []).length) return;
+
+                els.panel.classList.remove('hidden');
+                if (els.hint) {
+                    els.hint.textContent = data.total === 1
+                        ? '1 number is unaccounted for in this register. Use this only to re-enter an instrument whose registration was deleted.'
+                        : data.total + ' numbers are unaccounted for in this register. Use this only to re-enter an instrument whose registration was deleted.';
+                }
+                if (els.range) {
+                    els.range.classList.remove('hidden');
+                    els.range.textContent = 'This register runs from ' + data.origin.formatted
+                        + ' (where the manual workflow handed over) to ' + data.current.formatted + '.';
+                }
+                renderBackfillReport(data);
+            })
+            .catch(err => {
+                if (token !== backfillRequestToken) return;
+                // An optional picker must never stand between the officer and a
+                // capture: the next number in sequence is still available.
+                console.warn('Could not list the missing registration numbers', err);
+            });
+    }
+
+    document.addEventListener('change', function (event) {
+        if (event.target.id === 'backfill_registration') {
+            const els = backfillElements();
+            const on = event.target.checked;
+            els.fields.classList.toggle('hidden', !on);
+            if (on) {
+                renderBackfillSerials();
+            } else {
+                writeBackfillChoice(null, null);
+            }
+            return;
+        }
+        if (event.target.id === 'backfill_volume_select') {
+            renderBackfillSerials();
+            return;
+        }
+        if (event.target.id === 'backfill_serial_select') {
+            const els = backfillElements();
+            writeBackfillChoice(
+                parseInt(els.volume?.value || '', 10) || null,
+                parseInt(els.serial?.value || '', 10) || null
+            );
+        }
+    });
 
     /* The OSS Applications and Land/MLS pages render #op_type_select instead of the
      * banner (they never show one), so the chosen type stays visible on the card
@@ -464,6 +736,10 @@ document.addEventListener('DOMContentLoaded', function () {
             'op-type-reg-particulars',
             'volume'
         );
+
+        // The two OP registers paginate separately, so the missing numbers on
+        // offer change with the sub-type, not just with the instrument.
+        syncBackfillPanel();
     }
     window.updateOpTypeSummary = updateOpTypeSummary;
 
@@ -1023,6 +1299,28 @@ document.addEventListener('DOMContentLoaded', function () {
         };
     }
 
+    /**
+     * Where the capture form posts. Defaults to the Deeds (/instruments) paths,
+     * so the Deeds screens are unchanged; a host page that embeds this same form
+     * for another registry -- Land Registration -- overrides them through
+     * window.InstrumentCaptureConfig.urls. Keeping ONE copy of this file is the
+     * point: it is what guarantees both registries capture through identical
+     * logic instead of drifting apart.
+     */
+    function getCaptureEndpoints() {
+        const urls = window.InstrumentCaptureConfig?.urls || {};
+        const base = urls.captureBase || '/instruments';
+        return {
+            base: base,
+            store: urls.store || (base + '/store'),
+            checkDuplicate: urls.checkDuplicate || '/api/instruments/check-duplicate',
+            nextRegistrationParticulars: urls.nextRegistrationParticulars
+                || '/instruments/next-registration-particulars',
+            missingRegistrationParticulars: urls.missingRegistrationParticulars
+                || '/instruments/missing-registration-particulars',
+        };
+    }
+
     function getTpLookupValue() {
         const selectEl = document.getElementById('tp_no');
         if (!selectEl) return '';
@@ -1416,7 +1714,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (methodField) methodField.remove();
 
         const storeUrlInput = document.getElementById('storeUrl');
-        if (storeUrlInput) storeUrlInput.value = '/instruments/store';
+        if (storeUrlInput) storeUrlInput.value = getCaptureEndpoints().store;
 
         // Clear all populated fields
         const fieldsToClear = [
@@ -1899,6 +2197,10 @@ document.addEventListener('DOMContentLoaded', function () {
             'cofo-reg-particulars',
             'volume'
         );
+
+        // Regular, SLTR and ST paginate from separate vaults, so each has its
+        // own set of missing numbers.
+        syncBackfillPanel();
     }
     window.updateCofoSummary = updateCofoSummary;
 
@@ -2186,6 +2488,11 @@ document.addEventListener('DOMContentLoaded', function () {
             'instrument-choice-reg-particulars',
             'volume'
         );
+
+        // Each member of a family is its own instrument type, and a shared vault
+        // (Assignment + Gift, Mortgage + Tripartite) still surveys as one
+        // register - which is the server's business, not this one's.
+        syncBackfillPanel();
     }
     window.updateInstrumentChoiceSummary = updateInstrumentChoiceSummary;
 
@@ -3223,7 +3530,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const params = new URLSearchParams(Object.fromEntries(
                 Object.entries(extraParams).filter(([_, v]) => v !== null && v !== undefined && v !== '')
             ));
-            const url = `/api/instruments/check-duplicate?${params.toString()}`;
+            const url = `${getCaptureEndpoints().checkDuplicate}?${params.toString()}`;
             console.log('checkDuplicate: Fetching URL:', url);
 
             const res = await fetch(url);
@@ -4109,7 +4416,7 @@ document.addEventListener('DOMContentLoaded', function () {
         setHidden('id', record.id);
         const storeUrlInput = document.getElementById('storeUrl');
         if (storeUrlInput) {
-            storeUrlInput.value = `/instruments/${record.id}`;
+            storeUrlInput.value = `${getCaptureEndpoints().base}/${record.id}`;
             setHidden('_method', 'PUT');
         }
 
@@ -4158,7 +4465,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (methodField) methodField.remove();
 
         const storeUrlInput = document.getElementById('storeUrl');
-        if (storeUrlInput) storeUrlInput.value = '/instruments/store';
+        if (storeUrlInput) storeUrlInput.value = getCaptureEndpoints().store;
 
         // Auto-fill from consent/prior instrument when user chooses to create new
         const hasCons = !!duplicateCheckState.consentApp;
@@ -5282,7 +5589,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const storeUrlInput = document.getElementById('storeUrl');
         if (storeUrlInput) {
             // Update URL to the update route: /instruments/{id}
-            storeUrlInput.value = `/instruments/${data.id}`;
+            storeUrlInput.value = `${getCaptureEndpoints().base}/${data.id}`;
         }
 
         safeSetValue('firstPartyName', data.party_1_name);
@@ -5436,6 +5743,7 @@ document.addEventListener('DOMContentLoaded', function () {
         safeSetDateValue('endDate', data.end_date);
         safeSetValue('annualRent', data.annual_rent);
         safeSetValue('considerationAmount', data.consideration_amount);
+        safeSetValue('receipt_no', data.receipt_no);
         safeSetValue('bankName', data.bank_name);
 
         if (data.root_reg_number) {
@@ -5966,6 +6274,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         currentInstrumentType = typeKey;
+        // Every open re-surveys the missing numbers, even for the register that
+        // was on screen last time: a gap filled elsewhere must not still show.
+        invalidateBackfillPanel();
         normalizeAssignmentGiftBookletCode();
         // Commissioned-file mode only makes sense for an OP; switching type leaves it.
         opcfSetBandVisible(isOpCommissionedFileMode() && typeKey === 'occupancy-permit');
@@ -6095,6 +6406,12 @@ document.addEventListener('DOMContentLoaded', function () {
         // The grouped instrument families answer their choice in a prompt before the
         // form opens; the banner is what shows it afterwards (OP/CofO pattern).
         updateInstrumentChoiceSummary(typeKey);
+
+        // Missing-number picker. The three banners above refresh it for the types
+        // they own; this catches the ones that have no banner at all (Deed of
+        // Lease, Deed of Sub-Lease, Devolution Order). Repeat calls in the same
+        // tick collapse into one survey.
+        syncBackfillPanel();
 
         // Handle Subtypes. Where the banner is rendered (the dedicated capture page)
         // it replaces this select entirely - two controls for the same answer is how
@@ -6334,10 +6651,25 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
-        // Additional Details section is intentionally hidden for all types.
+        /*
+         * The Additional Details section holds #instrument-fields, which is where
+         * showInstrumentForm() injects the per-type template. Deeds keeps it
+         * hidden for every instrument type, so on those screens the templates are
+         * cloned into a container nobody can see -- deliberate, and unchanged.
+         *
+         * A host page that actually wants those fields opts in. Without the flag
+         * the behaviour is exactly what it was.
+         */
         const additionalDetailsSection = document.getElementById('additional-details-section');
         if (additionalDetailsSection) {
-            additionalDetailsSection.classList.add('hidden');
+            const showAdditionalDetails = window.InstrumentCaptureConfig?.showAdditionalDetails === true;
+            additionalDetailsSection.classList.toggle('hidden', !showAdditionalDetails);
+
+            const heading = window.InstrumentCaptureConfig?.additionalDetailsTitle;
+            if (showAdditionalDetails && heading) {
+                const headingEl = additionalDetailsSection.querySelector('h3');
+                if (headingEl) headingEl.textContent = heading;
+            }
         }
 
         // Ensure Grantor fields visibility is correct based on current name
@@ -6451,9 +6783,13 @@ document.addEventListener('DOMContentLoaded', function () {
             const cofoTypeSelect = document.getElementById('cofoType');
             if (cofoTypeSelect) cofoTypeSelect.value = keepCofoType;
         }
-        // Repaint both banners from whatever survived the reset.
+        // Repaint both banners from whatever survived the reset. The missing-number
+        // panel is re-surveyed with them: the capture that led to this reset may
+        // have been the one that filled the gap it was offering.
+        invalidateBackfillPanel();
         updateOpTypeSummary();
         updateCofoSummary();
+        syncBackfillPanel();
 
         resetManualSelectFields();
 
@@ -7652,20 +7988,39 @@ document.addEventListener('DOMContentLoaded', function () {
             subType = instrumentName;
         }
 
+        // A backfill takes a number this register skipped instead of the next one
+        // in sequence, so the confirmation must say which number is being taken -
+        // it is the one thing about this capture that cannot be undone by a later
+        // edit, and the officer chose it from a list rather than being given it.
+        const backfillNumber = isBackfillRequested() ? chosenBackfillNumber() : null;
+        if (isBackfillRequested() && !backfillNumber) {
+            Swal.fire(
+                'Required',
+                'This capture is set to fill a missing registration number, but none is selected. '
+                + 'Pick one from the list, or untick the box to register on the next number in sequence.',
+                'info'
+            );
+            return false;
+        }
+
         const manualRegFlow = currentInstrumentType === 'occupancy-permit' && isFfrExistingManualRegistrationFlow();
         const serialNo = (document.getElementById('serial_no')?.value || '').toString().trim();
         const pageNo = (document.getElementById('reg_page_no')?.value || '').toString().trim();
         const volumeNo = (document.getElementById('volume_no')?.value || '').toString().trim();
         const registrationParticulars = (document.getElementById('registration_number')?.value || '').toString().trim();
-        const regInfoLabel = manualRegFlow
-            ? 'Manual Registration Details'
-            : 'Registration Number';
-        const regInfoText = manualRegFlow
-            ? 'This registration uses the manual Serial / Page / Volume entered in the OP form.'
-            : 'Will be assigned automatically upon submission';
-        const regInfoHint = manualRegFlow
-            ? ('Serial: ' + (serialNo || '-') + ' | Page: ' + (pageNo || '-') + ' | Vol: ' + (volumeNo || '-') + (registrationParticulars ? (' | Ref: ' + registrationParticulars) : ''))
-            : 'The system will allocate the correct unique registration particulars (Serial / Page / Volume) when you confirm.';
+        const regInfoLabel = backfillNumber
+            ? 'Missing Registration Number'
+            : (manualRegFlow ? 'Manual Registration Details' : 'Registration Number');
+        const regInfoText = backfillNumber
+            ? ('This instrument will be registered as ' + backfillNumber.formatted + '.')
+            : (manualRegFlow
+                ? 'This registration uses the manual Serial / Page / Volume entered in the OP form.'
+                : 'Will be assigned automatically upon submission');
+        const regInfoHint = backfillNumber
+            ? ('Filling a number this register skipped. The vault stays where it is, so the next capture still takes the number in sequence.')
+            : (manualRegFlow
+                ? ('Serial: ' + (serialNo || '-') + ' | Page: ' + (pageNo || '-') + ' | Vol: ' + (volumeNo || '-') + (registrationParticulars ? (' | Ref: ' + registrationParticulars) : ''))
+                : 'The system will allocate the correct unique registration particulars (Serial / Page / Volume) when you confirm.');
 
         try {
             const result = await Swal.fire({
@@ -8329,7 +8684,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Force _method=PUT if URL indicates update and it's not in formData
         const storeUrlInput = document.getElementById('storeUrl');
-        if (storeUrlInput && storeUrlInput.value.includes('/instruments/') && !storeUrlInput.value.endsWith('/store')) {
+        if (storeUrlInput && storeUrlInput.value.includes(getCaptureEndpoints().base + '/') && !storeUrlInput.value.endsWith('/store')) {
             formData.set('_method', 'PUT');
         }
 
@@ -8337,7 +8692,7 @@ document.addEventListener('DOMContentLoaded', function () {
             || document.getElementById('includeSolicitor')?.checked === true;
         formData.set('include_solicitor', includeSolicitorSelected ? '1' : '0');
 
-        const url = storeUrlInput ? storeUrlInput.value : '/instruments/store';
+        const url = storeUrlInput ? storeUrlInput.value : getCaptureEndpoints().store;
 
         if (currentInstrumentType === 'occupancy-permit' && window.ossOpContext === true) {
             await submitPraRecord(formData, originalContent);

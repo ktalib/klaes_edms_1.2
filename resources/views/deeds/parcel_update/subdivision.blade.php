@@ -213,36 +213,6 @@
                                                     </div>
                                                     <div class="py-1">
                                                         @if($record->knupda_status === 'Approved')
-                                                            @if(!$record->application_generated_at)
-                                                                <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                    <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
-                                                                </button>
-                                                            @else
-                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
-                                                                    <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                                </button>
-                                                            @endif
-
-                                                            @if($record->application_generated_at)
-                                                                <a href="{{ route('plot-subdivision.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
-                                                                </a>
-                                                            @else
-                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
-                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                                </button>
-                                                            @endif
-                                                        @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                                <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                            </button>
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                            </button>
-                                                        @endif
-                                                    </div>
-                                                    <div class="py-1">
-                                                        @if($record->knupda_status === 'Approved')
                                                             @if(!$record->recommendation_generated_at)
                                                                 <button onclick="generateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                                     <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
@@ -272,10 +242,13 @@
                                                         @endif
                                                     </div>
                                                     <div class="py-1">
-                                                    {{-- Approve sits SECOND TO LAST, immediately above Delete: the
-                                                         approval is given on the strength of the recommendation memo, so
-                                                         it cannot be offered above the two documents it depends on. Same
-                                                         order of business the duplex register follows. --}}
+                                                    {{-- Approve sits BELOW the recommendation and above the
+                                                         application: the approval is given on the strength of the
+                                                         recommendation memo, so it cannot be offered above it. Reject
+                                                         is the same question's other answer and sits beside it - its
+                                                         handler has always existed here, it had simply never been put
+                                                         on the menu. Same order of business the duplex register
+                                                         follows. --}}
                                                         @if($record->commissionedCount() > 0 || $record->status === 'commissioned')
                                                             <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Approved — {{ $record->commissionedCount() }} of {{ $record->num_plots }} plots already commissioned">
                                                                 <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
@@ -287,6 +260,45 @@
                                                         @else
                                                             <button onclick="approveRecord({{ $record->id }}, {{ $record->knupda_status === 'Approved' ? 'false' : 'true' }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
                                                                 <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
+                                                            </button>
+                                                        @endif
+                                                    @if(in_array($record->status, ['approved', 'rejected', 'commissioned'], true))
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="{{ $record->status === 'rejected' ? 'Already rejected' : 'Nothing left to reject' }}">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-300"></i> Reject
+                                                        </button>
+                                                    @else
+                                                        <button onclick="rejectRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-400"></i> Reject
+                                                        </button>
+                                                    @endif
+                                                    </div>
+                                                    <div class="py-1">
+                                                        @if($record->knupda_status === 'Approved')
+                                                            @if(!$record->application_generated_at)
+                                                                <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
+                                                                </button>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
+                                                                    <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                                </button>
+                                                            @endif
+
+                                                            @if($record->application_generated_at)
+                                                                <a href="{{ route('plot-subdivision.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
+                                                                </a>
+                                                            @else
+                                                                <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
+                                                                    <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                                </button>
+                                                            @endif
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                            </button>
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
                                                             </button>
                                                         @endif
                                                     </div>
@@ -383,18 +395,29 @@
                                 <input type="checkbox" id="apply_all_toggle" onchange="toggleApplyAll()" class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                 <span class="text-xs font-bold uppercase text-slate-600">Apply Same Size To All Plots</span>
                             </label>
-                            <div id="applyAllSizeWrapper" class="hidden flex-1 min-w-[160px]">
-                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Size For All Plots</label>
-                                <input type="number" id="apply_all_size" step="0.01" placeholder="0.00" oninput="applySizeToAllPlots()" class="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm">
+                            <div id="applyAllSizeWrapper" class="hidden flex-1 min-w-[220px]">
+                                <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Dimensions For All Plots (m)</label>
+                                {{-- The same widget as a plot cell, so the shortcut asks for what the
+                                     plots themselves ask for. Copied down by applySizeToAllPlots(). --}}
+                                <div id="apply_all_dims" class="plot-dims flex flex-wrap items-center gap-1.5" data-slot="all"></div>
+                                <input type="number" id="apply_all_area" step="0.01" min="0" placeholder="Measured area (m2)"
+                                       oninput="applySizeToAllPlots()"
+                                       class="hidden mt-2 w-full px-3 py-2 rounded-lg border border-amber-200 bg-amber-50/40 text-sm">
+                                <p id="apply_all_area_note" class="hidden text-[10px] text-slate-500 mt-1">
+                                    Two sides give the area on their own. With any other number of sides, type the measured area from the plan.
+                                </p>
                             </div>
                         </div>
 
-                        <div id="fragmentsContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <p class="text-[10px] text-slate-500 mb-2">
+                            One box per side, in metres &mdash; use <b>+</b> for a parcel with more than two sides.
+                        </p>
+                        <div id="fragmentsContainer" class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
                             <p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define subdivided plot sizes.</p>
                         </div>
                         <div class="total-box">
                             <label class="text-sm font-semibold text-slate-700">Total Subdivision Area:</label>
-                            <input type="text" id="totalSize" class="readonly w-32 text-right border-none bg-transparent text-orange-700 font-bold" value="0.00 Ha" readonly>
+                            <input type="text" id="totalSize" class="readonly w-56 text-right border-none bg-transparent text-orange-700 font-bold" value="0 m2 &middot; 0.0000 Ha" readonly>
                         </div>
                     </div>
 
@@ -602,8 +625,17 @@
     function openCreateModal() {
         document.getElementById('create-form').reset();
         document.getElementById('fragmentsContainer').innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
-        document.getElementById('totalSize').value = "0.00 Ha";
-        
+
+        // form.reset() does not reach markup this file drew itself, so the
+        // apply-to-all row is emptied and re-collapsed by hand.
+        document.getElementById('apply_all_dims').innerHTML = '';
+        document.getElementById('apply_all_area').value = '';
+        document.getElementById('apply_all_area').classList.add('hidden');
+        document.getElementById('apply_all_area_note').classList.add('hidden');
+        document.getElementById('applyAllRow').classList.add('hidden');
+        toggleApplyAll();
+        calculateTotal();
+
         // Reset location navigation
         currentLocationStep = 1;
         
@@ -688,11 +720,217 @@
     const stateOpts = _stateNames
         .map(n => _opt(n, String(n).toUpperCase(), n === 'Kano')).join('');
 
+    /* ------------------------------------------------------------------
+       Plot sizes, taken as DIMENSIONS
+       ------------------------------------------------------------------
+       The same gesture as the Duplex parcel update (New APU): the officer reads
+       the sides off the survey plan and types them; the area is DERIVED and never
+       typed. A parcel is a polygon, not always a rectangle, so this is a list of
+       any length - two sides multiply into an area, any other count cannot, and
+       there the officer types the measured area from the plan rather than the
+       screen inventing one from the perimeter.
+
+       `plot_sizes[]` remains the field the controller stores, and it remains in
+       m2 - the unit ParcelSizeSummary prints the memo in. The sides themselves
+       travel alongside it as plot_dimensions[slot][].
+       ------------------------------------------------------------------ */
+    const M2_PER_HECTARE = 10000;
+    const DERIVABLE_TERMS = 2;
+
+    /** m2 from the sides, or null where it cannot honestly be derived. */
+    function areaFromTerms(terms) {
+        const nums = (terms || [])
+            .map(v => parseFloat(v))
+            .filter(v => isFinite(v) && v > 0);
+
+        return nums.length === DERIVABLE_TERMS ? nums[0] * nums[1] : null;
+    }
+
+    /** 2842.3474 -> "0.2842 Ha". Four places: a plot is a fraction of a hectare. */
+    function hectares(m2) {
+        const ha = (Number(m2) || 0) / M2_PER_HECTARE;
+        return ha.toLocaleString('en-NG', { minimumFractionDigits: 4, maximumFractionDigits: 4 }) + ' Ha';
+    }
+
+    /** 1410 -> "1,410 m2"; 1410.3 -> "1,410.3 m2". */
+    function areaText(n) {
+        const v = Number(n) || 0;
+        return (v === Math.round(v)
+            ? v.toLocaleString('en-NG')
+            : v.toLocaleString('en-NG', { minimumFractionDigits: 1, maximumFractionDigits: 2 }))
+            + ' m²';
+    }
+
+    /** Always at least one box to type in, and two by default. */
+    function normaliseTerms(value) {
+        const terms = Array.isArray(value) ? value.slice() : [];
+        return terms.length ? terms : ['', ''];
+    }
+
+    function dimWrap(slot) {
+        return String(slot) === 'all'
+            ? document.getElementById('apply_all_dims')
+            : document.querySelector('.plot-dims[data-slot="' + slot + '"]');
+    }
+
+    /** The sides typed into one row of boxes, in order. */
+    function termsOf(slot) {
+        const wrap = dimWrap(slot);
+        return wrap ? [...wrap.querySelectorAll('.plot-dim')].map(el => el.value) : [];
+    }
+
+    /**
+     * One row of dimension boxes, as markup.
+     *
+     * `slot` is the plot's 0-based index, and it is what names the field:
+     * plot_dimensions[0][], plot_dimensions[1][] ... so the sides reach the
+     * controller grouped by the plot they belong to. The apply-to-all row uses
+     * slot "all" and is deliberately unnamed - it is a shortcut, not a plot.
+     */
+    function dimBoxes(slot, terms) {
+        const named = String(slot) === 'all' ? '' : ' name="plot_dimensions[' + slot + '][]"';
+        const esc = v => (v === undefined || v === null) ? '' : String(v).replace(/"/g, '&quot;');
+
+        const box = (t, value) =>
+            '<div class="relative">'
+            + '<input type="number" step="any" min="0" placeholder="' + (t + 1) + '"'
+            + ' aria-label="Side ' + (t + 1) + ' in metres" value="' + esc(value) + '"'
+            + ' data-slot="' + slot + '" data-term="' + t + '"' + named
+            + ' oninput="onPlotDimInput(this)"'
+            + ' class="plot-dim w-14 px-1.5 py-2 rounded-lg border border-slate-200 bg-white text-sm text-center">'
+            + (terms.length > 1
+                ? '<button type="button" onclick="removePlotDimTerm(\'' + slot + '\', ' + t + ')" title="Remove this side"'
+                  + ' class="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-white border border-slate-200'
+                  + ' text-slate-400 hover:text-rose-600 hover:border-rose-200 text-[9px] font-black'
+                  + ' leading-none flex items-center justify-center">&times;</button>'
+                : '')
+            + '</div>';
+
+        return terms.map((v, t) => box(t, v))
+                .join('<span class="text-slate-400 text-xs font-black shrink-0">&times;</span>')
+            + '<button type="button" onclick="addPlotDimTerm(\'' + slot + '\')" title="Add another side"'
+            + ' class="w-7 h-9 rounded-lg border border-dashed border-slate-300 text-slate-400'
+            + ' hover:border-blue-400 hover:text-blue-600 transition text-sm font-black shrink-0">+</button>';
+    }
+
+    /** One plot's cell: its label, its sides, its area, and the m2 the form sends. */
+    function plotCell(slot, terms) {
+        return '<label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">'
+            + 'Plot ' + (slot + 1) + ' Dimensions (m)</label>'
+            + '<div class="plot-dims flex flex-wrap items-center gap-1.5" data-slot="' + slot + '">'
+            + dimBoxes(slot, normaliseTerms(terms))
+            + '</div>'
+            {{-- The area itself. Filled and hidden while two sides give it; shown, and
+                 typed into, where they cannot. Either way this is the plot_sizes[]
+                 the controller stores. --}}
+            + '<input type="number" name="plot_sizes[]" data-slot="' + slot + '" step="0.01" min="0"'
+            + ' placeholder="Measured area (m&sup2;)" oninput="calculateTotal()"'
+            + ' class="fragment-input hidden mt-1.5 w-full px-2 py-1.5 rounded-lg border border-amber-200 bg-amber-50/40 text-xs">'
+            + '<p class="plot-area text-[10px] font-bold text-slate-500 text-center mt-1" data-slot="' + slot + '"></p>';
+    }
+
+    /**
+     * Repaint one plot's area readout from its boxes, and write the m2 into the
+     * field that is actually submitted.
+     *
+     * Where the sides cannot give an area the box is revealed for the officer to
+     * fill in, and whatever is already in it is left alone - re-deriving would
+     * wipe a figure they had typed.
+     */
+    function syncPlotArea(slot) {
+        const size = String(slot) === 'all'
+            ? document.getElementById('apply_all_area')
+            : document.querySelector('.fragment-input[data-slot="' + slot + '"]');
+        const out = document.querySelector('.plot-area[data-slot="' + slot + '"]');
+
+        const terms = termsOf(slot);
+        const derived = areaFromTerms(terms);
+
+        // Only once the officer has actually measured something. An untouched plot
+        // asks for its sides, not for an area box it has no way to answer yet.
+        const asked = terms.some(v => String(v).trim() !== '')
+            || !!(size && String(size.value).trim() !== '');
+        const needsArea = derived === null && asked;
+
+        if (size) {
+            if (derived !== null) size.value = derived;
+            size.classList.toggle('hidden', !needsArea);
+        }
+
+        if (String(slot) === 'all') {
+            const note = document.getElementById('apply_all_area_note');
+            if (note) note.classList.toggle('hidden', !needsArea);
+        }
+
+        if (out) {
+            const m2 = parseFloat(size ? size.value : '');
+            out.innerHTML = (isFinite(m2) && m2 > 0)
+                ? areaText(m2) + ' &middot; <span class="text-blue-700">' + hectares(m2) + '</span>'
+                : '';
+        }
+    }
+
+    window.onPlotDimInput = function (input) {
+        const slot = input.dataset.slot;
+        syncPlotArea(slot);
+
+        if (slot === 'all') {
+            applySizeToAllPlots();
+        } else {
+            calculateTotal();
+        }
+    };
+
+    /** One more side on this parcel, keeping what is already typed. */
+    window.addPlotDimTerm = function (slot) {
+        redrawDims(slot, termsOf(slot).concat(['']), true);
+    };
+
+    window.removePlotDimTerm = function (slot, term) {
+        const terms = termsOf(slot);
+        if (terms.length <= 1) return;   // never down to nothing
+
+        terms.splice(Number(term), 1);
+        redrawDims(slot, terms, false);
+    };
+
+    /**
+     * Rebuild one row of boxes rather than splicing the DOM, so every remaining
+     * box keeps the right data-term and the x buttons stay addressed correctly.
+     */
+    function redrawDims(slot, terms, focusLast) {
+        const wrap = dimWrap(slot);
+        if (!wrap) return;
+
+        wrap.innerHTML = dimBoxes(slot, normaliseTerms(terms));
+
+        if (focusLast) {
+            const boxes = wrap.querySelectorAll('.plot-dim');
+            if (boxes.length) boxes[boxes.length - 1].focus();
+        }
+
+        syncPlotArea(slot);
+
+        if (String(slot) === 'all') {
+            applySizeToAllPlots();
+        } else {
+            calculateTotal();
+        }
+    }
+
     function generateFragments() {
         const sizeContainer = document.getElementById('fragmentsContainer');
         const num = parseInt(document.getElementById('num_plots').value) || 0;
-        
+
         const applyAllRow = document.getElementById('applyAllRow');
+
+        {{-- What is already on screen, kept: raising "No. of Plots" from 3 to 4 must
+             not blank the three plots that have already been measured. --}}
+        const kept = Array.from({ length: num }).map((_, i) => termsOf(i));
+        const keptAreas = Array.from({ length: num }).map((_, i) => {
+            const el = document.querySelector('.fragment-input[data-slot="' + i + '"]');
+            return el ? el.value : '';
+        });
 
         sizeContainer.innerHTML = '';
         if (applyAllRow) applyAllRow.classList.toggle('hidden', num <= 0);
@@ -703,20 +941,22 @@
         }
 
         if (num > 0) {
-            for (let i = 1; i <= num; i++) {
+            for (let i = 0; i < num; i++) {
                 const sizeDiv = document.createElement('div');
-                sizeDiv.innerHTML = `
-                    <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Plot ${i} Size</label>
-                    <input type="number" name="plot_sizes[]" class="fragment-input w-full px-3 py-2 rounded-lg border border-slate-200 text-sm" step="0.01" placeholder="0.00" oninput="calculateTotal()">
-                `;
+                sizeDiv.innerHTML = plotCell(i, kept[i]);
                 sizeContainer.appendChild(sizeDiv);
+            }
+            for (let i = 0; i < num; i++) {
+                const el = document.querySelector('.fragment-input[data-slot="' + i + '"]');
+                if (el && keptAreas[i]) el.value = keptAreas[i];
+                syncPlotArea(i);
             }
         } else {
             sizeContainer.innerHTML = '<p class="col-span-full text-slate-400 text-xs italic">Enter "No. of Plots" above to define fragment sizes.</p>';
-            document.getElementById('totalSize').value = "0.00 Ha";
         }
 
         applySizeToAllPlots();
+        calculateTotal();
     }
 
     function toggleApplyAll() {
@@ -725,31 +965,55 @@
         const checked = !!(toggle && toggle.checked);
 
         if (wrapper) wrapper.classList.toggle('hidden', !checked);
-        if (checked) {
-            const source = document.getElementById('apply_all_size');
-            if (source) source.focus();
-            applySizeToAllPlots();
+        if (!checked) return;
+
+        const wrap = document.getElementById('apply_all_dims');
+        if (wrap && !wrap.querySelector('.plot-dim')) {
+            wrap.innerHTML = dimBoxes('all', normaliseTerms(null));
         }
+
+        const first = wrap ? wrap.querySelector('.plot-dim') : null;
+        if (first) first.focus();
+
+        syncPlotArea('all');
+        applySizeToAllPlots();
     }
 
+    /** Copy the shortcut row's sides - and its area - onto every plot. */
     function applySizeToAllPlots() {
         const toggle = document.getElementById('apply_all_toggle');
         if (!toggle || !toggle.checked) return;
 
-        const source = document.getElementById('apply_all_size');
-        const value = source ? source.value : '';
-        document.querySelectorAll('.fragment-input').forEach(input => { input.value = value; });
+        const terms = termsOf('all');
+        const master = document.getElementById('apply_all_area');
+        const masterArea = master ? master.value : '';
+
+        document.querySelectorAll('#fragmentsContainer .plot-dims').forEach(wrap => {
+            const slot = wrap.dataset.slot;
+            wrap.innerHTML = dimBoxes(slot, normaliseTerms(terms));
+
+            {{-- The area travels with the sides. A parcel measured by its perimeter
+                 has an area its sides cannot re-derive, so copying the sides alone
+                 would leave every other plot showing a figure of its own. --}}
+            const size = document.querySelector('.fragment-input[data-slot="' + slot + '"]');
+            if (size) size.value = masterArea;
+
+            syncPlotArea(slot);
+        });
+
         calculateTotal();
     }
 
     function calculateTotal() {
-        const inputs = document.querySelectorAll('.fragment-input');
+        const inputs = document.querySelectorAll('#fragmentsContainer .fragment-input');
         let total = 0;
         inputs.forEach(input => {
             const val = parseFloat(input.value);
             if (!isNaN(val)) total += val;
         });
-        document.getElementById('totalSize').value = parseFloat(total.toFixed(10)) + " Ha";
+
+        document.getElementById('totalSize').value =
+            areaText(parseFloat(total.toFixed(4))) + ' · ' + hectares(total);
     }
 
     function openFileSelector() {
@@ -979,7 +1243,11 @@
             const result = await response.json();
             if (result.success) {
                 const data = result.data;
-                let plotSizesHtml = data.plot_sizes.map(p => `<li>${p.plot_number}: <strong>${p.plot_size} Sqm</strong></li>`).join('');
+                // The sides where they were captured, the area either way. A row saved
+                // before the form asked for dimensions carries only the area.
+                let plotSizesHtml = data.plot_sizes.map(p => `<li>${p.plot_number}: <strong>${areaText(p.plot_size)}</strong>${
+                    p.dimensions ? ` <span class="text-slate-400">(${p.dimensions} m)</span>` : ''
+                }</li>`).join('');
                 
                 Swal.fire({
                     title: 'Subdivision Details',

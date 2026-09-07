@@ -29,6 +29,9 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\SpaTriggerSecondService::class,
         \App\Console\Commands\SpaSmsDoctor::class,
         \App\Console\Commands\PhsLowBalanceReminders::class,
+        \App\Console\Commands\ExpireCaveats::class,
+        \App\Console\Commands\KlaesSmsDoctor::class,
+        \App\Console\Commands\PhoneVerificationStatus::class,
     ];
 
     /**
@@ -69,6 +72,18 @@ class Kernel extends ConsoleKernel
 
         // Warn PHS organizations whose token balance is running low (daily).
         $schedule->command('phs:low-balance-reminders')->dailyAt('07:00')->withoutOverlapping();
+
+        /*
+         | Lift caveats that have run their six months.
+         |
+         | DELIBERATELY LEFT COMMENTED OUT. Nothing in this system has ever moved
+         | a caveat off 'active', so the first run will find a backlog going back
+         | years and will clear the is_caveated flags that block dealings on
+         | those properties -- which is not something to discover by scheduling
+         | it. Run `php artisan caveats:expire --dry-run`, read the list, and
+         | uncomment this only once the Ministry has agreed to it.
+         */
+        // $schedule->command('caveats:expire')->dailyAt('02:30')->withoutOverlapping();
      }
 
 

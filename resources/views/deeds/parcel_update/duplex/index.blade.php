@@ -111,9 +111,11 @@
                 {{-- The pipeline, spelled out. New officers cannot infer these steps from
                      the row menu alone, and skipping one is the usual support call. --}}
                 <div class="px-7 py-3.5 border-t border-slate-100 bg-slate-50/70 flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] font-bold text-slate-400">
-                    @foreach (['Capture stages', 'KNUPDA/Physical Planning', 'Memo + Conveyance', 'Approve', 'Send to Land', 'Commission'] as $i => $step)
+                    @foreach (['Capture stages', 'KNUPDA/Physical Planning', 'Recommendation', 'Approve', 'Conveyance', 'Send to Land', 'Commission'] as $i => $step)
                         @if ($i)<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-300"></i>@endif
-                        <span class="{{ $i === 5 ? 'text-indigo-600' : '' }}">{{ $step }}</span>
+                        {{-- $loop->last, not a fixed index: this list has changed length now
+                             and a hard-coded 5 leaves the highlight on the wrong step. --}}
+                        <span class="{{ $loop->last ? 'text-indigo-600' : '' }}">{{ $step }}</span>
                     @endforeach
                 </div>
             </div>
@@ -252,18 +254,21 @@
                                             $allCaptured = $record->stageRows->every(fn ($st) => $st->status === 'done');
 
                                             /**
-                                             * Approval comes LAST, and only once everything it rests on exists.
+                                             * Approval rests on the recommendation, and the conveyance follows it.
                                              *
-                                             * The comment below has always described this order, but the guard
-                                             * checked the stages alone — so Approval sat enabled on a duplex with
-                                             * no KNUPDA/Physical Planning clearance and neither paper drawn, which
-                                             * is a decision with nothing behind it. Each condition is a document
-                                             * the approver is meant to have read:
+                                             * The conveyance used to be a precondition of approval, which put the
+                                             * letter to the applicant BEFORE the decision that letter reports. The
+                                             * order of business is the Ministry's: the recommendation goes up, the
+                                             * Commissioner answers, and only then is the conveyance drawn. So the
+                                             * conveyance is no longer required here - it is gated on the approval
+                                             * instead, further down.
+                                             *
+                                             * What the approval still rests on, each a document the approver is
+                                             * meant to have read:
                                              *
                                              *   every stage captured   — there is something to approve
                                              *   KNUPDA/PP approved     — the planning authority has cleared it
-                                             *   conveyance generated   — the letter to the applicant exists
-                                             *   memo generated         — the recommendation carrying it up exists
+                                             *   recommendation drawn   — the memo carrying it up exists
                                              *   site plan attached     — the drawing the memo is read against
                                              *
                                              * approve() enforces the same set, so this is the reminder and that
@@ -272,37 +277,35 @@
                                             $hasSitePlan   = trim((string) $record->site_plan) !== '';
                                             $canApprove    = !$frozen && !$isApproved && $allCaptured
                                                              && $knupdaOk
-                                                             && $record->conveyance_generated_at
                                                              && $record->recommendation_generated_at
                                                              && $hasSitePlan;
 
                                             // Naming the FIRST thing still missing, in the order it is done.
                                             $approvalBlocker = !$allCaptured ? 'Capture every stage first'
                                                 : (!$knupdaOk ? 'Record the KNUPDA/Physical Planning clearance first'
-                                                : (!$record->conveyance_generated_at ? 'Generate the conveyance first'
-                                                : (!$record->recommendation_generated_at ? 'Generate the memo first'
+                                                : (!$record->recommendation_generated_at ? 'Generate the recommendation first'
                                                 : (!$hasSitePlan ? 'Attach the site plan first'
-                                                : 'Already approved'))));
+                                                : 'Already approved')));
 
                                             $canReject     = !$frozen;
-                                            // The order of business: KNUPDA recommends, the papers are
-                                            // drawn — application, conveyance, then the memo that carries
-                                            // them up — and the approval comes last, on the strength of
-                                            // that memo. KNUPDA therefore cannot wait on the approval;
-                                            // it opens as soon as every stage is captured.
                                             // KNUPDA is settled BEFORE the approval — the approval is given on
                                             // the strength of it — so once the duplex is approved that answer is
                                             // part of the record and is not reopened from this menu.
                                             $canKnupda     = !$frozen && $allCaptured && !$isApproved;
                                             $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
                                             $canPrintApp   = (bool) $record->application_generated_at;
-                                            // The application sheet is off the menu for now (see below), so the
-                                            // conveyance opens straight off the KNUPDA approval instead of waiting
-                                            // for a document nobody can generate.
-                                            $canGenConv    = !$frozen && $knupdaOk && !$record->conveyance_generated_at;
+
+                                            // The recommendation is the first paper drawn: it opens straight off
+                                            // the KNUPDA clearance, and it is what the approval is given on. It
+                                            // used to wait for the conveyance, which put the two the wrong way
+                                            // round.
+                                            $canGenRec     = !$frozen && $knupdaOk && !$record->recommendation_generated_at;
+                                            $canPrintRec   = (bool) $record->recommendation_generated_at;
+
+                                            // The conveyance reports a decision, so it cannot be drawn before
+                                            // there is one. generateConveyance() enforces the same rule.
+                                            $canGenConv    = !$frozen && $isApproved && !$record->conveyance_generated_at;
                                             $canPrintConv  = (bool) $record->conveyance_generated_at;
-                                            $canGenMemo    = !$frozen && $record->conveyance_generated_at && !$record->recommendation_generated_at;
-                                            $canPrintMemo  = (bool) $record->recommendation_generated_at;
                                             $canDelete     = !$isCommitted;
 
                                             // Why an action is unavailable, so a greyed row is not a mystery.
@@ -331,13 +334,18 @@
                                                     class="menu-item">KNUPDA/Physical Planning</button>
                                             </div>
 
-                                            <div class="py-1">
-                                                {{-- Generate / Print Application are OFF THE MENU for now — not
-                                                     needed at this stage. Nothing else was removed: the routes,
-                                                     the controller actions and print/application.blade.php all
-                                                     still work, and $canGenApp / $canPrintApp are still computed
-                                                     above. Delete this comment wrapper to bring them back, and
-                                                     restore $canGenConv to require application_generated_at.
+                                            {{-- The menu now runs in the order the work is done: the
+                                                 recommendation is drawn and printed, the Commissioner
+                                                 answers, and the conveyance reporting that answer follows.
+                                                 It used to open with the conveyance, which asked the
+                                                 officer to write out the decision before it was taken.
+
+                                                 Generate / Print Application are OFF THE MENU — not needed
+                                                 at this stage. Nothing else was removed: the routes, the
+                                                 controller actions and print/application.blade.php all
+                                                 still work, and $canGenApp / $canPrintApp are still
+                                                 computed above. Delete this comment wrapper to bring them
+                                                 back.
 
                                                 <button onclick="generateDoc({{ $record->id }}, 'application')" @disabled(!$canGenApp)
                                                     title="{{ $why($canGenApp, $record->application_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
@@ -346,20 +354,13 @@
                                                     title="{{ $canPrintApp ? '' : 'Generate the application first' }}"
                                                     class="menu-item block {{ $canPrintApp ? '' : 'is-disabled' }}">Print Application</a>
                                                 --}}
-
-                                                <button onclick="generateDoc({{ $record->id }}, 'conveyance')" @disabled(!$canGenConv)
-                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
-                                                    class="menu-item">Generate Conveyance</button>
-                                                <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank"
-                                                    title="{{ $canPrintConv ? '' : 'Generate the conveyance first' }}"
-                                                    class="menu-item block {{ $canPrintConv ? '' : 'is-disabled' }}">Print Conveyance</a>
-
-                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" @disabled(!$canGenMemo)
-                                                    title="{{ $why($canGenMemo, $record->recommendation_generated_at ? 'Already generated' : 'Generate the conveyance first') }}"
-                                                    class="menu-item">Generate Memo</button>
+                                            <div class="py-1">
+                                                <button onclick="generateDoc({{ $record->id }}, 'recommendation')" @disabled(!$canGenRec)
+                                                    title="{{ $why($canGenRec, $record->recommendation_generated_at ? 'Already generated' : 'KNUPDA approval required') }}"
+                                                    class="menu-item">Generate Recommendation</button>
                                                 <a href="{{ route('duplex-parcel-update.print-recommendation', $record->id) }}" target="_blank"
-                                                    title="{{ $canPrintMemo ? '' : 'Generate the memo first' }}"
-                                                    class="menu-item block {{ $canPrintMemo ? '' : 'is-disabled' }}">Print Memo</a>
+                                                    title="{{ $canPrintRec ? '' : 'Generate the recommendation first' }}"
+                                                    class="menu-item block {{ $canPrintRec ? '' : 'is-disabled' }}">Print Recommendation</a>
                                             </div>
 
                                             {{-- Approve and reject were ONE item opening a modal that carried
@@ -382,6 +383,15 @@
                                                     @disabled(!$canReject)
                                                     title="{{ $why($canReject, 'Nothing left to reject') }}"
                                                     class="menu-item">Reject</button>
+                                            </div>
+
+                                            <div class="py-1">
+                                                <button onclick="generateDoc({{ $record->id }}, 'conveyance')" @disabled(!$canGenConv)
+                                                    title="{{ $why($canGenConv, $record->conveyance_generated_at ? 'Already generated' : 'Approve the duplex first') }}"
+                                                    class="menu-item">Generate Conveyance</button>
+                                                <a href="{{ route('duplex-parcel-update.print-conveyance', $record->id) }}" target="_blank"
+                                                    title="{{ $canPrintConv ? '' : 'Generate the conveyance first' }}"
+                                                    class="menu-item block {{ $canPrintConv ? '' : 'is-disabled' }}">Print Conveyance</a>
                                             </div>
 
                                             <div class="py-1">

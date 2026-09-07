@@ -149,7 +149,15 @@ class ProfileController extends Controller
     public function storePicture(Request $request)
     {
         $request->validate(
-            ['profile' => ProfilePhotoService::rules(true)],
+            [
+                'profile' => ProfilePhotoService::rules(true),
+                // The card has already run the face check on this very file, so it can
+                // say what it found and save the browser judging the same picture again
+                // on the next page load. Optional: an upload from a browser where the
+                // detector never loaded simply reports nothing.
+                'face_status' => ['nullable', Rule::in([ProfilePhotoService::FACE_PASS, ProfilePhotoService::FACE_FAIL])],
+                'face_reason' => ['nullable', 'string', 'max:160'],
+            ],
             [
                 'profile.required' => __('Please choose a passport photo to upload.'),
                 'profile.image' => __('The file must be an image (JPG, PNG or GIF).'),
@@ -159,7 +167,14 @@ class ProfileController extends Controller
         );
 
         $user = Auth::user();
-        app(ProfilePhotoService::class)->store($request->file('profile'), $user);
+        $service = app(ProfilePhotoService::class);
+        // store() clears any previous verdict, so this has to come after it.
+        $service->store($request->file('profile'), $user);
+
+        if ($request->filled('face_status')) {
+            $service->recordFaceVerdict($user, (string) $request->input('face_status'), $request->input('face_reason'));
+        }
+
         $user->save();
 
         $message = __('Your profile picture has been uploaded successfully. You can now continue using the system.');
@@ -173,5 +188,69 @@ class ProfileController extends Controller
         }
 
         return redirect()->back()->with('success', $message);
+    }
+
+    /**
+     * Record the browser's face-check verdict on a picture that is already on file.
+     *
+     * Face detection is client-side (face-api.js, run from js/profile-photo-self-check.js
+     * and the shared profile card) — there is no PHP detector — so this endpoint is the
+     * only way a verdict reaches the gate that RequireProfilePhoto enforces.
+     *
+     * Who may report on whom:
+     *   - anybody, about their own picture. This is the normal path: the check runs once,
+     *     on the owner's next page load after the picture was stored.
+     *   - a Super Admin, about anybody's picture. That is how a stock avatar spotted on
+     *     the profile card gets flagged without waiting for that person to sign in.
+     * Nobody else can flag another account — a verdict here locks someone out of the
+     * whole system, so it is not something an ordinary session may do to a colleague.
+     *
+     * Only 'pass' and 'fail' are accepted. "The detector could not load" is not a verdict
+     * and is never reported, so an unreachable model leaves the account exactly as it was.
+     */
+    public function storeFaceCheck(Request $request)
+    {
+        $validated = $request->validate([
+            'status' => ['required', Rule::in([ProfilePhotoService::FACE_PASS, ProfilePhotoService::FACE_FAIL])],
+            'reason' => ['nullable', 'string', 'max:160'],
+            'user_id' => ['nullable', 'integer'],
+        ]);
+
+        $viewer = Auth::user();
+        $targetId = (int) ($validated['user_id'] ?? 0);
+        $target = $viewer;
+
+        if ($targetId > 0 && $targetId !== (int) $viewer->id) {
+            abort_unless($viewer->isSuperAdmin(), 403);
+            $target = User::find($targetId);
+
+            if (!$target) {
+                return response()->json(['success' => false, 'message' => __('No matching user record was found.')], 404);
+            }
+        }
+
+        // Nothing to judge: the account has no picture, so the missing-photo rule already
+        // covers it and a verdict would only pin itself to an empty path.
+        if (!$target->has_profile_photo) {
+            return response()->json(['success' => false, 'recorded' => false, 'locked' => true]);
+        }
+
+        $service = app(ProfilePhotoService::class);
+
+        if (!$service->recordFaceVerdict($target, $validated['status'], $validated['reason'] ?? null)) {
+            // The photo_face_* columns are not on this database yet (code deployed ahead
+            // of the SQL script). Report it plainly rather than pretending it was stored.
+            return response()->json(['success' => false, 'recorded' => false, 'locked' => false]);
+        }
+
+        $target->save();
+
+        return response()->json([
+            'success' => true,
+            'recorded' => true,
+            // The client reloads on true, so the banner, the sidebar lock and the upload
+            // card all appear at once instead of at the next navigation.
+            'locked' => $target->needs_profile_photo,
+        ]);
     }
 }

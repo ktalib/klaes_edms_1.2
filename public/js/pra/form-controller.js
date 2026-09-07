@@ -259,6 +259,8 @@
                 }
             });
             this.opFieldsWrapper = container.querySelector('[data-role="op-fields-wrapper"]');
+            // Payment Amount + Receipt No, shown only for a Deed of Purchase.
+            this.purchaseFieldsWrapper = container.querySelector('[data-role="purchase-fields-wrapper"]');
             this.cofoFieldsWrapper = container.querySelector('[data-role="cofo-fields-wrapper"]');
             // Grantor picker + hint shown only for an OP issued by a Local Government.
             this.opLgaGrantorSelect = container.querySelector('[data-role="op-lga-grantor"]');
@@ -324,6 +326,8 @@
                 instrumentSubtype: '',
                 instrumentCategory: '',
                 opSerialNumber: '',
+                considerationAmount: '',
+                receiptNo: '',
                 cofoType: '',
                 tempFileNumber: '',
                 tempFileNumberLoading: false,
@@ -383,6 +387,8 @@
                 'instrumentSubtype',
                 'instrumentCategory',
                 'opSerialNumber',
+                'considerationAmount',
+                'receiptNo',
                 'cofoType',
                 'tempFileNumber',
                 'tempFileNumberLoading',
@@ -1321,6 +1327,25 @@
                 this.opFieldsWrapper.classList.toggle('hidden', !isOpTransaction);
             }
 
+            // Deed of Purchase carries what was paid. Matched on "deed of
+            // purchase" rather than the full configured name so the legacy
+            // spellings in the lookup table ("Deed of Purchase", "Deed of
+            // Purchase Registration") all hit it.
+            const isPurchaseTransaction = normalizedTx.includes('deed of purchase');
+            if (this.purchaseFieldsWrapper) {
+                this.purchaseFieldsWrapper.classList.toggle('hidden', !isPurchaseTransaction);
+            }
+
+            if (!isPurchaseTransaction) {
+                // Clearing on switch-away is the point: an amount left behind
+                // from a purchase would otherwise be saved against whatever
+                // instrument the user changed to.
+                this.setState('considerationAmount', '', { silent: true });
+                this.syncModelElement('considerationAmount', '');
+                this.setState('receiptNo', '', { silent: true });
+                this.syncModelElement('receiptNo', '');
+            }
+
             if (!isOpTransaction) {
                 this.setState('opType', '', { silent: true });
                 this.syncModelElement('opType', '');
@@ -2199,6 +2224,8 @@
                 'instrument_subtype': 'instrumentSubtype',
                 'instrument_category': 'instrumentCategory',
                 'op_serial_number': 'opSerialNumber',
+                'consideration_amount': 'considerationAmount',
+                'receipt_no': 'receiptNo',
                 'cofo_type': 'cofoType',
                 'transaction_date': 'transactionDate',
                 'land_use': 'landUse',

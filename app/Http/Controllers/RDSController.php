@@ -12,6 +12,19 @@ use Carbon\Carbon;
 class RDSController extends Controller
 {
     /**
+     * Where an RDS renders and where it sends the user afterwards.
+     *
+     * Declared as properties rather than written inline so a second registry can
+     * reuse this whole controller with its own template and its own register
+     * screen. The defaults are the Deeds ones, so nothing here changes for them.
+     *
+     * @see \App\Http\Controllers\LandRegistration\LandRdsController
+     */
+    protected string $printView = 'instrument_registration.rds.print';
+    protected string $printRouteName = 'rds.print';
+    protected string $indexRouteName = 'instrument_registration.index';
+
+    /**
      * Generate RDS (Registered Document Sheet) for an instrument
      */
     public function generateRDS($id)
@@ -187,7 +200,7 @@ class RDSController extends Controller
                 }
 
                 // Direct access - redirect with error
-                return redirect()->route('instrument_registration.index')
+                return redirect()->route($this->indexRouteName)
                     ->with('error', 'RDS has not been generated yet for this instrument');
             }
 
@@ -236,7 +249,7 @@ class RDSController extends Controller
                 }
 
                 // Direct access - redirect with error
-                return redirect()->route('instrument_registration.index')
+                return redirect()->route($this->indexRouteName)
                     ->with('error', 'Instrument not found');
             }
 
@@ -253,7 +266,7 @@ class RDSController extends Controller
 
             // Check if it's an AJAX request
             if (request()->ajax() || request()->wantsJson()) {
-                $rdsUrl = route('rds.print', ['id' => $id]);
+                $rdsUrl = route($this->printRouteName, ['id' => $id]);
                 if ($queryString !== '') {
                     $rdsUrl .= '?' . $queryString;
                 }
@@ -269,7 +282,7 @@ class RDSController extends Controller
                 $this->updateRdsExistsFlag($id);
             }
 
-            $printUrl = route('rds.print', ['id' => $id]);
+            $printUrl = route($this->printRouteName, ['id' => $id]);
             if ($queryString !== '') {
                 $printUrl .= '?' . $queryString;
             }
@@ -291,7 +304,7 @@ class RDSController extends Controller
             }
 
             // Direct access - redirect with error
-            return redirect()->route('instrument_registration.index')
+            return redirect()->route($this->indexRouteName)
                 ->with('error', 'An error occurred while viewing RDS');
         }
     }
@@ -303,7 +316,7 @@ class RDSController extends Controller
     {
         try {
             $data = $this->getPrintViewData($id);
-            return view('instrument_registration.rds.print', $data);
+            return view($this->printView, $data);
         } catch (\Exception $e) {
             Log::error("Error printing RDS: " . $e->getMessage(), [
                 'instrument_id' => $id,
@@ -380,6 +393,8 @@ class RDSController extends Controller
                 $instrument->party_2_address = $capture->party_2_address;
                 $instrument->op_serial_number = $capture->op_serial_number ?? null;
                 $instrument->op_type = $capture->op_type ?? null;
+                $instrument->consideration_amount = $capture->consideration_amount ?? null;
+                $instrument->receipt_no = $capture->receipt_no ?? null;
             } else {
                 $capture = DB::connection('sqlsrv')->table('instrument_capture')
                     ->where(function ($q) use ($instrument) {
@@ -396,6 +411,8 @@ class RDSController extends Controller
                     $instrument->party_2_address = $capture->party_2_address;
                     $instrument->op_serial_number = $capture->op_serial_number ?? null;
                     $instrument->op_type = $capture->op_type ?? null;
+                    $instrument->consideration_amount = $capture->consideration_amount ?? null;
+                    $instrument->receipt_no = $capture->receipt_no ?? null;
                 }
             }
         }

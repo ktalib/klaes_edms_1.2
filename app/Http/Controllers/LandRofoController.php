@@ -795,6 +795,21 @@ class LandRofoController extends Controller
             );
         }
 
+        /*
+         | Tell the applicant their Letter of Grant is ready.
+         |
+         | The wording says "ready for signing & collection", which is what
+         | generation means here: the LAAS timeline entry above draws the same
+         | distinction, and the signing itself is logPrint(). Sending on
+         | generation is deliberate -- the applicant is being asked to come in.
+         */
+        app(\App\Services\Sms\RofoSmsNotifier::class)->send(
+            \App\Services\Sms\RofoSmsNotifier::SOURCE_LAND,
+            $recommendation->file_number,
+            $recommendation->id,
+            'Lands Department'
+        );
+
         return response()->json(['success' => true]);
     }
 

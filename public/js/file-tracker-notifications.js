@@ -57,6 +57,7 @@
     rejected: { bg: '#fee2e2', fg: '#dc2626', path: 'M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z' },
     digital: { bg: '#ede9fe', fg: '#7c3aed', path: 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zm-1 7V3.5L18.5 9z' },
     file: { bg: '#e0e7ff', fg: '#4f46e5', path: 'M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8z' },
+    attendance: { bg: '#fef3c7', fg: '#d97706', path: 'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z' },
     default: { bg: '#f1f5f9', fg: '#64748b', path: 'M12 2a5.006 5.006 0 0 0-5 5v4.586l-.707.707A1 1 0 0 0 7 14h10a1 1 0 0 0 .707-1.707L17 11.586V7a5.006 5.006 0 0 0-5-5zm-2 13a2 2 0 0 0 4 0h-4z' },
   };
 
@@ -66,6 +67,10 @@
     if (type.endsWith('.accepted')) return AVATARS.accepted;
     if (type.endsWith('.rejected')) return AVATARS.rejected;
     if (type === 'digital_request' || module === 'digital_request') return AVATARS.digital;
+    // Sign-in / sign-out notices (attendance.login, attendance.logout). A clock,
+    // so the two cards a member of staff collects every day are not mistaken for
+    // file work at a glance.
+    if (type.startsWith('attendance') || module === 'attendance') return AVATARS.attendance;
     if (type.startsWith('file_tracking') || module === 'file_tracking') return AVATARS.file;
     return AVATARS.default;
   }

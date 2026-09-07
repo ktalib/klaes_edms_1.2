@@ -471,6 +471,19 @@ class ActivityLogService
                         StaffSmsLog::TYPE_LOGOUT,
                         $evaluation['logout_time'] ?? null
                     );
+
+                    // The matching bell entry. It says "closed automatically"
+                    // rather than "you signed out", because the user did not:
+                    // a notice that claims otherwise reads as a session someone
+                    // else ended. Sessions are finalised one row at a time, so
+                    // the service's short duplicate window is what stops a user
+                    // with several stale rows collecting several cards.
+                    app(StaffAttendanceNotificationService::class)->logout(
+                        $user,
+                        $evaluation['logout_time'] ?? null,
+                        StaffAttendanceNotificationService::MODE_AUTOMATIC,
+                        $evaluation['description'] ?? null
+                    );
                 } else {
                     $skipped[] = ['session_id' => $session->id, 'user_id' => $user->id, 'reason' => 'optimistic_lock_failed'];
                 }
@@ -520,6 +533,20 @@ class ActivityLogService
 
         if ($count > 0) {
             self::flushOnlineCaches();
+
+            // Told once, not once per session closed: the user is signed out of
+            // everything either way, and an administrator ending a session is
+            // precisely the sign-out they most need to see.
+            $user = User::find($userId);
+
+            if ($user) {
+                app(StaffAttendanceNotificationService::class)->logout(
+                    $user,
+                    $now->copy(),
+                    StaffAttendanceNotificationService::MODE_FORCED,
+                    $description
+                );
+            }
 
             Log::info('Forced logout completed', [
                 'user_id' => $userId,

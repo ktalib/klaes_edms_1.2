@@ -26,6 +26,8 @@
     <script src="{{ asset('js/commission_new_st/location-map.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/applicant-autofill.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/primary.js') }}"></script>
+    {{-- Shared-number check on the applicant phone field, for all three ST paths. --}}
+    <script src="{{ asset('js/sms-applicant-phone.js') }}?v={{ @filemtime(public_path('js/sms-applicant-phone.js')) }}" defer></script>
     <script src="{{ asset('js/commission_new_st/sua_commission.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/pua.js') }}"></script>
     <script src="{{ asset('js/commission_new_st/file-modal-integration.js') }}"></script>

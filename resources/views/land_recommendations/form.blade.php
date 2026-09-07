@@ -2355,6 +2355,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var LAND_USES = @json(($landUses ?? collect())->map(fn ($lu) => ['id' => $lu->id, 'name' => $lu->landuse])->values());
     var purposeCache = {};
+    // A large batch has many rows with the same land use. Keep an in-flight
+    // request as well as the completed-list cache; otherwise every row notices
+    // an empty cache at once and floods /api/reference/purposes with identical
+    // requests before the first response can populate it.
+    var purposeRequests = {};
 
     function esc(v) {
         return String(v == null ? '' : v)
@@ -2734,7 +2739,14 @@ document.addEventListener('DOMContentLoaded', function () {
             + '<td class="' + ownCell + '"><input type="text" class="' + cell + ' batch-f font-mono" data-f="plot_number" name="children[' + i + '][plot_number]" value="' + esc(child.plot_number) + '" placeholder="Plot"></td>'
             + '<td class="' + ownCell + '"><input type="text" required class="' + cell + ' batch-f" data-f="applicant_address" name="children[' + i + '][applicant_address]" value="' + esc(child.applicant_address) + '" placeholder="Applicant address"></td>'
             + '<td class="' + ownCell + '"><select class="' + cell + ' batch-f batch-landuse cursor-pointer" data-f="land_use_id" name="children[' + i + '][land_use_id]">' + landUseOptions(child.land_use_id) + '</select></td>'
-            + '<td class="' + ownCell + '"><select class="' + cell + ' batch-f batch-purpose cursor-pointer" data-f="purpose_id" name="children[' + i + '][purpose_id]"><option value="">Select</option></select></td>'
+            + '<td class="' + ownCell + '">'
+            +   '<div class="space-y-1">'
+            +     '<select class="' + cell + ' batch-f batch-purpose cursor-pointer" data-f="purpose_id" name="children[' + i + '][purpose_id]"><option value="">Select</option></select>'
+            +     '<input type="text" class="' + cell + ' batch-f batch-purpose-other' + (String(child.purpose_id || '') === 'other' ? '' : ' hidden') + '"'
+            +       ' data-f="purpose_id_other" name="children[' + i + '][purpose_id_other]" value="' + esc(child.purpose_id_other || '') + '"'
+            +       ' placeholder="Specify other purpose"' + (String(child.purpose_id || '') === 'other' ? '' : ' disabled') + '>'
+            +   '</div>'
+            + '</td>'
             // Right bank — copied from the source row.
             + '<td class="' + copiedCell + ' batch-group-split"><input type="text" required class="' + cell + ' batch-f" data-f="applicant_name" name="children[' + i + '][applicant_name]" value="' + esc(child.applicant_name) + '" placeholder="Applicant name"></td>'
             + '<td class="' + copiedCell + '"><input type="text" class="' + cell + ' batch-f" data-f="location" name="children[' + i + '][location]" value="' + esc(child.location) + '" placeholder="Location"></td>'
@@ -2810,20 +2822,60 @@ document.addEventListener('DOMContentLoaded', function () {
         tr.classList.toggle('opacity-40', !on);
     }
 
+    function syncPurposeOther(tr) {
+        if (!tr) return;
+
+        var purpose = tr.querySelector('.batch-purpose');
+        var other = tr.querySelector('.batch-purpose-other');
+        if (!purpose || !other) return;
+
+        var isOther = String(purpose.value) === 'other';
+        other.classList.toggle('hidden', !isOther);
+        other.disabled = !isOther || !tr.querySelector('.batch-row-check').checked;
+
+        // A value that belongs to a previous Other selection must never be
+        // submitted with a normal catalog purpose.
+        if (!isOther) other.value = '';
+    }
+
     function loadPurposes(select, landUseId, selectedPurposeId) {
         select.innerHTML = '<option value="">Select</option>';
         if (!landUseId) return Promise.resolve();
 
-        var fetchList = purposeCache[landUseId]
-            ? Promise.resolve(purposeCache[landUseId])
-            : fetch(PURPOSES_URL + '?landuseid=' + encodeURIComponent(landUseId), { headers: { 'Accept': 'application/json' } })
-                .then(function (r) { return r.json(); })
+        var cacheKey = String(landUseId);
+        var fetchList;
+
+        if (purposeCache[cacheKey]) {
+            fetchList = Promise.resolve(purposeCache[cacheKey]);
+        } else if (purposeRequests[cacheKey]) {
+            fetchList = purposeRequests[cacheKey];
+        } else {
+            fetchList = fetch(PURPOSES_URL + '?landuseid=' + encodeURIComponent(landUseId), {
+                headers: { 'Accept': 'application/json' }
+            })
+                .then(function (response) {
+                    if (!response.ok) {
+                        throw new Error('Purpose request failed with HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
                 .then(function (data) {
                     var list = Array.isArray(data) ? data : (data.data || data.purposes || []);
-                    purposeCache[landUseId] = list;
+                    purposeCache[cacheKey] = list;
                     return list;
                 })
-                .catch(function () { return []; });
+                .catch(function () {
+                    // The next deliberate action may retry, but all rows in the
+                    // current action share this one failed request rather than
+                    // generating hundreds of 429 responses.
+                    return [];
+                });
+
+            purposeRequests[cacheKey] = fetchList;
+            fetchList.then(function () {
+                delete purposeRequests[cacheKey];
+            });
+        }
 
         return fetchList.then(function (list) {
             var html = '<option value="">Select</option>';
@@ -3627,9 +3679,6 @@ document.addEventListener('DOMContentLoaded', function () {
             var child      = children[i] || {};
             var landUseSel = tr.querySelector('.batch-landuse');
             var purposeSel = tr.querySelector('.batch-purpose');
-            if (landUseSel && landUseSel.value) {
-                loadPurposes(purposeSel, landUseSel.value, child.purpose_id || null);
-            }
             // A draft remembers which rows were ticked; a fresh load unticks the
             // children that already have a recommendation. Either way an unticked
             // row must come back disabled, or its inputs would still post.
@@ -3637,6 +3686,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 tr.querySelector('.batch-row-check').checked = false;
             }
             syncRowEnabled(tr);
+
+            // Wait for the purpose list before deciding whether the saved value
+            // is Other. Before the async list arrives the select contains only
+            // its Select placeholder, which would otherwise hide and clear a
+            // saved custom purpose during batch edit.
+            if (landUseSel && landUseSel.value) {
+                loadPurposes(purposeSel, landUseSel.value, child.purpose_id || null)
+                    .then(function () { syncPurposeOther(tr); });
+            } else {
+                syncPurposeOther(tr);
+            }
         });
 
         // The table is the batch, so the per-file grant store follows it. Values
@@ -3971,6 +4031,11 @@ document.addEventListener('DOMContentLoaded', function () {
         if (e.target.classList.contains('batch-landuse')) {
             var purposeSel = e.target.closest('tr').querySelector('.batch-purpose');
             loadPurposes(purposeSel, e.target.value, null);
+            syncPurposeOther(e.target.closest('tr'));
+            return;
+        }
+        if (e.target.classList.contains('batch-purpose')) {
+            syncPurposeOther(e.target.closest('tr'));
         }
     });
 
@@ -4042,31 +4107,94 @@ document.addEventListener('DOMContentLoaded', function () {
             if (!from) return;
             var value = from.value;
 
-            // Purpose only means anything under its own land use: the options in
-            // a row are fetched for that row's land use, so a purpose id from a
-            // different one is not in the list and would land as blank. Those
-            // rows are left alone and counted, rather than silently cleared.
-            var srcLandUse = f === 'purpose_id'
-                ? (src.querySelector('[data-f="land_use_id"]') || {}).value
-                : null;
+            // A purpose is scoped to its land use. The previous implementation
+            // wrote the purpose value directly into every select and relied on
+            // whatever options happened to have loaded already. A select rejects
+            // a value that has no matching option, so some rows silently became
+            // "Select" (or appeared to offer only Select / Other). Apply Purpose
+            // as one atomic operation: align the land use, load that list, then
+            // choose the source purpose after its option exists.
+            if (f === 'purpose_id') {
+                var sourceLandUse = (src.querySelector('[data-f="land_use_id"]') || {}).value;
+                var sourceOtherPurpose = (src.querySelector('[data-f="purpose_id_other"]') || {}).value.trim();
+                if (!value) {
+                    alert('Choose a Purpose on the source row before applying it to the batch.');
+                    return;
+                }
+                if (value === 'other' && !sourceOtherPurpose) {
+                    alert('Specify the Other Purpose on the source row before applying it to the batch.');
+                    return;
+                }
+                if (!sourceLandUse) {
+                    alert('Choose a Land Use on the source row before applying its Purpose to the batch.');
+                    return;
+                }
+
+                var purposeTargets = rows.map(function (tr) {
+                    return tr === src ? null : {
+                        row: tr,
+                        purpose: tr.querySelector('[data-f="purpose_id"]'),
+                        landUse: tr.querySelector('[data-f="land_use_id"]'),
+                        other: tr.querySelector('[data-f="purpose_id_other"]'),
+                    };
+                }).filter(function (target) {
+                    return target && target.purpose && target.landUse && target.other;
+                });
+
+                if (!purposeTargets.length) return;
+
+                var purposeClashes = purposeTargets.filter(function (target) {
+                    return String(target.purpose.value).trim() !== ''
+                        && String(target.purpose.value) !== String(value);
+                }).length;
+                var landUseChanges = purposeTargets.filter(function (target) {
+                    return String(target.landUse.value || '') !== String(sourceLandUse);
+                }).length;
+
+                var purposeMessage = 'Copy ' + label + ' from the source row into '
+                    + purposeTargets.length + ' row' + (purposeTargets.length === 1 ? '' : 's') + '?';
+                if (landUseChanges) {
+                    purposeMessage += String.fromCharCode(10, 10) + 'Their Land Use will also be set to the source row\'s Land Use so the selected Purpose is valid.';
+                }
+                if (purposeClashes) {
+                    purposeMessage += String.fromCharCode(10, 10) + purposeClashes + ' existing purpose value'
+                        + (purposeClashes === 1 ? ' will' : 's will') + ' be replaced.';
+                }
+                if ((purposeClashes || landUseChanges) && !confirm(purposeMessage)) return;
+
+                Promise.all(purposeTargets.map(function (target) {
+                    target.landUse.value = sourceLandUse;
+
+                    return loadPurposes(target.purpose, sourceLandUse, value).then(function () {
+                        var applied = String(target.purpose.value) === String(value);
+                        if (applied) {
+                            target.other.value = value === 'other' ? sourceOtherPurpose : '';
+                            target.purpose.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+                        return applied;
+                    });
+                })).then(function (results) {
+                    var failed = results.filter(function (applied) { return !applied; }).length;
+                    if (failed) {
+                        alert(failed + ' row' + (failed === 1 ? ' could not' : 's could not')
+                            + ' receive the selected Purpose because it is not available in the current purpose list.');
+                    }
+                    scheduleSave();
+                });
+
+                return;
+            }
 
             var targets = [];
-            var skipped = 0;
             rows.forEach(function (tr) {
                 if (tr === src) return;
                 var dst = tr.querySelector('[data-f="' + f + '"]');
                 if (!dst) return;
-                if (srcLandUse !== null) {
-                    var lu = (tr.querySelector('[data-f="land_use_id"]') || {}).value;
-                    if (String(lu || '') !== String(srcLandUse || '')) { skipped++; return; }
-                }
                 targets.push(dst);
             });
 
             if (!targets.length) {
-                alert(skipped
-                    ? 'Nothing to apply: every other row is on a different land use, and a purpose only belongs to its own land use.'
-                    : 'Nothing to apply.');
+                alert('Nothing to apply.');
                 return;
             }
 
@@ -4088,13 +4216,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 // are fetched from it. Fire it so nothing is left stale.
                 dst.dispatchEvent(new Event('change', { bubbles: true }));
             });
-
-            if (skipped) {
-                alert(label + ' applied to ' + targets.length + ' row' + (targets.length === 1 ? '' : 's') + '. '
-                    + skipped + ' row' + (skipped === 1 ? ' was' : 's were')
-                    + ' left alone — a different land use, so this purpose does not apply to '
-                    + (skipped === 1 ? 'it' : 'them') + '.');
-            }
 
             // Purpose hangs off land use: its options are fetched for whatever land
             // use the row is on. Changing the land use therefore has to refetch

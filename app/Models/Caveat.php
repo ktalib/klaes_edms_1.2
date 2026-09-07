@@ -27,6 +27,9 @@ class Caveat extends Model
         'volume_no',
         'petitioner',
         'petitioner_address',
+        // The caveator's phone number, for the caveat placed/lifted SMS. Added
+        // with that feature -- the table had no way to reach the petitioner.
+        'petitioner_phone',
         'grantee_name',
         'grantee_address',
         'location',

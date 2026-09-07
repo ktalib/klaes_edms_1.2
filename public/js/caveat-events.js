@@ -546,6 +546,12 @@ function handleCaveatSubmission() {
         file_number: fileNumber,
         location: document.getElementById('location')?.value,
         petitioner: document.getElementById('petitioner')?.value,
+        // This payload is hand-built, so the new phone input sends nothing
+        // until it is named here. phone_confirmed is set by
+        // public/js/sms-applicant-phone.js once the officer has cleared the
+        // shared-number warning; without it the SMS is recorded as skipped.
+        petitioner_phone: document.getElementById('petitioner-phone')?.value || null,
+        phone_confirmed: document.querySelector('#petitioner-phone ~ input[name="phone_confirmed"]')?.value === '1',
         grantee: document.getElementById('grantee')?.value || null,
         serial_no: document.querySelector('#tab-place #serial-no')?.value || null,
         page_no: document.querySelector('#tab-place #page-no')?.value || null,

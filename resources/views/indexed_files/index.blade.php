@@ -577,6 +577,15 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
+    {{-- Shared cross-module Property Timeline card, opened by the action menu's
+         "View File Transactions" item. --}}
+    <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
+    {{-- Two-step typed confirmation shared with the Recommendation / RofO master
+         deletes, used by the action menu's "Master Delete" item. --}}
+    <script src="{{ asset('js/master-delete.js') }}"></script>
+    {{-- The File Snapshot card, reused by the action menu's "View Details" item so
+         it shows the same card the indexing form shows after a save. --}}
+    <script src="{{ asset('js/fileindexing/file-snapshot-card.js') }}?v={{ @filemtime(public_path('js/fileindexing/file-snapshot-card.js')) }}"></script>
 
     <script>
         window.indexedFilesConfig = {
@@ -593,6 +602,10 @@
             canManageActions: @json($canIndexFiles),
             // "Move to Indexing Duplicates" is hidden unless assign_role is Supper Admin.
             canMoveToIndexingDuplicates: @json($hasSuperRole),
+            // Master Delete: same gate, same reason — it erases the record from the
+            // live tables with no archive behind it. IndexedFileTableController
+            // re-checks the role; hiding the entry here is only a courtesy.
+            canMasterDelete: @json($hasSuperRole),
             // Match OP, offered on conversion (CON-) rows only. Same endpoints as the
             // Match OP page and the recommendation capture card, so all three ask one
             // service the same question and get the same answer.

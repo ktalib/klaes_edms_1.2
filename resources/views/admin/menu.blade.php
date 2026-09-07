@@ -27,9 +27,13 @@
         return false;
     };
 @endphp
-{{-- Greyed out and inert while the account has no passport photo. This is the visual
-     half of the rule; RequireProfilePhoto blocks the URLs themselves. --}}
-@php $sidebarPhotoLocked = auth()->check() && auth()->user()->needs_profile_photo; @endphp
+{{-- Greyed out and inert while the account has no passport photo, or has not confirmed
+     its phone number. This is the visual half of both rules; RequireProfilePhoto and
+     RequirePhoneVerification block the URLs themselves. --}}
+@php
+    $sidebarPhotoLocked = auth()->check()
+        && (auth()->user()->needs_profile_photo || auth()->user()->needs_phone_verification);
+@endphp
 <div class="sidebar border-r border-gray-200 bg-white transition-all duration-300 ease-in-out{{ $sidebarPhotoLocked ? ' sidebar-locked' : '' }}"
   @if($sidebarPhotoLocked) aria-disabled="true" @endif>
   <!-- Sidebar Header -->

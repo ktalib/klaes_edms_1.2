@@ -251,3 +251,22 @@
         });
     </script>
 </div>
+
+    {{--
+        Applicant contact, for the ST commissioning SMS.
+        st_file_numbers recorded a name, a title and an RC number and no way to
+        reach the person any of it describes, so this field and its column were
+        added together. data-sms-phone attaches the shared-number check: a
+        number already on file against many other files is almost certainly an
+        agent's, and the officer is asked to confirm it before the SMS uses it.
+    --}}
+    <div class="mt-4">
+        <label for="primary_applicant_phone" class="block text-sm font-medium text-gray-700 mb-2">
+            Phone No of Applicant
+        </label>
+        <input type="text" id="primary_applicant_phone" name="applicant_phone"
+               data-sms-phone
+               class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+               placeholder="08031234567">
+    </div>
+

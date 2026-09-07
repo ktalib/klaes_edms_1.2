@@ -66,12 +66,33 @@
 
                 {{-- Right: why it is being asked for, then what the detector found. --}}
                 <div class="ppc-pane-right">
-                    <h2 class="ppc-title" id="ppcTitle">{{ __('Profile Picture Required') }}</h2>
+                    <h2 class="ppc-title" id="ppcTitle">
+                        {{ auth()->user()->photo_face_rejected ? __('Real Photograph Required') : __('Profile Picture Required') }}
+                    </h2>
                     <p class="ppc-lede">
                         {{ __('Hello') }}
                         <strong>{{ auth()->user()->first_name ?? auth()->user()->name }}</strong>,
-                        {{ __('a passport photo is required before you can use KLAES. It identifies you on files, requests and approvals.') }}
+                        @if (auth()->user()->photo_face_rejected)
+                            {{ __('the picture on your account is not a photograph of your face, so it identifies you to nobody. A real passport photo is required before you can use KLAES.') }}
+                        @else
+                            {{ __('a passport photo is required before you can use KLAES. It identifies you on files, requests and approvals.') }}
+                        @endif
                     </p>
+
+                    {{-- What was actually wrong with the picture already on file, in the
+                         detector's own words. Without it a rejection is just a refusal. --}}
+                    @if (auth()->user()->photo_face_rejected)
+                        <div class="ppc-verify">
+                            <p class="ppc-verify-heading">{{ __('Picture currently on your account') }}</p>
+                            <div class="ppc-current">
+                                <img src="{{ auth()->user()->profile_url }}" alt="{{ __('Current picture') }}" class="ppc-current-thumb">
+                                <p class="ppc-current-reason">
+                                    {{ __('Rejected') }}@if (auth()->user()->photo_face_reason) — {{ auth()->user()->photo_face_reason }}@endif.
+                                    {{ __('Please upload a clear photograph of your own face.') }}
+                                </p>
+                            </div>
+                        </div>
+                    @endif
 
                     <div class="ppc-verify">
                         <p class="ppc-verify-heading">{{ __('Face verification') }}</p>
@@ -90,7 +111,11 @@
                         {{ __('Upload Profile Picture') }}
                     </button>
 
-                    <p class="ppc-footnote">{{ __('The system stays locked until a picture is uploaded.') }}</p>
+                    <p class="ppc-footnote">
+                        {{ auth()->user()->photo_face_rejected
+                            ? __('The system stays locked until a photograph of your face is uploaded.')
+                            : __('The system stays locked until a picture is uploaded.') }}
+                    </p>
                 </div>
             </div>
         </div>

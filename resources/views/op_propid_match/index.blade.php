@@ -40,7 +40,7 @@
         <div>
           <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <i data-lucide="link-2" class="h-6 w-6 text-violet-600"></i>
-            Match OP Property ID
+            Match OP (FC)
           </h1>
           {{-- What every batch from this page is recorded as. There is only one kind
                of match here, so it is stated rather than asked: the permits belong to

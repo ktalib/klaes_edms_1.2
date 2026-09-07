@@ -39,6 +39,9 @@ class Kernel extends HttpKernel
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \App\Http\Middleware\Verify2FA::class,
             \App\Http\Middleware\RequireProfilePhoto::class,
+            // Second gate, and it defers to the first: a user is asked for their
+            // photo, then for their phone number, never both at once.
+            \App\Http\Middleware\RequirePhoneVerification::class,
         ],
 
         'api' => [

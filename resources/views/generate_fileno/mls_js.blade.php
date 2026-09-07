@@ -1320,7 +1320,16 @@
                                 : '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200 mr-1">REL</span>';
                             const relValueClass = isOld ? 'text-amber-700' : 'text-sky-700';
 
-                            html += `<div class="mt-1 text-[11px]">${relBadge}<span class="font-semibold ${relValueClass}">${String(relOld.value).toUpperCase().replace(/</g, '&lt;')}</span></div>`;
+                            // A recertification is not its own Root of Title — the file it
+                            // was raised from is — so the marker rides on this number
+                            // rather than under the title. The server decides which.
+                            const rotRef = String(row.root_of_title_ref || '').trim();
+                            const carriesRoot = rotRef && rotRef.toUpperCase() === String(relOld.value).trim().toUpperCase();
+                            const rootMark = carriesRoot
+                                ? ' <span class="font-semibold text-violet-700" title="Root of Title">-RoT</span>'
+                                : '';
+
+                            html += `<div class="mt-1 text-[11px]">${relBadge}<span class="font-semibold ${relValueClass}">${String(relOld.value).toUpperCase().replace(/</g, '&lt;')}</span>${rootMark}</div>`;
                         }
 
                         if (row.batch_no && row.batch_count > 1) {
@@ -5581,6 +5590,7 @@
             // (e.g. a merger drawing on multiple mother files).
             extraRelatedFiles: [],
             relatedFileTypes: [
+                'Recertification',
                 'Re-grant',
                 'Resettlement',
                 'Subdivision',
@@ -6806,7 +6816,15 @@
 
                 // Detect recertification prefix (-RC)
                 this.isRecertificationPrefix = selectedPrefixStr.includes('-RC');
-                if (!this.isRecertificationPrefix) {
+                if (this.isRecertificationPrefix) {
+                    // The relationship is already known from the prefix — the related file
+                    // an RC number points at is the original it recertifies — so the type
+                    // is pre-picked rather than left for the officer to restate. A type
+                    // already chosen by hand is not overwritten.
+                    if (!this.relatedFileType) {
+                        this.relatedFileType = 'Recertification';
+                    }
+                } else {
                     this.clearRelatedFile();
                 }
             },
@@ -8820,11 +8838,12 @@
         }
     }
 
-    // The old (duplicated) number a Re-Issuance replaces. Reprint paths build their
-    // FormData from an API row and may not carry it, so it is looked up here rather
-    // than left off the sheet.
+    // The old (duplicated) number a Re-Issuance replaces, plus the district — which has
+    // no field on the commissioning form at all. Reprint paths build their FormData from
+    // an API row and may not carry either, so both are looked up here rather than left
+    // off the sheet.
     async function fetchCommissioningFileLinks(fileNumber) {
-        const empty = { old_file_number: '', related_file_number: '' };
+        const empty = { old_file_number: '', related_file_number: '', district: '' };
         const number = String(fileNumber || '').trim();
         if (!number) return empty;
 
@@ -8836,7 +8855,8 @@
             const payload = await res.json();
             return {
                 old_file_number: String(payload.old_file_number || '').trim(),
-                related_file_number: String(payload.related_file_number || '').trim()
+                related_file_number: String(payload.related_file_number || '').trim(),
+                district: String(payload.district || '').trim()
             };
         } catch (e) {
             console.warn('File links lookup failed', e);
@@ -8989,18 +9009,21 @@
             // FormData from an API row, so fall back to a lookup.
             let oldFileNoVal = String(formData.get('old_file_number') || '').trim();
             let relatedFileNoVal = String(formData.get('related_file_number_display') || '').trim();
-            if (!oldFileNoVal || !relatedFileNoVal) {
-                const links = await fetchCommissioningFileLinks(fileNumberVal);
-                oldFileNoVal = oldFileNoVal || links.old_file_number;
-                relatedFileNoVal = relatedFileNoVal || links.related_file_number;
-            }
+            // Always asked for: the commissioning form carries no District field, so the
+            // lookup is the only source for that line.
+            const links = await fetchCommissioningFileLinks(fileNumberVal);
+            oldFileNoVal = oldFileNoVal || links.old_file_number;
+            relatedFileNoVal = relatedFileNoVal || links.related_file_number;
+            const districtVal = String(formData.get('district') || '').trim() || links.district;
+            // The property block reads TP No > Plot No > District > Location.
             const fields = [
                 ['File No/(File Type):', fileNoDisplay],
                 ...(oldFileNoVal ? [['Related FileNo/Old FileNo:', oldFileNoVal]] : []),
                 ...(relatedFileNoVal ? [['Related FileNo/Old FileNo:', relatedFileNoVal]] : []),
                 ['File Name:', formData.get('file_name')],
-                ['Plot No:', formData.get('plot_number')],
                 ['TP No:', formData.get('tp_number')],
+                ['Plot No:', formData.get('plot_number')],
+                ['District:', districtVal],
                 ['Location:', formData.get('location')],
                 ...(isSitFile ? [['Reason:', formData.get('sit_reason')]] : []),
                 ['Time Commissioned:', formatTimeToAMPM(formData.get('time_created'))],
@@ -9134,13 +9157,16 @@
                 const rowOldFileNo = rowLinks.old_file_number || String(row.old_fileno || row.old_file_number || '').trim();
                 const hasRowOldFileNo = rowOldFileNo !== '' && rowOldFileNo.toUpperCase() !== String(rowFileNo).trim().toUpperCase();
                 const rowRelatedFileNo = rowLinks.related_file_number;
+                const rowDistrict = String(row.district || '').trim() || rowLinks.district;
+                // The property block reads TP No > Plot No > District > Location.
                 const fields = [
                     ['File No/(File Type):', rowFileNoDisplay],
                     ...(hasRowOldFileNo ? [['Related FileNo/Old FileNo:', rowOldFileNo]] : []),
                     ...(rowRelatedFileNo ? [['Related FileNo/Old FileNo:', rowRelatedFileNo]] : []),
                     ['File Name:', row.file_name || ''],
-                    ['Plot No:', row.plot_no || 'N/A'],
                     ['TP No:', row.tp_no || 'N/A'],
+                    ['Plot No:', row.plot_no || 'N/A'],
+                    ['District:', rowDistrict || 'N/A'],
                     ['Location:', row.location || 'N/A'],
                     ...(isSitRow ? [['Reason:', row.sit_reason || '']] : []),
                     ['Time Commissioned:', createdAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })],

@@ -66,6 +66,15 @@ class User extends Authenticatable implements MustVerifyEmail
         'deputy_user_id',
         'out_of_office_from',
         'out_of_office_to',
+        /*
+         | otp, otp_sent_at and is_otp_verified are DELIBERATELY NOT LISTED.
+         |
+         | is_otp_verified is the flag that decides whether the phone gate holds an
+         | account, so a form that mass-assigns whatever it was posted would be a way
+         | for a user to verify themselves without ever receiving a code. Every write
+         | goes through PhoneOtpService (forceFill) or `phone:verify-status`, both of
+         | which are explicit about it. See getNeedsPhoneVerificationAttribute().
+         */
     ];
 
     public function sendEmailVerificationNotification()
@@ -91,6 +100,9 @@ class User extends Authenticatable implements MustVerifyEmail
         'deputy_user_id' => 'integer',
         'out_of_office_from' => 'date',
         'out_of_office_to' => 'date',
+        'photo_face_checked_at' => 'datetime',
+        'otp_sent_at' => 'datetime',
+        'is_otp_verified' => 'boolean',
     ];
 
     protected $appends = ['name'];
@@ -100,6 +112,37 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         static::created(function (User $user) {
             static::ensurePayrollRate($user);
+        });
+
+        /*
+         | A phone number that changes is a phone number nobody has proved.
+         |
+         | is_otp_verified says "a code sent to THIS number was typed back", so it
+         | cannot survive the number being edited — otherwise the gate is satisfied
+         | once and the column then drifts back to whatever anybody types into the
+         | profile form, which is the state this feature exists to end.
+         |
+         | Two things are deliberately left alone: a caller that is setting the flag
+         | itself (PhoneOtpService, which changes the number and the flag together)
+         | and a code that is being written in the same save. Clearing those would
+         | destroy the code on its way to the gateway.
+         */
+        static::saving(function (User $user) {
+            if (!$user->exists || !$user->isDirty('phone_number')) {
+                return;
+            }
+
+            if (!app(\App\Services\PhoneOtpService::class)->columnsReady()) {
+                return;
+            }
+
+            if (!$user->isDirty('is_otp_verified')) {
+                $user->setAttribute('is_otp_verified', false);
+            }
+
+            if (!$user->isDirty('otp')) {
+                $user->setAttribute('otp', null);
+            }
         });
 
         static::updated(function (User $user) {
@@ -578,24 +621,101 @@ class User extends Authenticatable implements MustVerifyEmail
     }
 
     /**
+     * The face-check verdict that applies to the picture currently on file, or null when
+     * this picture has not been judged yet.
+     *
+     * Pinned to the file it was computed on: a row whose photo was replaced by a path
+     * that bypassed ProfilePhotoService keeps a stale verdict in the columns, and it must
+     * not be allowed to speak for the new picture. photo_face_path is only compared when
+     * it was actually recorded, so verdicts written before that column existed still count.
+     */
+    public function getPhotoFaceVerdictAttribute(): ?string
+    {
+        $status = strtolower(trim((string) ($this->photo_face_status ?? '')));
+
+        if ($status === '') {
+            return null;
+        }
+
+        $judged = trim((string) ($this->photo_face_path ?? ''));
+        $current = (string) (\App\Services\ProfilePhotoService::currentPhotoPath($this) ?? '');
+
+        if ($judged !== '' && $current !== '' && $judged !== $current) {
+            return null;
+        }
+
+        return $status;
+    }
+
+    /**
+     * True when the picture on file was judged not to be a photograph of a face — a
+     * cartoon avatar, a logo, a landscape.
+     *
+     * This is what makes an account with a stock avatar as locked as an account with no
+     * picture at all: the two are the same failure — nobody can be identified from the
+     * picture — and until 2026-09-05 only the second one was held.
+     */
+    public function getPhotoFaceRejectedAttribute(): bool
+    {
+        return $this->has_profile_photo
+            && $this->photo_face_verdict === \App\Services\ProfilePhotoService::FACE_FAIL;
+    }
+
+    /**
+     * True when there is a picture on file that no face check has judged yet, so the
+     * browser should check it once and report the verdict.
+     */
+    public function getNeedsPhotoFaceCheckAttribute(): bool
+    {
+        return $this->has_profile_photo && $this->photo_face_verdict === null;
+    }
+
+    /**
      * True when the mandatory passport-photo card should be shown and the system locked.
      *
      * This is the FIRST gate a user meets: it comes before the first-login password
      * change, so nothing else may prompt until a photo is on file.
+     *
+     * Two ways to fail it: no picture at all, or a picture that is not a photograph of
+     * the account holder's face. An unchecked picture passes — the gate closes only on a
+     * verdict actually reaching the server, never on the absence of one.
      */
     public function getNeedsProfilePhotoAttribute(): bool
     {
-        return !$this->has_profile_photo;
+        return !$this->has_profile_photo || $this->photo_face_rejected;
+    }
+
+    /**
+     * True when the phone-number confirmation card should be shown and the system locked.
+     *
+     * The SECOND gate, and deliberately behind the photo: a user meets one blocking card
+     * at a time, and the photo is the one that was already there. Signing in is not
+     * affected by either — both hold the account after it is in, which is what lets a
+     * member of staff whose number is wrong get far enough to correct it.
+     *
+     * The whole judgment (feature switch, and whether the columns are even deployed)
+     * lives in PhoneOtpService so that a server without the migration holds nobody.
+     */
+    public function getNeedsPhoneVerificationAttribute(): bool
+    {
+        if ($this->needs_profile_photo) {
+            return false;
+        }
+
+        return app(\App\Services\PhoneOtpService::class)->needsVerification($this);
     }
 
     /**
      * The first-login password change, which the dashboard prompts for.
      *
-     * Held back until the passport photo is uploaded — its prompt sends the user to the
-     * profile page, which RequireProfilePhoto blocks while the photo is still missing.
+     * Held back until the passport photo and the phone number are both settled — its
+     * prompt sends the user to the profile page, which both gates block while their
+     * requirement is outstanding.
      */
     public function getNeedsPasswordChangeAttribute(): bool
     {
-        return is_null($this->is_password_change) && $this->has_profile_photo;
+        return is_null($this->is_password_change)
+            && !$this->needs_profile_photo
+            && !$this->needs_phone_verification;
     }
 }

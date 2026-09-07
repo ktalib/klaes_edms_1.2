@@ -57,6 +57,27 @@ class ParcelSizeSummary
         ];
     }
 
+    /**
+     * A parcel's sides as the memo states them: [60, 21, 46] -> "60 x 21 x 46".
+     *
+     * Blanks are dropped, so a half-filled row of boxes gives the sides that were
+     * actually measured rather than "60 x  x 46"; an empty list gives null, which
+     * is what a parcel captured before dimensions existed carries.
+     *
+     * No thousands separator here, unlike an area: a side is a plain measurement
+     * off the plan, and "1,200 x 40" invites being read as two numbers.
+     */
+    public static function dimensionsText($terms): ?string
+    {
+        $sides = Collection::make(\is_array($terms) ? $terms : [])
+            ->map(fn ($v) => trim((string) $v))
+            ->filter(fn ($v) => $v !== '' && (float) $v > 0)
+            ->map(fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.'))
+            ->values();
+
+        return $sides->isEmpty() ? null : $sides->implode(' x ');
+    }
+
     /** 1410 -> "1,410"; 1410.5 -> "1,410.5"; 1410.00 -> "1,410". */
     public static function number($value): string
     {

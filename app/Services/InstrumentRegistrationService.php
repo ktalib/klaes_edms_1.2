@@ -45,17 +45,28 @@ class InstrumentRegistrationService
                 throw new \Exception("The instrument type [{$vaultName}] is not found in the 'Manage Instrument Types for Vault Registration'. Please configure the vault first.");
             }
 
-            ['volume' => $volume, 'page' => $page, 'serial' => $serial] = $this->nextFromVault($vault);
+            $next = $this->nextFromVault($vault);
+            ['volume' => $volume, 'page' => $page, 'serial' => $serial] = $next;
+
+            $vaultUpdate = [
+                'current_volume' => $volume,
+                'current_page' => $page,
+                'current_serial' => $serial,
+                'updated_at' => now()
+            ];
+
+            // How full the volume now is. Only the Land Registry rules track
+            // this, and only where the column has been deployed - the vault
+            // table predates it, so a site that has not run the Land
+            // Registration install still numbers, just without volume capacity.
+            if (isset($next['volume_count']) && $this->vaultHasVolumeCountColumn()) {
+                $vaultUpdate['current_volume_count'] = $next['volume_count'];
+            }
 
             // Update the vault
             DB::connection('sqlsrv')->table('instrument_number_vaults')
                 ->where('instrument_type', $vaultName)
-                ->update([
-                    'current_volume' => $volume,
-                    'current_page' => $page,
-                    'current_serial' => $serial,
-                    'updated_at' => now()
-                ]);
+                ->update($vaultUpdate);
 
             $formatted = "{$serial}/{$page}/{$volume}";
 
@@ -137,6 +148,25 @@ class InstrumentRegistrationService
                 $insertData['batch_session_id'] = $data['batch_session_id'] ?? null;
             }
 
+            /*
+             * Registration category. Digitization and Land Registration share
+             * this table and are told apart by this column, not by the screen
+             * that wrote the row - see section 4.2 of
+             * docs/KLAES_Deed_of_Purchase_Land_Registration_Update.md, which
+             * rules out a separate physical Land Registration table.
+             *
+             * Derived from the instrument type rather than passed in, so a row
+             * cannot be filed under the wrong register by a caller that forgot
+             * to set it. Everything that is not a Land Registration instrument
+             * stays 'digitization', which is what every existing row is.
+             */
+            if (Schema::connection('sqlsrv')->hasColumn('deed_registrations', 'registration_category')) {
+                $insertData['registration_category'] =
+                    $instrumentType === config('land_registration.instrument_type')
+                        ? 'land_registration'
+                        : 'digitization';
+            }
+
             // If there's extra data, json_encode it
             if (isset($data['extra_data'])) {
                 $insertData['data'] = json_encode($data['extra_data']);
@@ -194,31 +224,18 @@ class InstrumentRegistrationService
             throw new \Exception("The instrument type [{$vaultName}] is not found in the 'Manage Instrument Types for Vault Registration'. Please configure the vault first.");
         }
 
-        $currentVolume = (int) ($vault->current_volume ?? 1);
-        $currentSerial = (int) ($vault->current_serial ?? 0);
-
-        if ($currentVolume < 1)
-            $currentVolume = 1;
-
-        $volume = $currentVolume;
-        $serial = $currentSerial + 1;
-        $page = $serial; // Enforce Serial == Page
-
-        // Rollover Logic Preview
-        if ($serial > 300) {
-            $serial = 1;
-            $page = 1;
-            $volume++;
-        }
-
-        return [
-            'volume' => $volume,
-            'page' => $page,
-            'serial' => $serial,
-            'formatted' => "{$serial}/{$page}/{$volume}",
-            'deeds_date' => date('d F Y'), // e.g., 12 February 2026
-            'deeds_time' => date('g:i A'), // e.g., 8:22 PM
-        ];
+        // Delegated rather than recalculated. This method used to carry its own
+        // copy of the base-300 arithmetic, which is the drift nextFromVault()
+        // exists to prevent - and it would have shown a Land Registration
+        // preview under the Deeds rules, so the number an officer was promised
+        // and the number the capture burned would disagree.
+        return array_merge(
+            $this->nextFromVault($vault),
+            [
+                'deeds_date' => date('d F Y'), // e.g., 12 February 2026
+                'deeds_time' => date('g:i A'), // e.g., 8:22 PM
+            ]
+        );
     }
     /**
      * Automatically register ST Fragmentation for approved mother applications.
@@ -479,6 +496,12 @@ class InstrumentRegistrationService
      */
     private function nextFromVault(?object $vault): array
     {
+        // The Land Registry numbers on different rules from Deeds, and the two
+        // must not be conflated - see nextForLandRegistration().
+        if (($vault->instrument_type ?? null) === config('land_registration.instrument_type')) {
+            return $this->nextForLandRegistration($vault);
+        }
+
         // A fresh or corrupted vault starts at 1/1/1.
         $currentVolume = (int) ($vault->current_volume ?? 1);
         $currentSerial = (int) ($vault->current_serial ?? 0);
@@ -502,6 +525,85 @@ class InstrumentRegistrationService
             'volume' => $volume,
             'page' => $page,
             'serial' => $serial,
+            'formatted' => "{$serial}/{$page}/{$volume}",
+        ];
+    }
+
+    /**
+     * Whether instrument_number_vaults carries the volume-capacity counter.
+     *
+     * Cached for the life of the request: this is asked once per allocation and
+     * the answer cannot change mid-request.
+     */
+    private ?bool $vaultHasVolumeCount = null;
+
+    private function vaultHasVolumeCountColumn(): bool
+    {
+        if ($this->vaultHasVolumeCount === null) {
+            $this->vaultHasVolumeCount = Schema::connection('sqlsrv')
+                ->hasColumn('instrument_number_vaults', 'current_volume_count');
+        }
+
+        return $this->vaultHasVolumeCount;
+    }
+
+    /**
+     * The Land Registry's numbering, per sections 10-14 of
+     * docs/KLAES_Deed_of_Purchase_Land_Registration_Update.md.
+     *
+     * Three rules, and the third is the one that makes this different from the
+     * Deeds arithmetic above rather than a variation of it:
+     *
+     *   1. Serial and page are four-digit counters: 9999 rolls back to 1.
+     *   2. The volume advances once it holds `volume_capacity` (300) entries.
+     *   3. Those two are INDEPENDENT. A serial rolling 9999 -> 1 must leave the
+     *      volume alone. The Deeds rule ties them together - one event resets
+     *      the serial and bumps the volume - which is precisely what a Land
+     *      register must not do, and why this cannot reuse that code path.
+     *
+     * The capacity count is carried on the vault row rather than derived by
+     * counting registrations, because a deleted registration must not hand its
+     * slot back: the number is never re-issued, so the volume it sat in is
+     * still that much closer to full.
+     */
+    private function nextForLandRegistration(?object $vault): array
+    {
+        $rules = config('land_registration.numbering');
+        $serialMax = (int) ($rules['serial_max'] ?? 9999);
+        $pageMax = (int) ($rules['page_max'] ?? 9999);
+        $capacity = (int) ($rules['volume_capacity'] ?? 300);
+
+        $volume = max(1, (int) ($vault->current_volume ?? 1));
+
+        $serial = (int) ($vault->current_serial ?? 0) + 1;
+        if ($serial > $serialMax) {
+            $serial = 1;
+        }
+
+        // Page is tracked separately from serial. They advance in step in
+        // practice - the paper register writes the same value in both columns -
+        // but the spec gives each its own limit, so neither is derived.
+        $page = (int) ($vault->current_page ?? 0) + 1;
+        if ($page > $pageMax) {
+            $page = 1;
+        }
+
+        // How full the current volume is. A vault written before this column
+        // existed reports null, which reads as an empty volume; that is the
+        // safe direction to be wrong in, since it delays a volume change rather
+        // than forcing an early one.
+        $inVolume = (int) ($vault->current_volume_count ?? 0);
+        if ($inVolume >= $capacity) {
+            $volume++;
+            $inVolume = 0;
+        }
+        $inVolume++;
+
+        return [
+            'volume' => $volume,
+            'page' => $page,
+            'serial' => $serial,
+            'volume_count' => $inVolume,
             'formatted' => "{$serial}/{$page}/{$volume}",
         ];
     }

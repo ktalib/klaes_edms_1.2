@@ -926,6 +926,8 @@ class PropertyRecordController extends Controller
             'instrument_subtype' => 'nullable|string|max:100',
             'instrument_category' => 'nullable|string|max:100',
             'op_serial_number' => 'nullable|string|max:255',
+            'consideration_amount' => 'nullable|string|max:100',
+            'receipt_no' => 'nullable|string|max:100',
             'has_official_file_number' => 'nullable|in:0,1',
             'record_mode' => 'nullable|in:property,index',
             'instrument_entries' => 'nullable|array',
@@ -1402,6 +1404,8 @@ class PropertyRecordController extends Controller
                 'instrument_subtype' => $request->instrument_subtype,
                 'instrument_category' => $request->instrument_category,
                 'op_serial_number' => $request->op_serial_number,
+                'consideration_amount' => $request->consideration_amount,
+                'receipt_no' => $request->receipt_no,
                 'related_file_number' => $relatedFileNumber,
                 'related_fileno' => $relatedFileNumber,
                 'is_mapped' => $request->input('is_mapped') ? 1 : 0,
@@ -1668,6 +1672,8 @@ class PropertyRecordController extends Controller
             'instrument_subtype' => 'nullable|string|max:100',
             'instrument_category' => 'nullable|string|max:100',
             'op_serial_number' => 'nullable|string|max:255',
+            'consideration_amount' => 'nullable|string|max:100',
+            'receipt_no' => 'nullable|string|max:100',
             'party_3' => 'nullable|string|max:255',
             // Generic party fields for fallback
             'firstParty' => 'nullable|string|max:500',
@@ -1890,6 +1896,13 @@ class PropertyRecordController extends Controller
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'op_serial_number')) {
                 $data['op_serial_number'] = $request->input('op_serial_number');
+            }
+            // Deed of Purchase: what was paid, and the receipt behind it.
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'consideration_amount')) {
+                $data['consideration_amount'] = $request->input('consideration_amount');
+            }
+            if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'receipt_no')) {
+                $data['receipt_no'] = $request->input('receipt_no');
             }
             if (Schema::connection('sqlsrv')->hasColumn($targetTable, 'land_use')) {
                 $landUse = $this->normalizeValue(

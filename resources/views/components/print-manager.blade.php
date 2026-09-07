@@ -110,22 +110,47 @@
                                     is read back on paper — <b>Edit</b> changes it here if the proof was wrong.
                                 </p>
 
-                                {{-- A batch: how many of its letters are dated. There is no
-                                     one date to show — each carries its own — so what matters
-                                     here is whether any is still missing one. --}}
+                                {{-- A batch: the date its letters carry. Usually one —
+                                     a batch is issued on a day — so it is shown exactly
+                                     as a single letter's is, because this is the last
+                                     screen before security paper goes through the
+                                     printer and the operator has to be able to read
+                                     what will print on it. Letters issued on different
+                                     days keep the count and show the spread instead;
+                                     there is no one date to put in front of them. --}}
                                 <div x-show="isBatchMode && batchMissingDates === 0" x-cloak class="flex items-center gap-2">
-                                    <p class="text-[13px] font-bold text-slate-700 flex-1">
-                                        All <span x-text="batchCount"></span> letters carry a date of issue.
-                                    </p>
+                                    <div class="flex-1 min-w-0">
+                                        <p x-show="batchDates.length === 1" x-cloak
+                                           class="text-[15px] font-black text-slate-800 font-mono" x-text="batchDates[0]"></p>
+                                        <p x-show="batchDates.length > 1" x-cloak
+                                           class="text-[15px] font-black text-slate-800 font-mono truncate"
+                                           x-text="batchDates[0] + ' — ' + batchDates[batchDates.length - 1]"></p>
+                                        <p x-show="batchDates.length > 1" x-cloak
+                                           class="text-[10px] font-black uppercase tracking-wider text-amber-600 mt-0.5">
+                                            <span x-text="batchDates.length"></span> different dates in this batch
+                                        </p>
+                                        {{-- The fallback: the dates could not be read (the
+                                             lookup failed), but every letter is known to
+                                             carry one. --}}
+                                        <p x-show="batchDates.length === 0" x-cloak
+                                           class="text-[13px] font-bold text-slate-700">
+                                            All <span x-text="batchCount"></span> letters carry a date of issue.
+                                        </p>
+                                    </div>
                                     <button type="button" @click="issueDateConfirming = true"
-                                            class="px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-black hover:bg-slate-300 transition">
+                                            class="shrink-0 px-4 py-2 rounded-lg bg-slate-200 text-slate-700 text-xs font-black hover:bg-slate-300 transition">
                                         Edit
                                     </button>
                                 </div>
                                 <p x-show="isBatchMode && batchMissingDates === 0" x-cloak
                                    class="text-[11px] text-slate-500 leading-relaxed">
-                                    Each prints the date on its own record as <b>DATE OF ISSUE</b>. They are set on the
-                                    White copy — <b>Edit</b> replaces them here if the proof was wrong.
+                                    <span x-show="batchDates.length === 1" x-cloak>All
+                                        <b><span x-text="batchCount"></span></b> letters print this as
+                                        <b>DATE OF ISSUE</b>.</span>
+                                    <span x-show="batchDates.length !== 1" x-cloak>Each prints the date on its own
+                                        record as <b>DATE OF ISSUE</b>.</span>
+                                    They are set on the White copy — <b>Edit</b> replaces them here if the proof
+                                    was wrong.
                                 </p>
                             </div>
                         </template>
@@ -727,6 +752,17 @@ document.addEventListener('alpine:init', () => {
             // this panel is not allowed to invent one either — the operator types it
             // or the print does not go ahead.
             this.issueDate = this.issueDateOnRecord || '';
+
+            // A batch carries its date on its own letters rather than in
+            // data.issueDate, so when they all agree on one that is what Edit opens
+            // on — otherwise the operator is asked to retype a date now printed
+            // directly above the button. Nothing is sent unless they actually unlock
+            // and change it: runBatchPass only forwards the field once
+            // issueDateUnlocked is true or a letter is missing a date.
+            if (!this.issueDate && this.batchDates.length === 1) {
+                this.issueDate = this.batchDates[0];
+            }
+
             this.issueDateLocked = !!this.issueDateOnRecord;
             this.issueDateUnlocked = false;
             this.issueDateConfirming = false;
@@ -794,6 +830,13 @@ document.addEventListener('alpine:init', () => {
         // date they carry — nothing in a bulk run overwrites a date already issued.
         get batchMissingDates() {
             return (this.batch && this.batch.missingDates) || 0;
+        },
+
+        // The distinct dates already on the batch, earliest first. Normally one: a
+        // batch is issued on a day. Empty when the caller could not read them, which
+        // is why the panel keeps a count-only line behind this.
+        get batchDates() {
+            return (this.batch && Array.isArray(this.batch.dates)) ? this.batch.dates : [];
         },
 
         get isOssMode() {
@@ -1011,7 +1054,7 @@ document.addEventListener('alpine:init', () => {
             if (this.issueDateLocked && !this.issueDateUnlocked) return true;
 
             try {
-                await fetch(this.issueDateUrl, {
+                const response = await fetch(this.issueDateUrl, {
                     method: 'POST',
                     credentials: 'same-origin',
                     headers: {
@@ -1025,6 +1068,19 @@ document.addEventListener('alpine:init', () => {
                         issue_date_apply: this.issueDateUnlocked ? 'all' : 'missing'
                     })
                 });
+
+                // fetch() resolves for HTTP 4xx/5xx responses. Treating those as a
+                // successful save made the manager open the print template with the
+                // old date still in the database, while the dialog showed the newly
+                // typed one. Do not print until the server has confirmed the write.
+                if (!response.ok) {
+                    throw new Error('Date of issue save failed with HTTP ' + response.status);
+                }
+
+                const result = await response.json();
+                if (!result || result.success !== true) {
+                    throw new Error('Date of issue was not saved.');
+                }
 
                 this.issueDateOnRecord = this.issueDate;
                 this.issueDateLocked = true;
@@ -1642,20 +1698,33 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
-        executeCTCPrint() {
+        async executeCTCPrint() {
+            if (this.isPrinting) return;
+
+            // CTC uses the same RofO template as every other print. It must save a
+            // confirmed Date Issued first; previously this path skipped
+            // persistIssueDate(), so the template read the older date_issued value.
+            if (!(await this.persistIssueDate())) return;
+
+            this.isPrinting = true;
+
             // CTC prints are now batch of 3 (Original, Duplicate, Triplicate)
-            const _sep4 = this.printUrl.includes('?') ? '&' : '?';
-            window.open(`${this.printUrl}${_sep4}status=Batch&isCTC=1`, '_blank');
-            
-            Swal.fire({
-                title: 'Certified True Copy Batch',
-                text: `Generating CTC batch...`,
-                icon: 'info',
-                toast: true,
-                position: 'top-end',
-                showConfirmButton: false,
-                timer: 3000
-            });
+            try {
+                const _sep4 = this.printUrl.includes('?') ? '&' : '?';
+                window.open(`${this.printUrl}${_sep4}status=Batch&isCTC=1`, '_blank');
+
+                Swal.fire({
+                    title: 'Certified True Copy Batch',
+                    text: 'Generating CTC batch...',
+                    icon: 'info',
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    timer: 3000
+                });
+            } finally {
+                this.isPrinting = false;
+            }
         }
     }));
 });

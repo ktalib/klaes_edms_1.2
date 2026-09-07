@@ -10,6 +10,7 @@ use App\Services\ParcelUpdateNotificationService;
 use App\Services\TitleStatusParcelRouter;
 // Plot Subdivision logging goes to its own file (storage/logs/plot_subdivision.log),
 // not laravel.log — see config/logging.php channel "plot_subdivision".
+use App\Support\ParcelSizeSummary;
 use App\Support\PlotSubdivisionLog as Log;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -89,6 +90,15 @@ class PlotSubdivisionController extends Controller
             'state' => 'nullable|string|max:100',
             'plot_sizes' => 'nullable|array',
             'plot_sizes.*' => 'nullable|numeric|min:0',
+            // The sides of each plot, in survey order: "60 x 21 x 46 x 21 x 42.71".
+            // A parcel is a polygon, not always a rectangle - which is how the
+            // Ministry's own memo states it - so this is a LIST, of any length, one
+            // per plot. `plot_sizes` stays the authority everything downstream reads;
+            // where two sides give the area the form derives it, and where they cannot
+            // (any other count) the officer types the measured area from the plan.
+            'plot_dimensions' => 'nullable|array',
+            'plot_dimensions.*' => 'nullable|array|max:24',
+            'plot_dimensions.*.*' => 'nullable|numeric|min:0',
             'site_plan'          => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
             'ownership_document' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
             'application_letter' => 'nullable|file|mimes:pdf,png,jpg,jpeg|max:5120',
@@ -136,12 +146,17 @@ class PlotSubdivisionController extends Controller
                 $application->update($docUpdates);
             }
 
+            $dimensions = array_values($request->input('plot_dimensions') ?? []);
+
             foreach (($request->plot_sizes ?? []) as $index => $size) {
                 PlotApplicationSize::create([
                     'application_id' => $application->id,
                     'application_type' => 'subdivision',
                     'plot_number' => 'Plot ' . ($index + 1),
                     'plot_size' => ($size === null || $size === '') ? 0 : $size,
+                    // Kept beside the area, not instead of it: the memo states a
+                    // parcel by its sides, everything else works in m².
+                    'dimensions' => ParcelSizeSummary::dimensionsText($dimensions[$index] ?? null),
                     'type' => 'subdivision_fragment',
                 ]);
             }

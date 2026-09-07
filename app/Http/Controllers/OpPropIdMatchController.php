@@ -71,7 +71,7 @@ class OpPropIdMatchController extends Controller
     public function index()
     {
         return view('op_propid_match.index', [
-            'PageTitle' => 'Match OP Property ID',
+            'PageTitle' => 'Match OP (FC)',
             // The one kind of match this page performs, named from the service so the
             // badge on the page and the value in the audit trail cannot drift apart.
             'matchModeLabel' => OpPropIdMatchService::MATCH_MODE_LABEL,

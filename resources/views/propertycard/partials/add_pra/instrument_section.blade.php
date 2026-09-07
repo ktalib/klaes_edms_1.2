@@ -103,6 +103,28 @@
                 </div>
             </div>
 
+            {{-- Deed of Purchase only: what was paid and the receipt behind it.
+                 Shown by the same mechanism as the OP block above — the controller
+                 toggles this wrapper off the selected transaction type. These two
+                 fields also exist on the Land Registration capture form; a
+                 historical purchase is backfilled here instead. --}}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 hidden" data-role="purchase-fields-wrapper">
+                <div>
+                    <label for="consideration_amount" class="text-xs">Payment Amount</label>
+                    <input id="consideration_amount" name="consideration_amount" class="form-input text-xs py-1"
+                        placeholder="Purchase consideration" data-model="considerationAmount"
+                        inputmode="decimal" autocomplete="off" type="text"
+                        value="{{ old('consideration_amount') }}">
+                </div>
+                <div>
+                    <label for="receipt_no" class="text-xs">Receipt No</label>
+                    <input id="receipt_no" name="receipt_no" class="form-input text-xs py-1"
+                        placeholder="Payment receipt number" data-model="receiptNo"
+                        autocomplete="off" type="text"
+                        value="{{ old('receipt_no') }}">
+                </div>
+            </div>
+
             {{-- A Certificate of Occupancy's Type is the shared Type field above, whose
                  options for this instrument are Land / Old KANGIS / New KANGIS / LGA.
                  This hidden input is only what posts cofo_type, kept in step by

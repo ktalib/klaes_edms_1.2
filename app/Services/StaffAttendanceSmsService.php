@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SmsSetting;
 use App\Models\StaffSmsLog;
 use App\Models\User;
 use Carbon\Carbon;
@@ -157,7 +158,14 @@ class StaffAttendanceSmsService
         }
 
         $messages = $this->messagesFor($user, $type, $at);
-        $accepted = $this->gateway->sendFirstAccepted($phone, $messages);
+
+        // Sign-in and sign-out go to a member of staff, so they carry the staff
+        // sender ID (KLAES) rather than the departmental one the public sees.
+        $sender = SmsSetting::senderFor($type === StaffSmsLog::TYPE_LOGIN
+            ? SmsSetting::KEY_ATTENDANCE_LOGIN
+            : SmsSetting::KEY_ATTENDANCE_LOGOUT);
+
+        $accepted = $this->gateway->sendFirstAccepted($phone, $messages, $sender);
 
         if ($accepted !== null) {
             $claim->forceFill([
@@ -274,8 +282,33 @@ class StaffAttendanceSmsService
         ];
     }
 
+    /**
+     * Is this kind of attendance SMS switched on?
+     *
+     * Asks the SMS Control Centre first (sms_settings), and only falls back to
+     * config/staff_sms.php when that table has no row -- a fresh server, or one
+     * where nobody has opened the page yet.
+     *
+     * The switches used to live only in .env, which is gitignored and does not
+     * travel with a code upload: turning attendance SMS on meant editing a file
+     * on the server and restarting it, and the next deployment silently lost the
+     * setting. This method is the whole seam -- no call site changed.
+     */
     private function featureEnabled(string $type): bool
     {
+        $key = $type === StaffSmsLog::TYPE_LOGIN
+            ? SmsSetting::KEY_ATTENDANCE_LOGIN
+            : SmsSetting::KEY_ATTENDANCE_LOGOUT;
+
+        try {
+            if (SmsSetting::hasRowFor($key)) {
+                return SmsSetting::isEnabled($key);
+            }
+        } catch (\Throwable $e) {
+            // sms_settings not deployed yet. Fall through to the config file,
+            // which is exactly the behaviour this method had before.
+        }
+
         return (bool) config('staff_sms.enabled', true)
             && (bool) config('staff_sms.' . $type . '.enabled', true);
     }

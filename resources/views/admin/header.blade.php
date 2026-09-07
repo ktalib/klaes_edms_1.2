@@ -198,8 +198,11 @@
   </div>
 </div>
 
-{{-- Standing reminder for accounts with no passport photo on file. Dismissing hides it
-     for the current page only, so it comes back until a photo is actually uploaded. --}}
+{{-- Standing reminder for accounts with no usable passport photo on file — none at all,
+     or a picture the face check found is not a photograph of a face (a stock avatar,
+     a logo). Both are held the same way, because neither identifies the person.
+     Dismissing hides it for the current page only, so it comes back until a real photo
+     is actually uploaded. --}}
 @if (Auth::check() && Auth::user()->needs_profile_photo)
   <div id="missingProfilePhotoBanner"
     class="flex flex-wrap items-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-3 text-sm text-amber-900">
@@ -207,8 +210,13 @@
       <i data-lucide="camera" class="h-4 w-4 text-amber-700"></i>
     </span>
     <span class="flex-1 min-w-[12rem]">
-      <strong>{{ __('Your profile picture is missing.') }}</strong>
-      {{ __('Upload a passport photo so colleagues can identify you on files and requests.') }}
+      @if (Auth::user()->photo_face_rejected)
+        <strong>{{ __('The picture on your account is not a photograph of your face.') }}</strong>
+        {{ __('Upload your own passport photo so colleagues can identify you on files and requests.') }}
+      @else
+        <strong>{{ __('Your profile picture is missing.') }}</strong>
+        {{ __('Upload a passport photo so colleagues can identify you on files and requests.') }}
+      @endif
     </span>
     <button type="button" data-profile-photo-trigger
       class="inline-flex items-center rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700">
@@ -305,6 +313,11 @@
 <script src="{{ asset('js/welcome-popup.js') }}" defer></script>
 @if (Auth::check() && Auth::user()->needs_profile_photo)
   @include('profile.partials.photo-required-card')
+@endif
+{{-- The second gate. needs_phone_verification is already false while a photo is
+     outstanding, so the two cards can never both be on screen. --}}
+@if (Auth::check() && Auth::user()->needs_phone_verification)
+  @include('profile.partials.phone-verification-card')
 @endif
 <script src="{{ asset('js/auto-logout.js') }}" defer></script>
 <script src="{{ asset('js/user-profile-dropdown.js') }}" defer></script>

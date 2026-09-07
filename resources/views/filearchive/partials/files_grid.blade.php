@@ -136,6 +136,13 @@
                                         $coverPage = $file->firstPageTyping;
                                     }
 
+                                    // Use the archive media route for database-backed cards.
+                                    // It resolves the EDMS path server-side, avoiding a broken
+                                    // static /storage mapping on the web server.
+                                    $cardPreviewUrl = $storagePreviewUrl ?: ($coverPage
+                                        ? route('filearchive.cover-image', ['pageTyping' => $coverPage->id])
+                                        : null);
+
                                     $coverType = $coverPage ? $coverPage->coverType : null;
                                     $coverTypeName = $coverType ? $coverType->Name : 'Unknown Cover';
                                     
@@ -246,10 +253,10 @@
                                     </div>
                                 </div>
                                 <div class="flex-1 flex flex-col overflow-hidden">
-                                    @if($storagePreviewUrl || $coverPagePath)
+                                    @if($cardPreviewUrl)
                                         <!-- Actual cover page image -->
                                         <div class="flex-1 p-2">
-                                            <img src="{{ $storagePreviewUrl ?: $coverPagePath }}" 
+                                            <img src="{{ $cardPreviewUrl }}" 
                                                  alt="Cover page for {{ $file->file_number }}"
                                                  class="w-full h-full object-contain bg-gray-50 rounded-sm"
                                                  loading="lazy"

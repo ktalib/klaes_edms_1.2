@@ -88,6 +88,9 @@ class PropertyRecord extends Model
         'revoked_date',
         'date_created',
         'land_use',
+        // Deed of Purchase: what was paid, and the receipt behind it.
+        'consideration_amount',
+        'receipt_no',
     ];
 
     protected $casts = [

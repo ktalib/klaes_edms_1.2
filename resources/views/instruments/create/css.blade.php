@@ -192,6 +192,69 @@
         filter: brightness(0.85);
     }
 
+    /* "Fill a missing registration number". Deliberately not a capture-banner:
+       the banners state what WILL happen, this one asks the officer to override
+       it, so it reads as a caution (amber) and never as a status line. */
+    .backfill-panel {
+        background: #fffbeb;
+        border: 1px solid #fcd34d;
+        border-left: 4px solid #f59e0b;
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .backfill-panel__toggle {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.625rem;
+        cursor: pointer;
+    }
+
+    .backfill-panel__title {
+        display: block;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: #92400e;
+    }
+
+    .backfill-panel__hint {
+        display: block;
+        margin-top: 0.125rem;
+        font-size: 0.6875rem;
+        color: #a16207;
+    }
+
+    .backfill-panel__range {
+        margin-top: 0.5rem;
+        padding-left: 1.625rem;
+        font-size: 0.6875rem;
+        color: #a16207;
+    }
+
+    .backfill-panel__fields {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+        padding-left: 1.625rem;
+    }
+
+    .backfill-panel__label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        color: #92400e;
+    }
+
+    .backfill-panel__chosen {
+        margin-top: 0.5rem;
+        padding-left: 1.625rem;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #92400e;
+    }
+
     /* Shared styling for the "what are we capturing?" prompts (CofO variant + type,
        OP type) - a row of choice cards, optionally with a follow-up select. */
     .type-prompt {

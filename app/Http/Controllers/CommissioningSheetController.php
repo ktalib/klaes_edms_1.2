@@ -450,6 +450,10 @@ class CommissioningSheetController extends Controller
             // fields blank) still print the property details from the indexed record.
             $data = $this->fillPropertyFieldsFromIndexing($data);
 
+            // The District prints on its own line, between the Plot No and the Location.
+            // It is not a column on file_commissioning_sheets, so it is resolved here.
+            $data['district'] = $this->resolveDistrict((string) ($data['file_number'] ?? ''));
+
             // The LGA prints in caps wherever it appears in the Location line — including
             // on sheets stored before that rule existed.
             $lga = trim((string) ($data['lga'] ?? ''));
@@ -636,10 +640,11 @@ class CommissioningSheetController extends Controller
 
     /**
      * The other file numbers a commissioning sheet quotes: the old (duplicated) number a
-     * Re-Issuance replaces, and the related file the record was raised from.
+     * Re-Issuance replaces, and the related file the record was raised from. The district
+     * rides along, since it has no field on the commissioning form either.
      *
-     * Both come back print-ready — paired with their KANGIS/land counterpart, e.g.
-     * "COM-2005-78 (KNML 74)". The client-side PDF builder (Generate File Number /
+     * The two numbers come back print-ready — paired with their KANGIS/land counterpart,
+     * e.g. "COM-2005-78 (KNML 74)". The client-side PDF builder (Generate File Number /
      * Commission modals) has no DB access and asks here instead.
      */
     public function fileLinks(Request $request)
@@ -651,6 +656,7 @@ class CommissioningSheetController extends Controller
                 'success'             => false,
                 'old_file_number'     => '',
                 'related_file_number' => '',
+                'district'            => '',
             ], 200);
         }
 
@@ -687,7 +693,51 @@ class CommissioningSheetController extends Controller
             'success'             => true,
             'old_file_number'     => $old,
             'related_file_number' => $related,
+            'district'            => $this->resolveDistrict($fileNumber),
         ]);
+    }
+
+    /**
+     * The district a file sits in, for the sheet's own District line.
+     *
+     * file_commissioning_sheets has no district column, so the value is resolved from the
+     * file's record every time the sheet is drawn: the indexed record first, then the MLS
+     * record. Both store it the way it prints, so it is passed through untouched.
+     */
+    private function resolveDistrict(string $fileNumber): string
+    {
+        $fileNumber = trim($fileNumber);
+        if ($fileNumber === '') {
+            return '';
+        }
+
+        try {
+            $district = DB::connection('sqlsrv')
+                ->table('file_indexings')
+                ->where(function ($q) use ($fileNumber) {
+                    $q->where('file_number', $fileNumber)->orWhere('mls_file_no', $fileNumber);
+                })
+                ->where(function ($q) {
+                    $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
+                })
+                ->orderByDesc('id')
+                ->value('district');
+
+            $district = trim((string) $district);
+            if ($district !== '') {
+                return $district;
+            }
+
+            return trim((string) DB::connection('sqlsrv')
+                ->table('mls_file_no')
+                ->where('full_file_number', $fileNumber)
+                ->orderByDesc('id')
+                ->value('district'));
+        } catch (\Throwable $e) {
+            \Log::warning('Commissioning sheet district lookup failed: ' . $e->getMessage());
+
+            return '';
+        }
     }
 
     /**

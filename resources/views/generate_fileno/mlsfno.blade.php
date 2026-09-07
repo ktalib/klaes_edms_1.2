@@ -1015,7 +1015,19 @@
                                                 <label for="generatePhoneNo" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Phone No of Applicant
                                                 </label>
+                                                {{--
+                                                    This field has always existed and always posted; until the
+                                                    commissioning SMS was added the controller dropped it on the
+                                                    floor, which is why mls_file_no.phone_no was 100% empty.
+                                                    data-sms-phone attaches the shared-number check in
+                                                    public/js/sms-applicant-phone.js: a number already on file
+                                                    against many other files is almost certainly an agent's or an
+                                                    indexing clerk's, and the officer is asked to confirm it before
+                                                    the applicant SMS will use it.
+                                                --}}
                                                 <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no"
+                                                       data-sms-phone
+                                                       data-sms-phone-for="#extensionFileNo"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                        :class="{ '': isInherited }"
                                                        placeholder="Enter Phone No">
@@ -3410,6 +3422,12 @@
         <script src="{{ asset('js/shared/conversion-application-print.js') }}?v={{ @filemtime(public_path('js/shared/conversion-application-print.js')) }}"></script>
         @include('generate_fileno.mls_js')
         @include('generate_fileno.view_batches')
+        {{--
+            Shared-number check on the applicant phone field. Cache-busted by
+            mtime, like the rest of this app's own scripts, so a corrected
+            version reaches officers without them having to hard-refresh.
+        --}}
+        <script src="{{ asset('js/sms-applicant-phone.js') }}?v={{ @filemtime(public_path('js/sms-applicant-phone.js')) }}" defer></script>
         <script src="{{ asset('js/global-fileno-modal.js') }}"></script>
         <script>
             $(document).ready(function() {

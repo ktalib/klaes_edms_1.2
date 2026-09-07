@@ -449,24 +449,22 @@
                 $desc = strtolower(trim((string) ($item->description ?? '')));
                 return $desc !== '' && !str_starts_with($desc, '__');
             })
+            // A utility name is not unique within a scheme. For example, two
+            // parking spaces can have different dimensions. Only collapse rows
+            // when their complete printed measurement is identical.
             ->groupBy(function ($item) {
                 $descriptionNormalized = preg_replace('/\s+/', ' ', strtolower(trim(str_replace(['_', '-'], ' ', (string) ($item->description ?? '')))));
                 $measurementDimensionNormalized = preg_replace('/\s+/', ' ', strtolower(trim((string) ($item->measurement_dimension ?? ''))));
                 $dimensionNormalized = preg_replace('/\s+/', ' ', strtolower(trim((string) ($item->dimension ?? ''))));
+                $countNormalized = trim((string) ($item->count ?? ''));
 
-                if ($descriptionNormalized !== '') {
-                    return 'description|'.$descriptionNormalized;
-                }
-
-                if ($measurementDimensionNormalized !== '') {
-                    return 'measurement_dimension|'.$measurementDimensionNormalized;
-                }
-
-                if ($dimensionNormalized !== '') {
-                    return 'dimension|'.$dimensionNormalized;
-                }
-
-                return 'order|'.($item->order ?? spl_object_id($item));
+                return implode('|', [
+                    'utility',
+                    $descriptionNormalized,
+                    $measurementDimensionNormalized,
+                    $dimensionNormalized,
+                    $countNormalized,
+                ]);
             })
             ->map(function ($group) {
                 $representative = clone $group->first();

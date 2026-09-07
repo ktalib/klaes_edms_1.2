@@ -1229,6 +1229,9 @@ class InstrumentRegistrationController extends Controller
                         $q->where('instrument_capture.is_deed_registered', 0)
                             ->orWhereNull('instrument_capture.is_deed_registered');
                     })
+                    // Land Registration keeps its own register; its rows must not
+                    // also appear on the Digitization screen.
+                    ->where('instrument_capture.instrument_type', '<>', config('land_registration.instrument_type'))
                     ->select(
                         'instrument_capture.*',
                         DB::raw("CONCAT(COALESCE(users.first_name, ''), ' ', COALESCE(users.last_name, '')) as reg_creator_name")
@@ -1689,7 +1692,12 @@ class InstrumentRegistrationController extends Controller
                 ->whereNotIn('deed_registrations.instrument_type', [
                     'ST Assignment (Transfer of Title)',
                     'Sectional Titling CofO',
-                    'ST Fragmentation'
+                    'ST Fragmentation',
+                    // Land Registration shares this table with Digitization and
+                    // is separated only by classification, so it has to be
+                    // excluded here or it would surface on the Digitization
+                    // screen as well as its own register.
+                    config('land_registration.instrument_type'),
                 ]);
 
             if ($isStDeeds) {
@@ -2303,6 +2311,16 @@ class InstrumentRegistrationController extends Controller
             if (in_array($instrumentType, ['ST Assignment (Transfer of Title)', 'Sectional Titling CofO'])) {
                 $this->checkBothTypesRegistered($request->file_no ?? $sourceRecord->fileno);
             }
+
+            /*
+             | Tell the party their instrument is registered.
+             |
+             | Only once $newRecord has been read back: the registration number,
+             | serial, page and volume are minted inside the service (from the
+             | instrument's own number vault), so composing the message from the
+             | request would quote numbers that do not exist.
+             */
+            $this->sendDeedRegisteredSms($newRecord, $request);
 
             return response()->json([
                 'success' => true,
@@ -3219,6 +3237,13 @@ class InstrumentRegistrationController extends Controller
             DB::commit();
             DB::connection('sqlsrv')->commit();
 
+            /*
+             | One message per instrument in the batch, AFTER both commits: this
+             | path opens two transactions and a message announcing a registration
+             | that then rolled back would be worse than none.
+             */
+            $this->sendBatchDeedRegisteredSms($results);
+
             return response()->json([
                 'success' => true,
                 'message' => count($results) . ' instruments registered successfully',
@@ -3894,6 +3919,173 @@ class InstrumentRegistrationController extends Controller
                 'success' => false,
                 'error' => 'Failed to get file completion status: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Tell the party their instrument has been registered.
+     *
+     * The registration particulars are read off the row that was just written,
+     * never off the request: serial, page and volume are minted inside
+     * InstrumentRegistrationService from the instrument's own number vault, so
+     * the request has no idea what they will be.
+     *
+     * WHO IS TEXTED: the grantee, on instrument_capture.party_2_phone. Those
+     * columns exist and are almost entirely empty today (3 populated rows, none
+     * of them a valid number), so in practice this message will resolve through
+     * the file until Deeds starts capturing numbers -- which is exactly what the
+     * skipped rows in sms_dispatch_logs will show.
+     */
+    private function sendDeedRegisteredSms($record, $request): void
+    {
+        if (!$record) {
+            return;
+        }
+
+        try {
+            $key = \App\Models\SmsSetting::KEY_DEED_REGISTERED;
+            $dispatcher = app(\App\Services\Sms\KlaesSmsDispatcher::class);
+
+            if (!$dispatcher->enabled($key)) {
+                return;
+            }
+
+            $fileNumber = trim((string) ($record->fileno ?? ''));
+
+            // The officer may type a number on the registration screen; the
+            // grantee's captured number is the next best thing, then the file.
+            $phone = trim((string) ($request->input('applicant_phone') ?? ''));
+
+            if ($phone === '') {
+                $phone = (string) $this->deedPartyPhone($record->instrument_capture_id ?? null);
+            }
+
+            if (trim($phone) === '' && $fileNumber !== '') {
+                $phone = (string) app(\App\Services\Sms\ApplicantPhoneResolver::class)
+                    ->forFileNumber($fileNumber)['phone'];
+            }
+
+            $dispatcher->queue($key, $phone, [
+                'Instrument Type' => $record->instrument_type ?? 'instrument',
+                'Registration Particulars' => $this->deedParticulars($record),
+                'DateTime' => $this->deedMoment($record),
+                'FileNo' => $fileNumber,
+            ], [
+                // Keyed on the registration row: registering a SECOND instrument
+                // on the same file is a separate event the party should hear about.
+                'dedupe_key' => $key . ':' . ($record->id ?? $fileNumber),
+                'file_number' => $fileNumber,
+                'subject_type' => 'deed_registrations',
+                'subject_id' => $record->id ?? null,
+                'event_at' => $record->deeds_date ?? null,
+                'phone_confirmed' => (bool) $request->input('phone_confirmed', false),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('InstrumentRegistrationController: deed registration SMS not queued', [
+                'record_id' => $record->id ?? null,
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /** One message per instrument registered in a batch. */
+    private function sendBatchDeedRegisteredSms(array $results): void
+    {
+        if (empty($results)) {
+            return;
+        }
+
+        try {
+            if (!app(\App\Services\Sms\KlaesSmsDispatcher::class)
+                ->enabled(\App\Models\SmsSetting::KEY_DEED_REGISTERED)) {
+                return;
+            }
+
+            $ids = array_filter(array_column($results, 'new_id'));
+
+            if (empty($ids)) {
+                return;
+            }
+
+            $rows = DB::connection('sqlsrv')->table('deed_registrations')
+                ->whereIn('id', $ids)
+                ->get();
+
+            // The batch screen captures no per-entry phone number, so this goes
+            // through the same resolution chain with an empty request value.
+            $blank = new \Illuminate\Http\Request();
+
+            foreach ($rows as $row) {
+                $this->sendDeedRegisteredSms($row, $blank);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('InstrumentRegistrationController: batch deed registration SMS not queued', [
+                'count' => count($results),
+                'message' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * "41/41/2026" -- serial, page and volume as the Deeds Registry writes them.
+     *
+     * Falls back to the whole registration number when any part is missing,
+     * because a message that says "with Registration Particulars //" tells the
+     * party nothing they can quote at the counter.
+     */
+    private function deedParticulars($record): string
+    {
+        $serial = trim((string) ($record->serial_no ?? ''));
+        $page = trim((string) ($record->page_no ?? ''));
+        $volume = trim((string) ($record->volume_no ?? ''));
+
+        if ($serial !== '' && $page !== '' && $volume !== '') {
+            return $serial . '/' . $page . '/' . $volume;
+        }
+
+        return trim((string) ($record->registration_number ?? ''));
+    }
+
+    /** The registration moment, on the office clock rather than UTC. */
+    private function deedMoment($record): string
+    {
+        $timezone = config('klaes_sms.timezone', 'Africa/Lagos');
+        $format = config('klaes_sms.datetime_format', 'd/m/Y h:i A');
+
+        try {
+            $date = $record->deeds_date ?? $record->created_at ?? null;
+            $time = trim((string) ($record->deeds_time ?? ''));
+
+            $moment = $date
+                ? \Carbon\Carbon::parse(trim($date . ' ' . $time))
+                : \Carbon\Carbon::now();
+
+            return $moment->setTimezone($timezone)->format($format);
+        } catch (\Throwable $e) {
+            return \Carbon\Carbon::now($timezone)->format($format);
+        }
+    }
+
+    /** The grantee's captured phone number, if the capture row holds one. */
+    private function deedPartyPhone($instrumentCaptureId): ?string
+    {
+        if (!$instrumentCaptureId) {
+            return null;
+        }
+
+        try {
+            $row = DB::connection('sqlsrv')->table('instrument_capture')
+                ->select('party_1_phone', 'party_2_phone')
+                ->where('id', $instrumentCaptureId)
+                ->first();
+
+            // Party 2 is the grantee -- the person acquiring the interest, and
+            // the one waiting to hear the instrument is registered.
+            return trim((string) ($row->party_2_phone ?? '')) !== ''
+                ? (string) $row->party_2_phone
+                : (trim((string) ($row->party_1_phone ?? '')) !== '' ? (string) $row->party_1_phone : null);
+        } catch (\Throwable $e) {
+            return null;
         }
     }
 

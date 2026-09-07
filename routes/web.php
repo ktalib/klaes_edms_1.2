@@ -1,4 +1,4 @@
- <?php
+<?php
 // use App\Http\Controllers\Auth\VerifyEmailController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Log;
@@ -680,6 +680,8 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'instruments'], function () 
     Route::get('/generate-particulars', [App\Http\Controllers\InstrumentController::class, 'generateParticulars'])->name('instruments.generateParticulars');
     // Read-only peek at the next registration particulars for the type being captured.
     Route::get('/next-registration-particulars', [App\Http\Controllers\InstrumentController::class, 'nextRegistrationParticulars'])->name('instruments.nextRegistrationParticulars');
+    // The numbers this register skipped, for the "fill a missing number" picker.
+    Route::get('/missing-registration-particulars', [App\Http\Controllers\InstrumentController::class, 'missingRegistrationParticulars'])->name('instruments.missingRegistrationParticulars');
     Route::get('/get-lgas/{stateId}', [App\Http\Controllers\InstrumentController::class, 'getLgas'])->name('instruments.getLgas');
     Route::get('/tp-lookups/search', [App\Http\Controllers\InstrumentController::class, 'searchTpLookups'])->name('instruments.tpLookups.search');
     Route::post('/tp-lookups', [App\Http\Controllers\InstrumentController::class, 'storeTpLookup'])->name('instruments.tpLookups.store');
@@ -730,7 +732,9 @@ Route::get('/fileindexing/{fileIndexing}/transactions', [FileIndexingController:
 
 // Newest File Snapshot for a file. The save responses already embed the snapshot
 // they just wrote, so this is the re-open path, not the usual one.
-Route::get('/fileindexing/{fileIndexing}/snapshot', [FileIndexingController::class, 'snapshot'])->name('fileindexing.snapshot');
+Route::get('/fileindexing/{fileIndexing}/snapshot', [FileIndexingController::class, 'snapshot'])
+    ->middleware(['auth'])
+    ->name('fileindexing.snapshot');
 
 // Sample data for the Create File Index form. TEST AID — the action 404s unless
 // config('fileindexing.demo_fill') is on AND APP_ENV is not production, so on
@@ -1261,6 +1265,33 @@ Route::group(['middleware' => ['auth', 'XSS']], function () {
         Route::patch('/{notification}/unread', [NotificationCenterController::class, 'markUnread'])->name('mark-unread');
         Route::delete('/{notification}', [NotificationCenterController::class, 'destroy'])->name('delete');
     });
+});
+
+/*
+ | SMS Control Centre.
+ |
+ | The page and its write endpoints are gated inside SmsControlController on the
+ | 'System Settings' role -- this app's roles come from users.assign_role via
+ | User::assignedRoleNames(), not from Spatie's trait, so there is no role
+ | middleware to hang the check on.
+ |
+ | applicant-phone is the exception: every capture form calls it to prefill its
+ | phone field, so it is available to any signed-in member of staff. It reads one
+ | number for one file number and returns the shared-number verdict with it.
+ */
+Route::group(['middleware' => ['auth', 'XSS']], function () {
+    Route::get('/sms-control', [App\Http\Controllers\SmsControlController::class, 'index'])
+        ->name('sms-control.index');
+
+    Route::prefix('sms-control/api')->name('sms-control.api.')->group(function () {
+        Route::get('/state', [App\Http\Controllers\SmsControlController::class, 'state'])->name('state');
+        Route::get('/log', [App\Http\Controllers\SmsControlController::class, 'log'])->name('log');
+        Route::post('/test', [App\Http\Controllers\SmsControlController::class, 'sendTest'])->name('test');
+        Route::put('/messages/{key}', [App\Http\Controllers\SmsControlController::class, 'updateMessage'])->name('messages.update');
+    });
+
+    Route::get('/sms/applicant-phone', [App\Http\Controllers\SmsControlController::class, 'resolvePhone'])
+        ->name('sms.applicant-phone');
 });
 
 // Test route to debug PropertyRecordController

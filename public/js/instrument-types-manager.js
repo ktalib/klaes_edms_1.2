@@ -47,7 +47,21 @@ function instrumentTypesManager() {
             try {
                 const response = await fetch(`${window.baseUrl}/instrument-types`);
                 if (!response.ok) throw new Error('Failed to fetch');
-                this.types = await response.json();
+                const all = await response.json();
+
+                /*
+                 * A host page that owns a single instrument can narrow the list
+                 * to it, so its officers manage that register's numbering and
+                 * nothing else. Set window.instrumentTypesFilter to the exact
+                 * name(s) to show. Unset -- every page but Land Registration --
+                 * shows the full list exactly as before.
+                 */
+                const filter = window.instrumentTypesFilter;
+                const wanted = filter == null ? null : [].concat(filter);
+
+                this.types = wanted
+                    ? all.filter(t => wanted.includes(t.name))
+                    : all;
             } catch (error) {
                 console.error('Error fetching types:', error);
                 // alert('Failed to load instrument types.'); // Optional: suppress alert on background fetch

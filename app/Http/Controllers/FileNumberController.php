@@ -13,6 +13,7 @@ use App\Models\AllocationSourceLookup;
 use App\Models\FileNumber;
 use App\Services\AllocationSourceResolver;
 use App\Support\OssOpCommissionFilter;
+use App\Support\RecertificationFile;
 use App\Models\LandUse;
 use App\Models\StreetName;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -632,6 +633,13 @@ class FileNumberController extends Controller
                 }
                 $relatedFileNo = implode(', ', $allRelated) ?: 'N/A';
 
+                // The number the Root of Title and the Recertification rule are decided on.
+                $rowFileNo = trim((string) ($row->mlsfNo ?? '')) ?: $primaryFileNo;
+                $relatedOrOld = $this->formatRelatedOrOldFileNo(
+                    $row->derived_related_fileno ?? null,
+                    $row->derived_old_fileno ?? null
+                );
+
                 return [
                     'id' => $row->id,
                     // Passport, Root of Title and the Related/Old file number, as shown on
@@ -641,12 +649,11 @@ class FileNumberController extends Controller
                     'root_of_title' => trim((string) ($row->derived_root_of_title ?? '')) ?: 'N/A',
                     'is_root_of_title' => $this->isRootOfTitleFile(
                         $row->derived_source ?? null,
-                        $row->derived_root_of_title ?? null
+                        $row->derived_root_of_title ?? null,
+                        $rowFileNo
                     ),
-                    'related_old_fileno' => $this->formatRelatedOrOldFileNo(
-                        $row->derived_related_fileno ?? null,
-                        $row->derived_old_fileno ?? null
-                    ),
+                    'root_of_title_ref' => $this->rootOfTitleReference($rowFileNo, $relatedOrOld),
+                    'related_old_fileno' => $relatedOrOld,
                     'primaryFileNo' => $primaryFileNo,
                     'relatedFileNo' => $relatedFileNo,
                     'mlsfNo' => trim($row->mlsfNo ?? '') ?: 'N/A',
@@ -665,7 +672,13 @@ class FileNumberController extends Controller
                     'tracking_id' => trim($row->tracking_id ?? '') ?: 'N/A',
                     'type' => trim($row->type ?? '') ?: 'N/A',
                     'created_by' => trim($row->derived_created_by ?? '') ?: 'System',
-                    'source' => trim($row->derived_source ?? '') ?: (trim($row->SOURCE ?? '') ?: 'N/A'),
+                    // An RC number is a recertification whatever the allocation route
+                    // recorded, and most RC files are legacy rows with no source at all —
+                    // so the label is derived here rather than read from the column.
+                    'source' => RecertificationFile::applySourceLabel(
+                        $rowFileNo,
+                        trim($row->derived_source ?? '') ?: (trim($row->SOURCE ?? '') ?: 'N/A')
+                    ),
                     'source_instrument_capture_id' => $row->derived_source_instrument_capture_id ? (int) $row->derived_source_instrument_capture_id : null,
                     'source_pra_id' => $row->derived_source_pra_id ? (int) $row->derived_source_pra_id : null,
                     'source_prop_id' => $row->derived_source_prop_id ? (int) $row->derived_source_prop_id : null,
@@ -758,8 +771,10 @@ class FileNumberController extends Controller
                         'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
                         'is_root_of_title'            => $this->isRootOfTitleFile(
                             $row->source ?? null,
-                            $row->root_of_title ?? null
+                            $row->root_of_title ?? null,
+                            $fileNo
                         ),
+                        'root_of_title_ref'           => '',
                         'related_old_fileno'          => $this->formatRelatedOrOldFileNo(null, $row->old_fileno ?? null),
                         'created_by'                  => trim($row->created_by ?? '') ?: 'System',
                         'source'                      => trim($row->source ?? '') ?: 'Temporary File',
@@ -836,9 +851,20 @@ class FileNumberController extends Controller
 
     /**
      * Match the Root of Title decision used by Legal Search for commissioned files.
+     *
+     * A recertification is the one case the source alone gets wrong. An RC file is
+     * commissioned through the ordinary Direct Allocation route, so the rule below used to
+     * mark it as its own root — but a recertification re-issues a title that some earlier
+     * file already granted. The root belongs to the file it was raised from, which is why
+     * `$fileNo` is taken into account and the marker moves to the related/old number
+     * (see rootOfTitleReference()).
      */
-    private function isRootOfTitleFile(?string $commissioningSource, ?string $indexedRoot): bool
+    private function isRootOfTitleFile(?string $commissioningSource, ?string $indexedRoot, ?string $fileNo = null): bool
     {
+        if (RecertificationFile::isRecertFileNumber($fileNo)) {
+            return false;
+        }
+
         if (trim((string) $indexedRoot) !== '') {
             return true;
         }
@@ -850,6 +876,26 @@ class FileNumberController extends Controller
             || $source === 'op'
             || str_starts_with($source, 'op ')
             || str_contains($source, 'occupancy permit');
+    }
+
+    /**
+     * The file number that carries the Root of Title on behalf of this row, or '' when the
+     * row carries it itself.
+     *
+     * Only a recertification has one: its root is the original file it was raised from,
+     * which is the related/old number already shown beneath it. Returning the number rather
+     * than a flag lets the table print the "-RoT" marker against that number instead of
+     * against the recertification's own title.
+     */
+    private function rootOfTitleReference(?string $fileNo, array $relatedOrOld): string
+    {
+        if (!RecertificationFile::isRecertFileNumber($fileNo)) {
+            return '';
+        }
+
+        $value = trim((string) ($relatedOrOld['value'] ?? ''));
+
+        return ($value === '' || $value === 'N/A') ? '' : $value;
     }
 
     /**
@@ -934,8 +980,10 @@ class FileNumberController extends Controller
                 'root_of_title'               => trim((string) ($row->root_of_title ?? '')) ?: 'N/A',
                 'is_root_of_title'            => $this->isRootOfTitleFile(
                     'Plot Extension',
-                    $row->root_of_title ?? null
+                    $row->root_of_title ?? null,
+                    $fileNo
                 ),
+                'root_of_title_ref'           => '',
                 'related_old_fileno'          => ['value' => 'N/A', 'kind' => 'none'],
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
                 'longitude'                   => $this->formatCoordinate($row->longitude ?? null),

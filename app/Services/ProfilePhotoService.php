@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -13,12 +14,24 @@ use Illuminate\Support\Facades\Storage;
  * a bare filename under upload/profile, and the "avatar.png" placeholder); every new
  * upload goes through here so it is always stored as a public-disk relative path,
  * which User::getProfileUrlAttribute() resolves for display.
+ *
+ * It is also the one place the face-check verdict on that photo is written or cleared,
+ * so a new picture can never inherit the previous one's verdict.
  */
 class ProfilePhotoService
 {
     public const DIRECTORY = 'upload/profile';
     public const PLACEHOLDER = 'avatar.png';
     public const MAX_KILOBYTES = 2048;
+
+    /** The picture shows one human face. */
+    public const FACE_PASS = 'pass';
+
+    /** The picture is not a photograph of a face — an avatar, a logo, a landscape. */
+    public const FACE_FAIL = 'fail';
+
+    /** Accepted by hand, against the detector. Never re-checked. */
+    public const FACE_OVERRIDE = 'override';
 
     /**
      * Validation rules for an uploaded passport photo.
@@ -48,7 +61,99 @@ class ProfilePhotoService
         $user->profile = $path;
         $user->passport_photo_path = $path;
 
+        // A verdict speaks for one picture only. Clearing it here means the new photo is
+        // judged on its own merits at the user's next page load, rather than inheriting
+        // the pass — or the rejection — of the one it replaced.
+        $this->clearFaceVerdict($user);
+
         return $path;
+    }
+
+    /**
+     * Record what the browser's face check made of the picture currently on file.
+     *
+     * The detector is client-side (face-api.js) — there is no PHP implementation — so
+     * this is how a verdict reaches the server-side gate at all. The caller is
+     * responsible for saving the model.
+     *
+     * Only an explicit pass/fail/override is stored; "the detector could not load" is
+     * not a verdict and must never be written, or a blocked asset would lock out every
+     * member of staff at once.
+     */
+    public function recordFaceVerdict(User $user, string $status, ?string $reason = null): bool
+    {
+        if (!in_array($status, [self::FACE_PASS, self::FACE_FAIL, self::FACE_OVERRIDE], true)) {
+            return false;
+        }
+
+        if (!self::faceColumnsExist()) {
+            return false;
+        }
+
+        $user->photo_face_status = $status;
+        $user->photo_face_reason = $reason !== null ? mb_substr(trim($reason), 0, 160) : null;
+        $user->photo_face_checked_at = now();
+        // Which picture was judged, so the verdict is dropped if the file ever changes
+        // through a path that did not come through store().
+        $user->photo_face_path = self::currentPhotoPath($user);
+
+        return true;
+    }
+
+    /**
+     * Forget any verdict: the next page load checks the picture again.
+     * The caller is responsible for saving the model.
+     */
+    public function clearFaceVerdict(User $user): void
+    {
+        if (!self::faceColumnsExist()) {
+            return;
+        }
+
+        $user->photo_face_status = null;
+        $user->photo_face_reason = null;
+        $user->photo_face_checked_at = null;
+        $user->photo_face_path = null;
+    }
+
+    /**
+     * The stored value a verdict is pinned to — whichever column the photo URL resolves
+     * from, in the same order User::getProfileUrlAttribute() reads them.
+     */
+    public static function currentPhotoPath(User $user): ?string
+    {
+        foreach ([$user->profile, $user->passport_photo_path] as $candidate) {
+            $value = trim((string) ($candidate ?? ''));
+
+            if ($value !== '' && strtolower($value) !== self::PLACEHOLDER) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Have the photo_face_* columns been added to this database yet?
+     *
+     * .env and schema changes reach production separately from code (the SQL script is
+     * run by hand), so the write path has to survive the window where the code is newer
+     * than the table. Memoised: one information_schema query per request at most, and
+     * only on a request that actually records a verdict.
+     */
+    public static function faceColumnsExist(): bool
+    {
+        static $exists = null;
+
+        if ($exists === null) {
+            try {
+                $exists = Schema::connection('sqlsrv')->hasColumn('users', 'photo_face_status');
+            } catch (\Throwable $e) {
+                $exists = false;
+            }
+        }
+
+        return $exists;
     }
 
     /**
@@ -74,6 +179,7 @@ class ProfilePhotoService
 
         $user->profile = null;
         $user->passport_photo_path = null;
+        $this->clearFaceVerdict($user);
 
         return $had;
     }

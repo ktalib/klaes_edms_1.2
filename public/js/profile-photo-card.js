@@ -44,6 +44,8 @@
       // null = not checked yet, true/false = last verdict. Upload is blocked only on
       // an explicit false; an unavailable detector leaves this null and lets it through.
       this.faceOk = null;
+      // The detector's wording for that verdict, sent with the upload and stored.
+      this.faceReason = null;
 
       this.bind();
       this.lockSidebar();
@@ -129,6 +131,7 @@
     runFaceCheck: function () {
       var self = this;
       this.faceOk = null;
+      this.faceReason = null;
       this.clearFaceBoxes();
       this.clearVerification();
 
@@ -144,6 +147,8 @@
         .then(function (detector) {
           return detector.detect(self.preview).then(function (verdict) {
             self.faceOk = verdict.accepted;
+            // Kept so the upload can report what was found, in the detector's own words.
+            self.faceReason = verdict.reason;
             // Keep the button disabled on a rejected picture, so the only way forward
             // is to choose a different one.
             self.submit.disabled = !verdict.accepted;
@@ -295,6 +300,17 @@
       var data = new FormData();
       data.append('profile', file);
 
+      // Send the verdict along with the file it belongs to. The picture has just been
+      // judged here, so the server can record it now rather than have the browser load
+      // the model again on the next page load to reach the same conclusion. Null (the
+      // detector never loaded) reports nothing and leaves the picture to be checked later.
+      if (this.faceOk !== null) {
+        data.append('face_status', this.faceOk ? 'pass' : 'fail');
+        if (this.faceReason) {
+          data.append('face_reason', this.faceReason);
+        }
+      }
+
       this.setBusy(true);
 
       fetch(this.root.dataset.uploadUrl, {
@@ -415,6 +431,7 @@
       this.placeholder.classList.remove('ppc-hidden');
       this.avatar.classList.remove('ppc-filled');
       this.faceOk = null;
+      this.faceReason = null;
       this.setFaceNote('', 'Choose a photo to check it.');
       this.clearFaceBoxes();
       this.clearVerification();

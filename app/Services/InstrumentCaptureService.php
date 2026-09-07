@@ -14,10 +14,12 @@ class InstrumentCaptureService
 {
     private ?bool $instrumentCaptureHasRegTime = null;
     private ?bool $instrumentCaptureHasConsentId = null;
+    private ?bool $instrumentCaptureHasReceiptNo = null;
 
     public function __construct(
         protected PropertyIdAllocationService $propIdService,
-        protected InstrumentRegistrationService $regService
+        protected InstrumentRegistrationService $regService,
+        protected MissingRegistrationParticularsService $missingRegService
     ) {
     }
 
@@ -169,8 +171,31 @@ class InstrumentCaptureService
             // NEW: Universal Atomic Registration for all non-temporary captures
             // We only generate numbers if NOT a temporary registration
             if (!$isTempReg) {
-                // Atomic Logic: Reserve Number & Enforce Server Time
-                $regNumberData = $this->regService->getRegistrationNumber($instrumentType, false, $data);
+                // A backfill fills a number this register already issued and
+                // skipped - a registration that was deleted outright. It takes
+                // the hole instead of the next number, and must therefore NOT
+                // advance the vault; claim() enforces that the number really is
+                // still missing, under the same lock ordinary allocation takes.
+                $backfill = $this->resolveBackfillRequest($data);
+
+                $regNumberData = $backfill
+                    ? $this->missingRegService->claim(
+                        $instrumentType,
+                        $data['op_type'] ?? null,
+                        $backfill['volume'],
+                        $backfill['serial']
+                    )
+                    : $this->regService->getRegistrationNumber($instrumentType, false, $data);
+
+                if ($backfill) {
+                    Log::info('Registration backfilled into a missing number', [
+                        'instrument_type' => $instrumentType,
+                        'op_type' => $data['op_type'] ?? null,
+                        'registration_number' => $regNumberData['formatted'],
+                        'user_id' => Auth::id(),
+                    ]);
+                }
+
                 $data['registrationDate'] = now()->format('Y-m-d'); // Enforce Server Date
             }
 
@@ -286,7 +311,11 @@ class InstrumentCaptureService
                 'start_date' => $data['start_date'] ?? ($data['cofoTermStartDate'] ?? null),
                 // 'end_date' => ... calculate or input?
                 'annual_rent' => $data['annualRent'] ?? null,
-                'consideration_amount' => $data['consideration'] ?? ($data['subLeaseAmount'] ?? ($data['compensationAmount'] ?? null)),
+                // 'considerationAmount' is the id populateForm() already fills on
+                // edit; it was never read back on save, so a form posting it
+                // rendered the value and then silently dropped it.
+                'consideration_amount' => $data['considerationAmount']
+                    ?? ($data['consideration'] ?? ($data['subLeaseAmount'] ?? ($data['compensationAmount'] ?? null))),
                 'bank_name' => $data['bankName'] ?? null,
                 'mortgage_date' => $data['mortgageDate'] ?? null,
                 'governor_consent_date' => $data['governorSignDate'] ?? null,
@@ -328,6 +357,13 @@ class InstrumentCaptureService
 
             if ($this->hasInstrumentCaptureConsentColumn()) {
                 $insertData['consent_application_id'] = $this->resolveConsentApplicationId($data);
+            }
+
+            // The payment receipt behind the registration. Guarded because the
+            // column arrives with the Land Registration install and the table
+            // predates it.
+            if ($this->hasInstrumentCaptureReceiptColumn()) {
+                $insertData['receipt_no'] = $data['receipt_no'] ?? null;
             }
 
             $id = DB::connection('sqlsrv')->table('instrument_capture')->insertGetId($insertData);
@@ -402,6 +438,35 @@ class InstrumentCaptureService
 
             return $finalResult;
         });
+    }
+
+    /**
+     * The missing number this capture asked to fill, or null for a normal one.
+     *
+     * A tick with no number, or a number that is not a positive integer, is an
+     * error rather than a quiet fall-through to normal allocation: the officer
+     * ticked the box to fill a specific hole, and silently burning the next
+     * number instead would leave that hole open with nothing to show for it.
+     *
+     * @return null|array{volume:int, serial:int}
+     */
+    private function resolveBackfillRequest(array $data): ?array
+    {
+        if (!filter_var($data['backfill_registration'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return null;
+        }
+
+        $volume = filter_var($data['backfill_volume_no'] ?? null, FILTER_VALIDATE_INT);
+        $serial = filter_var($data['backfill_serial_no'] ?? null, FILTER_VALIDATE_INT);
+
+        if ($volume === false || $serial === false || $volume < 1 || $serial < 1) {
+            throw new Exception(
+                'This capture is set to fill a missing registration number, but no valid number was chosen. '
+                . 'Pick one from the missing-number list, or untick the box to register on the next number in sequence.'
+            );
+        }
+
+        return ['volume' => $volume, 'serial' => $serial];
     }
 
     /**
@@ -849,7 +914,8 @@ class InstrumentCaptureService
                 'duration' => $data['duration'] ?? $existing->duration,
                 'start_date' => $data['start_date'] ?? $existing->start_date,
                 'annual_rent' => $data['annualRent'] ?? $existing->annual_rent,
-                'consideration_amount' => $data['consideration'] ?? ($data['subLeaseAmount'] ?? ($data['compensationAmount'] ?? $existing->consideration_amount)),
+                'consideration_amount' => $data['considerationAmount']
+                    ?? ($data['consideration'] ?? ($data['subLeaseAmount'] ?? ($data['compensationAmount'] ?? $existing->consideration_amount))),
                 'bank_name' => $data['bankName'] ?? $existing->bank_name,
 
                 // Metadata
@@ -868,6 +934,12 @@ class InstrumentCaptureService
                     $data,
                     $existing->consent_application_id ?? null
                 );
+            }
+
+            // Same rule as the consent link: a form that does not carry the
+            // field leaves the stored receipt alone rather than blanking it.
+            if ($this->hasInstrumentCaptureReceiptColumn()) {
+                $updateData['receipt_no'] = $data['receipt_no'] ?? ($existing->receipt_no ?? null);
             }
 
             // Filter out keys that might overwrite with null if we want partial updates?
@@ -914,6 +986,20 @@ class InstrumentCaptureService
         }
 
         return $this->instrumentCaptureHasConsentId;
+    }
+
+    /**
+     * Whether instrument_capture carries the payment receipt number. The column
+     * arrives with the Land Registration install and the table predates it.
+     */
+    private function hasInstrumentCaptureReceiptColumn(): bool
+    {
+        if ($this->instrumentCaptureHasReceiptNo === null) {
+            $this->instrumentCaptureHasReceiptNo = Schema::connection('sqlsrv')
+                ->hasColumn('instrument_capture', 'receipt_no');
+        }
+
+        return $this->instrumentCaptureHasReceiptNo;
     }
 
     private function hasInstrumentCaptureRegTimeColumn(): bool

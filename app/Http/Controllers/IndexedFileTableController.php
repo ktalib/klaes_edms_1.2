@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\ExecutesMasterDelete;
 use App\Models\FileIndexing;
 use App\Services\AuditService;
 use App\Services\IndexedFilesFilterOptions;
@@ -18,6 +19,10 @@ use Illuminate\Support\Facades\Log;
 
 class IndexedFileTableController extends Controller
 {
+    // Typed confirmation + audit entry for Master Delete, shared with the
+    // Recommendation / RofO master deletes so all of them read the same.
+    use ExecutesMasterDelete;
+
     public function __construct(private IndexedFilesFilterOptions $filterOptions)
     {
     }
@@ -1955,6 +1960,168 @@ class IndexedFileTableController extends Controller
                 'retained_references' => $result['retained_references'],
             ],
         ]);
+    }
+
+    /**
+     * Master Delete: erase an indexed file from the live tables with no
+     * indexing_duplicates archive behind it.
+     *
+     * Same removal as "Move to Indexing Duplicates" (one code path — see
+     * IndexingDuplicateService::purge()), but framed as what it is: the record was
+     * wrong, not duplicated, and must not resurface on the Indexing Duplicates
+     * screen. The audit entry is all that survives.
+     *
+     * Three gates, in order: super admin, the file number typed back, and the
+     * service refusing a file that carries scans, page typings, bills or SPAS
+     * applications. The UI hides the entry from non-admins as a courtesy; this is
+     * the gate that counts, because the endpoint is reachable directly.
+     */
+    public function masterDelete(Request $request, $id, IndexingDuplicateService $service): JsonResponse
+    {
+        $fileId = (int) $id;
+        if ($fileId <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid file ID.',
+            ], 422);
+        }
+
+        if ($denied = $this->denyUnlessIndexingMasterDeleter()) {
+            return $denied;
+        }
+
+        $file = DB::connection('sqlsrv')->table('file_indexings')
+            ->where('id', $fileId)
+            ->first(['id', 'file_number', 'temp_file_no', 'file_title']);
+
+        if (!$file) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Indexed file not found.',
+            ], 404);
+        }
+
+        // The operator types the file number back. Falls back to temp_file_no for a
+        // record indexed on a temporary number, because that is what the row shows.
+        $expected = trim((string) ($file->file_number ?? ''));
+        if ($expected === '' || $expected === '-') {
+            $expected = trim((string) ($file->temp_file_no ?? ''));
+        }
+
+        if ($expected === '') {
+            return response()->json([
+                'success' => false,
+                'message' => 'This record has no file number to confirm against. Report it rather than forcing it through.',
+            ], 422);
+        }
+
+        if ($denied = $this->denyUnlessConfirmationMatches($request, $expected)) {
+            return $denied;
+        }
+
+        $reason = trim((string) $request->input('reason', ''));
+
+        try {
+            $result = $service->purge($fileId, $reason !== '' ? $reason : null);
+        } catch (\Throwable $e) {
+            Log::error('Master Delete of indexed file failed', [
+                'file_indexing_id' => $fileId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'The delete failed and was rolled back: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        if ($result['status'] === 'not_found') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Indexed file not found.',
+            ], 404);
+        }
+
+        if ($result['status'] === 'blocked') {
+            return response()->json([
+                'success' => false,
+                'blocked' => true,
+                'message' => sprintf(
+                    '%s cannot be deleted: it still has %s. Detach or delete those first.',
+                    $result['file_number'],
+                    implode(', ', array_values($result['dependencies']))
+                ),
+                'dependencies' => $result['dependencies'],
+            ], 409);
+        }
+
+        $counts = $result['counts'];
+
+        // Flatten the per-table child / file-number counts so the audit detail line
+        // names every table that lost rows, not only the four headline ones.
+        $auditCounts = array_filter([
+            'file_indexings'    => $counts['file_indexings'],
+            'fileNumber'        => $counts['fileNumber'],
+            'customers_staging' => $counts['customers_staging'],
+            'entities_staging'  => $counts['entities_staging'],
+        ]) + ($counts['file_number_rows'] ?? []) + ($counts['child_rows'] ?? []);
+
+        $this->logMasterDelete(
+            'FileIndexing',
+            $fileId,
+            $result['snapshot'] ?? [],
+            $auditCounts,
+            sprintf('indexed file %s', $result['file_number'])
+        );
+
+        Cache::forget('indexed_files_old_kangis_lookup');
+
+        return response()->json([
+            'success' => true,
+            'message' => sprintf('%s was permanently deleted.', $result['file_number']),
+            'details' => [
+                'file_indexings_deleted'    => $counts['file_indexings'],
+                'fileNumber_deleted'        => $counts['fileNumber'],
+                'customers_staging_deleted' => $counts['customers_staging'],
+                'entities_staging_deleted'  => $counts['entities_staging'],
+                'file_number_rows_deleted'  => $counts['file_number_rows'],
+                'child_rows_deleted'        => $counts['child_rows'],
+                'mls_file_no_retained'      => $result['mls_file_no_retained'],
+                'retained_references'       => $result['retained_references'],
+            ],
+        ]);
+    }
+
+    /**
+     * Who may Master Delete an indexed file.
+     *
+     * Deliberately NOT ExecutesMasterDelete::denyUnlessMasterDeleter(): that one
+     * compares assign_role to the exact string "Supper Admin", which fails for a
+     * user whose assign_role is a CSV of several roles. This page already decides
+     * "Move to Indexing Duplicates" — an equally destructive cross-table purge of
+     * the same record — by asking whether "Supper Admin" is among the assigned
+     * roles, and the two entries sit in one menu, so they have to answer alike or
+     * the menu contradicts itself.
+     *
+     * Kept identical to the $hasSuperRole computation in indexed_files/index.blade.php
+     * and components/indexed-files-table.blade.php, which is what hides the entry.
+     */
+    private function denyUnlessIndexingMasterDeleter(): ?JsonResponse
+    {
+        $user = Auth::user();
+        $roles = $user && is_array($user->assign_role)
+            ? $user->assign_role
+            : array_filter(array_map('trim', explode(',', (string) ($user->assign_role ?? ''))));
+
+        if (!$user || !in_array('Supper Admin', $roles, true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized action. Only a Supper Admin can execute a Master Delete.',
+            ], 403);
+        }
+
+        return null;
     }
 
     public function setTempFile(Request $request, $id): JsonResponse

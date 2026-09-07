@@ -11,6 +11,7 @@
         $allottee = $data['name_or_allottee'] ?? '';
         $reason = $data['plot_number'] ?? '';
         $tpNumber = $data['tp_number'] ?? '';
+        $district = $data['district'] ?? '';
         $location = $data['location'] ?? '';
         $timeCommissioned = $data['commissioning_time'] ?? ($data['time_created'] ?? '');
         $dateCommissioned = $data['commissioning_date'] ?? ($data['date_created'] ?? '');
@@ -467,6 +468,11 @@
                     <div class="value-line">{{ $originalOpHolder }}</div>
                 </div>
                 @endif
+                {{-- The property block reads TP No > Plot No > District > Location. --}}
+                <div class="row">
+                    <div class="label">TP No:</div>
+                    <div class="value-line">{{ $tpNumber }}</div>
+                </div>
                 {{-- ST files carry no commissioning reason, so the row is dropped
                      rather than printed empty. --}}
                 @unless($isSt)
@@ -476,8 +482,8 @@
                 </div>
                 @endunless
                 <div class="row">
-                    <div class="label">TP No:</div>
-                    <div class="value-line">{{ $tpNumber }}</div>
+                    <div class="label">District:</div>
+                    <div class="value-line">{{ $district }}</div>
                 </div>
                 <div class="row">
                     <div class="label">Location:</div>

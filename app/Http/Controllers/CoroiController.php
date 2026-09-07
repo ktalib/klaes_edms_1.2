@@ -8,6 +8,16 @@ use Illuminate\Support\Facades\Log;
 
 class CoroiController extends Controller
 {
+    /**
+     * The certificate template. A property, not an inline string, so a second
+     * registry can reuse this whole controller with its own certificate - the
+     * Land Registry's carries a different authority block and stamp. The default
+     * is the Deeds one, so nothing changes for them.
+     *
+     * @see \App\Http\Controllers\LandRegistration\LandCorController
+     */
+    protected string $view = 'coroi.index';
+
     protected $validTables = [
         'registered_instruments' => ['id' => 'Grantor', 'type' => null],
         'SectionalCofOReg' => ['id' => 'Applicant_Name', 'type' => 'Sectional Title Certificates of Occupancy'],
@@ -86,7 +96,7 @@ class CoroiController extends Controller
             $data = $this->formatDateTimeData($this->createMockData());
         }
 
-        return view('coroi.index', ['data' => $data]);
+        return view($this->view, ['data' => $data]);
     }
 
     /**
@@ -155,7 +165,7 @@ class CoroiController extends Controller
         }
 
         $data = $this->findRecordByFileno($fileno);
-        return view('coroi.index', ['data' => $data]);
+        return view($this->view, ['data' => $data]);
     }
 
     public function debug(Request $request)

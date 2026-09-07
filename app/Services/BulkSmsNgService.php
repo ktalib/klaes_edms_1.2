@@ -87,10 +87,10 @@ class BulkSmsNgService
      * @param  array<int,string|null>  $messages  Best wording first.
      * @return string|null  The message that was accepted, or null if none was.
      */
-    public function sendFirstAccepted(string $phone, array $messages): ?string
+    public function sendFirstAccepted(string $phone, array $messages, ?string $sender = null): ?string
     {
         foreach (array_values(array_filter($messages)) as $i => $message) {
-            if ($this->send($phone, $message)) {
+            if ($this->send($phone, $message, $sender)) {
                 return $message;
             }
 
@@ -115,14 +115,29 @@ class BulkSmsNgService
      * on purpose and cutting them would change their legal meaning. Longer
      * texts simply bill as multiple pages.
      */
-    public function send(string $phone, string $message): bool
+    public function send(string $phone, string $message, ?string $sender = null): bool
     {
         $this->lastCode   = null;
         $this->lastReason = null;
 
         $email    = config('services.bulk_sms_ng.email');
         $password = config('services.bulk_sms_ng.password');
-        $sender   = config('services.bulk_sms_ng.sender', 'SPAS');
+
+        /*
+         | The sender ID is a per-request field on this gateway ("senderid" in
+         | the documented request body), so different kinds of message can go out
+         | under different names from the one account: staff traffic as KLAES,
+         | departmental notices as KANOMLPP.
+         |
+         | Null means "whatever this server is configured for", which is what
+         | every caller written before this argument existed still gets.
+         |
+         | A sender ID that is not registered with Bulk-SMS.ng is accepted, billed
+         | and never delivered -- the same silent failure an unreachable handset
+         | produces. Confirm a new one with the vendor before routing real traffic
+         | through it.
+         */
+        $sender   = $sender ?: config('services.bulk_sms_ng.sender', 'SPAS');
 
         if (!$email || !$password) {
             // .env is gitignored, so it is NOT copied by a code upload — this is
@@ -226,6 +241,21 @@ class BulkSmsNgService
         }
 
         if ($http >= 200 && $http < 300 && trim($body) === '') {
+            return true;
+        }
+
+        // Bulk-SMS.ng is currently delivering messages while replying with an
+        // empty HTTP 500. This was verified from the recipient handset and the
+        // wallet debit. Treat only this exact anomalous response as accepted so
+        // a later login cannot resend a message the staff member already got.
+        if ($http === 500 && trim($body) === '') {
+            $this->lastCode = '500-accepted';
+            $this->lastReason = null;
+
+            Log::warning('BulkSmsNgService: blank HTTP 500 treated as accepted', [
+                'note' => 'Provider delivery verified; prevents duplicate attendance SMS retries.',
+            ]);
+
             return true;
         }
 

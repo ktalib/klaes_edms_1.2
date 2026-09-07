@@ -39,6 +39,12 @@ class MlsFileNo extends Model
         'system_sub_type',
         'source_instrument_capture_id',
         'source_pra_id',
+        // Applicant contact. The columns were added in Feb 2026 and the
+        // commissioning form has posted them ever since, but they were never in
+        // $fillable, so every mass-assignment silently dropped them and the
+        // column stayed 100% empty. The commissioning SMS needs them.
+        'phone_no',
+        'rep_phone_no',
         'sit_reason',
         // Old (duplicated) file number kept when a file number is re-issued.
         'old_fileno'

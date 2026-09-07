@@ -43,7 +43,11 @@
                             </button>
                         </div>
 
-                        <div class="border rounded-md overflow-hidden shadow-sm">
+                        {{-- overflow-x-auto, not overflow-hidden: a long name or
+                             description used to widen the table past the modal and
+                             the Vault and Actions columns were simply clipped off
+                             the right edge with no way to reach them. --}}
+                        <div class="border rounded-md overflow-x-auto shadow-sm">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
@@ -64,16 +68,22 @@
                                 <tbody class="bg-white divide-y divide-gray-200">
                                     <template x-for="(type, index) in types" :key="type.id">
                                         <tr class="hover:bg-gray-50 transition-colors">
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 align-top"
                                                 x-text="index + 1"></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                                <div class="flex flex-col">
-                                                    <span x-text="type.name"></span>
-                                                    <span class="text-xs text-gray-400"
+                                            {{-- The name stays on one line; the
+                                                 description wraps inside a fixed
+                                                 width. Previously the whole cell
+                                                 was nowrap, so a long description
+                                                 stretched the row and pushed the
+                                                 columns after it out of view. --}}
+                                            <td class="px-6 py-4 text-sm font-medium text-gray-900 align-top">
+                                                <div class="flex flex-col max-w-xs">
+                                                    <span class="whitespace-nowrap" x-text="type.name"></span>
+                                                    <span class="text-xs text-gray-400 break-words"
                                                         x-text="type.description"></span>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right align-top">
                                                 <div class="flex flex-col items-end">
                                                     <span
                                                         x-text="`${type.last_serial || '-'}/${type.last_page || '-'}/${type.last_volume || '-'}`"></span>
@@ -85,7 +95,7 @@
                                                     </template>
                                                 </div>
                                             </td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
                                                 <button @click="openEditForm(type)"
                                                     class="text-indigo-600 hover:text-indigo-900 mr-3 font-semibold">Edit</button>
                                                 <button @click="deleteType(type.id)"

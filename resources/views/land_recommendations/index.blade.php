@@ -222,14 +222,17 @@
                                 <td class="px-6 py-4 text-center">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-black bg-violet-600 text-white">{{ $total }}</span>
                                 </td>
-                                <td class="px-6 py-4 text-center">
+                                {{-- Both counters are repainted in place when a child is approved
+                                     on its own from the expander below, so the batch row and the
+                                     children under it can never disagree. --}}
+                                <td class="px-6 py-4 text-center" data-batch-approved="{{ $b->rofo_batch_id }}">
                                     @if($pending === 0)
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
                                     @else
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">{{ $approved }} of {{ $total }}</span>
                                     @endif
                                 </td>
-                                <td class="px-6 py-4 text-center">
+                                <td class="px-6 py-4 text-center" data-batch-generated="{{ $b->rofo_batch_id }}">
                                     @if($generated >= $total)
                                         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700">All {{ $total }}</span>
                                     @elseif($generated > 0)
@@ -330,12 +333,27 @@
                                                         </button>
 
                                                         @if($batchDoc)
-                                                            <a href="{{ route('land-recommendations.batch-document.show', $b->rofo_batch_id) }}" target="_blank"
-                                                                class="flex items-center gap-2.5 px-4 py-2.5 text-sm font-bold text-emerald-700 hover:bg-emerald-50 transition">
+                                                            {{-- Opens the preview card rather than a new tab: the sheet
+                                                                 means nothing on its own, and everything that follows
+                                                                 from reading it — Replace, Reset — is on the card. --}}
+                                                            <button type="button" @click="open = false"
+                                                                onclick="viewMotherRecommendation(@js($b->rofo_batch_id), @js($b->mother_file_no), @js($batchDoc->summary()), @js($batchDoc->mime_type), {{ (int) $total }})"
+                                                                class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-emerald-700 hover:bg-emerald-50 transition">
                                                                 <i data-lucide="image" class="h-4 w-4 shrink-0"></i>
                                                                 <span class="flex-1 leading-tight">View mother recommendation</span>
                                                                 <span class="shrink-0 text-[10px] font-medium text-slate-400">{{ $batchDoc->summary() }}</span>
-                                                            </a>
+                                                            </button>
+
+                                                            {{-- Replace corrects a wrong scan; this is for a scan that
+                                                                 should not be on this batch at all, which replacing
+                                                                 cannot fix. Destructive, so it sits below the pair it
+                                                                 undoes and is the only red entry in the menu. --}}
+                                                            <button type="button" @click="open = false"
+                                                                onclick="resetRecDocUpload(@js(route('land-recommendations.batch-document.destroy', $b->rofo_batch_id)))"
+                                                                class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-rose-600 hover:bg-rose-50 transition">
+                                                                <i data-lucide="rotate-ccw" class="h-4 w-4 shrink-0"></i>
+                                                                <span class="flex-1 leading-tight">Reset upload</span>
+                                                            </button>
                                                         @else
                                                             {{-- Kept visible rather than hidden: the pair reads as one
                                                                  step, and an item that appears only after the upload
@@ -354,7 +372,7 @@
                                                                     onclick='approveWholeBatch(@json($b->rofo_batch_id))'
                                                                     class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-green-600 hover:bg-green-50 transition">
                                                                     <i data-lucide="check-circle" class="h-4 w-4 shrink-0"></i>
-                                                                    <span class="flex-1 leading-tight">Approve all ({{ $pending }})</span>
+                                                                    <span class="flex-1 leading-tight">Approve all (<span data-approve-all-count="{{ $b->rofo_batch_id }}">{{ $pending }}</span>)</span>
                                                                 </button>
                                                             @else
                                                                 {{-- Approval is what turns these children into records an
@@ -368,7 +386,7 @@
                                                                     class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed">
                                                                     <i data-lucide="check-circle" class="h-4 w-4 shrink-0 text-slate-200"></i>
                                                                     <span class="flex-1 leading-tight">
-                                                                        Approve all ({{ $pending }})
+                                                                        Approve all (<span data-approve-all-count="{{ $b->rofo_batch_id }}">{{ $pending }}</span>)
                                                                         <span class="block text-[10px] font-medium not-italic text-amber-600">Upload the recommendation first</span>
                                                                     </span>
                                                                 </span>
@@ -379,7 +397,7 @@
                                                             onclick='approveWholeBatch(@json($b->rofo_batch_id))'
                                                             class="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-bold text-green-600 hover:bg-green-50 transition">
                                                             <i data-lucide="check-circle" class="h-4 w-4 shrink-0"></i>
-                                                            <span class="flex-1 leading-tight">Approve all ({{ $pending }})</span>
+                                                            <span class="flex-1 leading-tight">Approve all (<span data-approve-all-count="{{ $b->rofo_batch_id }}">{{ $pending }}</span>)</span>
                                                         </button>
                                                         <span class="flex items-center gap-2.5 px-4 py-2.5 text-sm text-slate-300 cursor-not-allowed">
                                                             <i data-lucide="printer" class="h-4 w-4 shrink-0 text-slate-200"></i>
@@ -647,10 +665,15 @@
                                                         </button>
 
                                                         @if($letter)
-                                                            <a href="{{ route('land-recommendations.approved-recommendation.show', $rec->id) }}" target="_blank"
-                                                               class="flex items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                            {{-- The same preview card the batch uses. This letter has no
+                                                                 Reset: it is what the record stands for, and a record
+                                                                 with no letter behind it cannot be approved at all —
+                                                                 Replace is the whole of the correction here. --}}
+                                                            <button type="button"
+                                                                    onclick="viewApprovedRecommendation({{ (int) $rec->id }}, @js($rec->file_number), @js($letter->summary()), @js($letter->mime_type))"
+                                                               class="flex w-full items-center px-4 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
                                                                 <i data-lucide="file-check-2" class="h-4 w-4"></i> View approved recommendation
-                                                            </a>
+                                                            </button>
                                                         @endif
 
                                                         <div class="border-t border-slate-100 my-1"></div>
@@ -877,6 +900,80 @@
     @include('admin.footer')
 </div>
 
+{{-- ── The recommendation preview card ──────────────────────────────────────
+     The scanned letter used to open as a bare file in a new tab, which is the
+     browser's own viewer: no idea which file it belongs to, no way back, and a
+     PDF handed to whatever the machine has registered. Here it is shown in the
+     page it was opened from, named, with the actions that belong to it.
+
+     One card serves both scans, because they are the same thing seen from two
+     places: the mother's letter, which the whole batch inherits, and the
+     already-approved letter a single OP-matched record stands for. --}}
+<div id="recDocModal" class="fixed inset-0 z-[100000] hidden items-center justify-center bg-slate-900/70 p-4"
+     role="dialog" aria-modal="true" aria-labelledby="recDocModalTitle">
+    <div class="w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl bg-white shadow-2xl overflow-hidden">
+
+        <div class="px-6 py-4 border-b border-slate-200 flex items-start gap-3">
+            <div class="h-10 w-10 shrink-0 rounded-xl bg-violet-100 flex items-center justify-center">
+                <i data-lucide="file-check-2" class="h-5 w-5 text-violet-700"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+                <h3 id="recDocModalTitle" class="text-sm font-black text-slate-900 truncate">Recommendation</h3>
+                <p id="recDocModalSub" class="text-[11px] font-semibold text-slate-500 truncate"></p>
+            </div>
+            <span id="recDocModalMeta" class="hidden shrink-0 px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-black uppercase tracking-wider text-slate-500"></span>
+            <button type="button" onclick="closeRecDocModal()" aria-label="Close"
+                    class="shrink-0 p-2 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition">
+                <i data-lucide="x" class="h-4 w-4"></i>
+            </button>
+        </div>
+
+        {{-- The scan itself. An image is shown directly; a PDF gets an iframe,
+             because a multi-page letter off a departmental scanner arrives as one
+             and an <img> would show nothing at all. --}}
+        <div id="recDocModalBody" class="flex-1 min-h-[240px] overflow-auto bg-slate-100 flex items-center justify-center p-4">
+            <p id="recDocModalLoading" class="text-xs font-semibold text-slate-400">Loading the scan…</p>
+
+            {{-- Click toggles between fitted and full size: a phone photograph of an
+                 A4 letter is unreadable scaled into a card, and the reason to open
+                 this at all is to read what it says. --}}
+            <img id="recDocModalImage" alt="" class="hidden max-w-full object-contain cursor-zoom-in rounded-lg shadow-sm"
+                 style="max-height: 68vh;">
+
+            <iframe id="recDocModalFrame" title="Scanned recommendation"
+                    class="hidden w-full rounded-lg bg-white" style="height: 68vh;"></iframe>
+
+            <div id="recDocModalError" class="hidden text-center px-6">
+                <i data-lucide="image-off" class="h-7 w-7 mx-auto mb-2 text-slate-300"></i>
+                <p class="text-xs font-bold text-slate-600">This scan could not be displayed.</p>
+                <p class="text-[11px] text-slate-500 mt-1">The file may have been moved or removed from the EDMS folder.</p>
+                <a id="recDocModalErrorLink" href="#" target="_blank"
+                   class="inline-block mt-3 text-[11px] font-black text-violet-700 hover:underline">Try opening it directly</a>
+            </div>
+        </div>
+
+        <div class="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 flex-wrap">
+            <a id="recDocModalOpen" href="#" target="_blank"
+               class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-200 transition">
+                <i data-lucide="external-link" class="h-3.5 w-3.5"></i> Open in new tab
+            </a>
+            <button type="button" id="recDocModalReplace"
+                    class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold text-violet-700 hover:bg-violet-100 transition">
+                <i data-lucide="upload" class="h-3.5 w-3.5"></i> Replace
+            </button>
+            {{-- Destructive, so it is last and it is the only red thing here. --}}
+            <button type="button" id="recDocModalReset"
+                    class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold text-rose-600 hover:bg-rose-50 transition">
+                <i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i> Reset upload
+            </button>
+            <button type="button" onclick="closeRecDocModal()"
+                    class="ml-auto px-4 py-2 rounded-lg bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 transition">
+                Close
+            </button>
+        </div>
+    </div>
+</div>
+
 @push('scripts')
 <script src="{{ asset('js/master-delete.js') }}"></script>
 <script>
@@ -939,6 +1036,446 @@
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // ── Approving the children of a batch ───────────────────────────────────
+    // A batch is captured in one pass but it is not always approved in one: the
+    // children come back from vetting a few at a time, and "Approve all" alone
+    // meant the whole batch waited on the slowest file. The expander below
+    // therefore approves one child, a chosen few, or all of them — through the
+    // same two endpoints the main list uses, under the same gates, so approval
+    // means the same thing however it is reached.
+
+    // Child-level approval is OFF for now: a subdivision batch is approved as a
+    // whole, from the mother's menu, and that is the only Approve on this page.
+    //
+    // Everything below stays behind this one flag rather than being deleted —
+    // flipping it back to true returns the per-row Approve AND the tick-some
+    // toolbar together, because they are one capability reached two ways and
+    // leaving the checkboxes behind would put back exactly what was hidden. The
+    // server keeps both endpoints and both gates either way, so nothing here is
+    // load-bearing for correctness.
+    var CHILD_APPROVAL_ENABLED = false;
+
+    // Why this child cannot be approved yet, or null when it can. Mirrors the two
+    // server-side gates: the mother's letter belongs to the batch and answers for
+    // every child at once (motherRecommendationGate), while an already-approved
+    // letter belongs to one child and only that child waits on it
+    // (approvedLetterGate). The server still refuses either way — this only saves
+    // the officer a refused round trip and says which of the two it is.
+    function childApprovalBlock(data, c) {
+        if (!data.mother_satisfied) return 'Upload the mother recommendation first — this child inherits it';
+        if (c.needs_letter && !c.letter_uploaded) return 'Upload this file’s own approved recommendation first';
+        return null;
+    }
+
+    function childIsApproved(c) {
+        return String(c.status || '').toLowerCase() === 'approved';
+    }
+
+    function recPostJson(url, body) {
+        return fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': '{{ csrf_token() }}'
+            },
+            body: body ? JSON.stringify(body) : null
+        })
+        // The body carries the refusal, so it is read on failure too: a blocked
+        // approval answers 422 with a reason an officer can act on, and reporting
+        // the HTTP status instead would throw that away.
+        .then(function (r) {
+            return r.json().catch(function () { return {}; })
+                .then(function (d) { return { ok: r.ok, data: d }; });
+        });
+    }
+
+    // The batch row above the expander carries its own Approved / RofO counters and
+    // an "Approve all (N)" label. Approving one child changes all three, so they are
+    // repainted from the same data the expander was just drawn from — the row and
+    // the children under it can never drift apart.
+    function paintBatchRowCounters(data) {
+        // Matched by walking the attributes rather than through a selector: a batch
+        // ref is not guaranteed to be a valid CSS identifier.
+        function cellFor(attr, batchId) {
+            var all = document.querySelectorAll('[' + attr + ']');
+            for (var i = 0; i < all.length; i++) {
+                if (all[i].getAttribute(attr) === batchId) return all[i];
+            }
+            return null;
+        }
+
+        function pill(ok, text) {
+            return '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold '
+                + (ok ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700') + '">' + text + '</span>';
+        }
+
+        var total     = data.count;
+        var approved  = data.children.filter(childIsApproved).length;
+        var generated = data.children.filter(function (c) {
+            return String(c.rofo_status || '').toLowerCase() === 'generated';
+        }).length;
+        var pending   = total - approved;
+
+        var approvedCell = cellFor('data-batch-approved', data.batch_id);
+        if (approvedCell) {
+            approvedCell.innerHTML = pending === 0
+                ? pill(true, 'All ' + total)
+                : pill(false, approved + ' of ' + total);
+        }
+
+        var generatedCell = cellFor('data-batch-generated', data.batch_id);
+        if (generatedCell) {
+            generatedCell.innerHTML = generated >= total
+                ? pill(true, 'All ' + total)
+                : (generated > 0
+                    ? pill(false, generated + ' of ' + total)
+                    : '<span class="text-[10px] font-bold text-slate-400">&mdash;</span>');
+        }
+
+        var countLabel = cellFor('data-approve-all-count', data.batch_id);
+        if (countLabel) countLabel.textContent = pending;
+    }
+
+    // Re-read the batch after an approval rather than patching the rows from the
+    // response: approval also generates the RofO, and one child's generation can
+    // fail without failing the approval (generateRofosForBatchMembers logs it and
+    // carries on). Only the server knows which rows actually came back generated.
+    function refreshBatchChildren(cell, batchId) {
+        return fetch(CHILDREN_URL + '/' + encodeURIComponent(batchId) + '/children', {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (fresh) {
+                if (!fresh.success) throw new Error(fresh.message || 'Could not reload the batch.');
+                renderBatchChildren(cell, fresh);
+                paintBatchRowCounters(fresh);
+                return fresh;
+            });
+    }
+
+    function afterChildApproval(cell, batchId, title, text) {
+        return refreshBatchChildren(cell, batchId)
+            .then(function (fresh) {
+                return Swal.fire({
+                    icon: 'success', title: title, text: text,
+                    timer: 1800, showConfirmButton: false
+                }).then(function () {
+                    // The batch menu swaps its whole set of actions the moment
+                    // nothing is pending — Approve all gives way to White copy /
+                    // Print all — and that menu is rendered server-side. So this
+                    // one transition is a reload; every other approval is patched
+                    // in place, which is what lets an officer work down the list.
+                    if (fresh.pending_count === 0) window.location.reload();
+                });
+            })
+            .catch(function (err) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Approved, but the list did not refresh',
+                    text: err.message || 'Reload the page to see the current state.'
+                });
+            });
+    }
+
+    // One child, on its own. The same endpoint the main list's Approve uses, so a
+    // child approved here and a single record approved there are the same act.
+    function approveOneChild(cell, data, c) {
+        var rest = data.mother_file_no
+            ? 'The rest of ' + escHtml(data.mother_file_no)
+            : 'The rest of the batch';
+
+        Swal.fire({
+            icon: 'question',
+            title: 'Approve this file on its own?',
+            html: '<p class="text-sm text-slate-600"><b>' + escHtml(c.file_number || 'This record')
+                    + '</b> will be approved and its RofO generated. ' + rest + ' is left exactly as it is.</p>'
+                + '<p class="text-xs text-slate-500 mt-2">It cannot be edited after approval.</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Approve this file',
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#64748b',
+            showLoaderOnConfirm: true,
+            allowOutsideClick: function () { return !Swal.isLoading(); },
+            preConfirm: function () {
+                return recPostJson(c.approve_url, null)
+                    .then(function (res) {
+                        if (!res.ok || !res.data.success) {
+                            throw new Error(res.data.message || 'Approval failed.');
+                        }
+                        return res.data;
+                    })
+                    .catch(function (err) {
+                        Swal.showValidationMessage(err.message || 'Network error during approval.');
+                        return false;
+                    });
+            }
+        }).then(function (r) {
+            if (!r.isConfirmed || !r.value) return;
+            afterChildApproval(cell, data.batch_id, 'Approved',
+                (c.file_number || 'The record') + ' approved'
+                + (r.value.rofos_generated ? ' and its RofO generated.' : '.'));
+        });
+    }
+
+    // A chosen few. Reuses batch-approve, which is the same call "Approve all" and
+    // the main list's checkboxes make — the only difference is which ids go in it.
+    function approveSelectedChildren(cell, data, ids) {
+        Swal.fire({
+            icon: 'question',
+            title: 'Approve ' + ids.length + ' selected file(s)?',
+            html: '<p class="text-sm text-slate-600">Only the files you ticked are approved. The others in <b>'
+                    + escHtml(data.mother_file_no || data.batch_id) + '</b> stay pending.</p>'
+                + '<p class="text-xs text-slate-500 mt-2">They cannot be edited after approval.</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Approve ' + ids.length + ' file(s)',
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#64748b',
+            showLoaderOnConfirm: true,
+            allowOutsideClick: function () { return !Swal.isLoading(); },
+            preConfirm: function () {
+                return recPostJson(data.batch_approve_url, { ids: ids })
+                    .then(function (res) {
+                        if (!res.ok || !res.data.success) {
+                            throw new Error(res.data.message || 'Approval failed.');
+                        }
+                        return res.data;
+                    })
+                    .catch(function (err) {
+                        Swal.showValidationMessage(err.message || 'Network error during approval.');
+                        return false;
+                    });
+            }
+        }).then(function (r) {
+            if (!r.isConfirmed || !r.value) return;
+            var count = (r.value.approved === undefined || r.value.approved === null) ? ids.length : r.value.approved;
+            afterChildApproval(cell, data.batch_id, 'Approved',
+                count + ' recommendation(s) approved'
+                + (r.value.rofos_generated ? ', ' + r.value.rofos_generated + ' RofO(s) generated.' : '.'));
+        });
+    }
+
+    // The expanded panel under a batch row. Drawn on first expand and re-drawn
+    // after every approval, so the rows, the selection bar and the batch counters
+    // above it all come from one read of the batch.
+    function renderBatchChildren(cell, data) {
+        // A subdivision's children inherit the mother's recommendation, so their
+        // row offers her scanned letter instead of a Print action: View once it is
+        // uploaded, Upload while it is not. One document covers the whole batch, so
+        // every row points at the same URL and one upload answers for all of them.
+        var doc = data.document;
+
+        function childAction(c) {
+            if (!data.is_subdivision) {
+                return '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>';
+            }
+
+            if (doc) {
+                // Opens the preview card, the same one the batch menu opens: a child
+                // and its batch show one document, so they must show it one way.
+                return '<button type="button" data-view-mother="1" title="' + escHtml(doc.original_name || '') + '"'
+                    + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 rounded">View</button>';
+            }
+
+            return '<button type="button" onclick="uploadMotherRecommendation(' + JSON.stringify(data.batch_id) + ', '
+                + JSON.stringify(data.mother_file_no || '') + ', ' + data.count + ', false)"'
+                + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Upload</button>';
+        }
+
+        // Approve sits on the row itself, next to Edit, because that is where the
+        // officer already is when they decide one file is ready. A child that
+        // cannot be approved yet keeps the entry and says why rather than losing
+        // it — a missing action reads as a bug and sends people looking for it.
+        function approveAction(c) {
+            // Nothing at all, not a disabled entry: the row has no approval to
+            // offer while this is off, and a greyed-out control invites the
+            // question of how to un-grey it. Status still says Pending/Approved.
+            if (!CHILD_APPROVAL_ENABLED) {
+                return '';
+            }
+
+            if (childIsApproved(c)) {
+                return '<span class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-300 italic cursor-default">Approved</span>';
+            }
+
+            var blocked = childApprovalBlock(data, c);
+            if (blocked) {
+                // A child waiting on its OWN letter is otherwise stranded here: a
+                // batched row is kept off the main list, so the upload it needs is
+                // not reachable anywhere else. The mother's letter needs no such
+                // entry — childAction already offers Upload for that one.
+                var ownLetter = c.needs_letter && !c.letter_uploaded && data.mother_satisfied
+                    ? '<button type="button" onclick="uploadApprovedRecommendation(' + c.id + ', '
+                        + JSON.stringify(c.file_number || '') + ', false)"'
+                        + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-amber-700 hover:bg-amber-50 rounded">Upload letter</button>'
+                    : '';
+
+                return '<span title="' + escHtml(blocked) + '"'
+                    + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-slate-300 cursor-not-allowed">Approve</span>'
+                    + ownLetter;
+            }
+
+            return '<button type="button" data-approve-child="' + c.id + '"'
+                + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-green-700 hover:bg-green-50 rounded">Approve</button>';
+        }
+
+        function canSelect(c) {
+            if (!CHILD_APPROVAL_ENABLED) {
+                return false;
+            }
+
+            return !childIsApproved(c) && !childApprovalBlock(data, c);
+        }
+
+        var selectable = data.children.filter(canSelect).length;
+
+        var rows = data.children.map(function (c) {
+            return '<tr class="border-b border-violet-100/70 hover:bg-white/70' + (childIsApproved(c) ? ' bg-emerald-50/40' : '') + '">'
+                + (selectable
+                    ? '<td class="px-3 py-2.5 text-center">'
+                        + (canSelect(c)
+                            ? '<input type="checkbox" class="rec-child-chk rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer" value="' + c.id + '">'
+                            : '')
+                        + '</td>'
+                    : '')
+                + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
+                + '<td class="px-4 py-2.5 font-mono text-xs font-bold text-slate-900">' + escHtml(c.file_number) + '</td>'
+                + '<td class="px-4 py-2.5 text-xs text-slate-700">' + escHtml(c.applicant_name) + '</td>'
+                + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.plot_number) + '</td>'
+                + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.location) + '</td>'
+                + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.purpose) + '</td>'
+                + '<td class="px-4 py-2.5 text-center">' + statusPill(c.status, 'approved', 'Approved', 'Pending') + '</td>'
+                + '<td class="px-4 py-2.5 text-center">' + statusPill(c.rofo_status, 'generated', 'Generated', 'Pending') + '</td>'
+                + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
+                +   '<a href="' + c.edit_url + '" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 hover:bg-blue-50 rounded">Edit</a>'
+                +   approveAction(c)
+                +   childAction(c)
+                + '</td>'
+                + '</tr>';
+        }).join('');
+
+        cell.innerHTML =
+            '<div class="px-6 py-4">'
+            + '<div class="flex items-end justify-between gap-3 flex-wrap mb-2">'
+            + '<p class="text-[10px] font-black uppercase tracking-widest text-violet-700">'
+            +   'All ' + data.count + ' children of this batch'
+            +   (data.is_subdivision
+                    ? (doc
+                        ? '<span class="ml-2 normal-case tracking-normal font-bold text-emerald-700">· mother recommendation uploaded '
+                            + escHtml(doc.uploaded_at || '') + ' (' + escHtml(doc.summary || '') + ')</span>'
+                        : '<span class="ml-2 normal-case tracking-normal font-bold text-amber-600">· no mother recommendation uploaded yet — approval is held until it is on file</span>')
+                    : '')
+            +   (selectable
+                    ? '<span class="ml-2 normal-case tracking-normal font-medium text-slate-500">· approve one at a time, or tick the files that are ready</span>'
+                    : '')
+            +   '</p>'
+            {{-- Only where there is something to tick. Emitting it regardless left a
+                 hidden bar that nothing could ever open, since syncToolbar() shows
+                 it on a ticked box and there are no boxes. --}}
+            + (selectable
+                    ? '<div data-child-toolbar class="hidden items-center gap-3">'
+                        + '<span data-child-count class="text-[11px] font-bold text-slate-500"></span>'
+                        + '<button type="button" data-approve-selected'
+                        +   ' class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white text-[11px] font-bold rounded-lg hover:bg-green-700 transition shadow-sm">'
+                        +   'Approve selected</button>'
+                        + '</div>'
+                    : '')
+            + '</div>'
+            + '<div class="overflow-x-auto rounded-lg border border-violet-200 bg-white">'
+            + '<table class="w-full text-left border-collapse min-w-[880px]">'
+            + '<thead><tr class="bg-violet-50 text-[10px] font-black text-violet-800 uppercase tracking-widest">'
+            +   (selectable
+                    ? '<th class="px-3 py-2.5 text-center w-10">'
+                        + '<input type="checkbox" data-child-select-all title="Select every file that can be approved"'
+                        + ' class="rounded border-slate-300 text-green-600 focus:ring-green-500 cursor-pointer"></th>'
+                    : '')
+            +   '<th class="px-4 py-2.5 text-center w-10">#</th>'
+            +   '<th class="px-4 py-2.5">File Number</th>'
+            +   '<th class="px-4 py-2.5">Applicant</th>'
+            +   '<th class="px-4 py-2.5">Plot No</th>'
+            +   '<th class="px-4 py-2.5">Location</th>'
+            +   '<th class="px-4 py-2.5">Purpose</th>'
+            +   '<th class="px-4 py-2.5 text-center">Status</th>'
+            +   '<th class="px-4 py-2.5 text-center">RofO</th>'
+            +   '<th class="px-4 py-2.5 text-right">Actions</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+
+        wireBatchChildren(cell, data);
+    }
+
+    // Listeners are attached after every render rather than delegated, because the
+    // panel is replaced wholesale on refresh — fresh nodes each time, so nothing
+    // doubles up.
+    function wireBatchChildren(cell, data) {
+        var toolbar    = cell.querySelector('[data-child-toolbar]');
+        var countLabel = cell.querySelector('[data-child-count]');
+        var selectAll  = cell.querySelector('[data-child-select-all]');
+        var selectBtn  = cell.querySelector('[data-approve-selected]');
+        var boxes      = Array.prototype.slice.call(cell.querySelectorAll('.rec-child-chk'));
+
+        function selectedIds() {
+            return boxes.filter(function (b) { return b.checked; })
+                .map(function (b) { return parseInt(b.value, 10); });
+        }
+
+        function syncToolbar() {
+            var n = selectedIds().length;
+            if (toolbar) {
+                toolbar.classList.toggle('hidden', n === 0);
+                toolbar.classList.toggle('flex', n > 0);
+            }
+            if (countLabel) countLabel.textContent = n + ' selected';
+            if (selectBtn) selectBtn.textContent = 'Approve selected (' + n + ')';
+            if (selectAll) {
+                selectAll.checked = boxes.length > 0 && n === boxes.length;
+                selectAll.indeterminate = n > 0 && n < boxes.length;
+            }
+        }
+
+        boxes.forEach(function (b) { b.addEventListener('change', syncToolbar); });
+
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                boxes.forEach(function (b) { b.checked = selectAll.checked; });
+                syncToolbar();
+            });
+        }
+
+        cell.querySelectorAll('[data-approve-child]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var id = parseInt(btn.getAttribute('data-approve-child'), 10);
+                var child = data.children.filter(function (c) { return c.id === id; })[0];
+                if (child) approveOneChild(cell, data, child);
+            });
+        });
+
+        if (selectBtn) {
+            selectBtn.addEventListener('click', function () {
+                var ids = selectedIds();
+                if (ids.length) approveSelectedChildren(cell, data, ids);
+            });
+        }
+
+        // Every child row shows the one document the batch carries, so they all
+        // open the same card with the same arguments.
+        cell.querySelectorAll('[data-view-mother]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                viewMotherRecommendation(
+                    data.batch_id,
+                    data.mother_file_no || '',
+                    (data.document && data.document.summary) || '',
+                    (data.document && data.document.mime_type) || '',
+                    data.count
+                );
+            });
+        });
+
+        syncToolbar();
+    }
+
     document.addEventListener('click', function (e) {
         var row = e.target.closest('tr.batch-row');
         if (!row) return;
@@ -969,70 +1506,7 @@
             .then(function (data) {
                 if (!data.success) throw new Error(data.message || 'Could not load the batch.');
                 holder.dataset.loaded = '1';
-
-                // A subdivision's children inherit the mother's recommendation, so
-                // their row offers her scanned letter instead of a Print action:
-                // View once it is uploaded, Upload while it is not. One document
-                // covers the whole batch, so every row points at the same URL and
-                // one upload answers for all of them.
-                var doc = data.document;
-
-                function childAction(c) {
-                    if (!data.is_subdivision) {
-                        return '<a href="' + c.print_url + '" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Print</a>';
-                    }
-
-                    if (doc) {
-                        return '<a href="' + escHtml(doc.view_url) + '" target="_blank" title="' + escHtml(doc.original_name || '') + '"'
-                            + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-emerald-700 hover:bg-emerald-50 rounded">View</a>';
-                    }
-
-                    return '<button type="button" onclick="uploadMotherRecommendation(' + JSON.stringify(data.batch_id) + ', '
-                        + JSON.stringify(data.mother_file_no || '') + ', ' + data.count + ', false)"'
-                        + ' class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-violet-700 hover:bg-violet-50 rounded">Upload</button>';
-                }
-
-                var rows = data.children.map(function (c) {
-                    return '<tr class="border-b border-violet-100/70 hover:bg-white/70">'
-                        + '<td class="px-4 py-2.5 text-center text-[11px] font-bold text-slate-400">' + c.seq + '</td>'
-                        + '<td class="px-4 py-2.5 font-mono text-xs font-bold text-slate-900">' + escHtml(c.file_number) + '</td>'
-                        + '<td class="px-4 py-2.5 text-xs text-slate-700">' + escHtml(c.applicant_name) + '</td>'
-                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.plot_number) + '</td>'
-                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.location) + '</td>'
-                        + '<td class="px-4 py-2.5 text-xs text-slate-600">' + escHtml(c.purpose) + '</td>'
-                        + '<td class="px-4 py-2.5 text-center">' + statusPill(c.status, 'approved', 'Approved', 'Pending') + '</td>'
-                        + '<td class="px-4 py-2.5 text-center">' + statusPill(c.rofo_status, 'generated', 'Generated', 'Pending') + '</td>'
-                        + '<td class="px-4 py-2.5 text-right whitespace-nowrap">'
-                        +   '<a href="' + c.edit_url + '" class="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-blue-700 hover:bg-blue-50 rounded">Edit</a>'
-                        +   childAction(c)
-                        + '</td>'
-                        + '</tr>';
-                }).join('');
-
-                cell.innerHTML =
-                    '<div class="px-6 py-4">'
-                    + '<p class="text-[10px] font-black uppercase tracking-widest text-violet-700 mb-2">'
-                    +   'All ' + data.count + ' children of this batch'
-                    +   (data.is_subdivision
-                            ? (doc
-                                ? '<span class="ml-2 normal-case tracking-normal font-bold text-emerald-700">· mother recommendation uploaded '
-                                    + escHtml(doc.uploaded_at || '') + ' (' + escHtml(doc.summary || '') + ')</span>'
-                                : '<span class="ml-2 normal-case tracking-normal font-bold text-amber-600">· no mother recommendation uploaded yet</span>')
-                            : '')
-                    +   '</p>'
-                    + '<div class="overflow-x-auto rounded-lg border border-violet-200 bg-white">'
-                    + '<table class="w-full text-left border-collapse min-w-[880px]">'
-                    + '<thead><tr class="bg-violet-50 text-[10px] font-black text-violet-800 uppercase tracking-widest">'
-                    +   '<th class="px-4 py-2.5 text-center w-10">#</th>'
-                    +   '<th class="px-4 py-2.5">File Number</th>'
-                    +   '<th class="px-4 py-2.5">Applicant</th>'
-                    +   '<th class="px-4 py-2.5">Plot No</th>'
-                    +   '<th class="px-4 py-2.5">Location</th>'
-                    +   '<th class="px-4 py-2.5">Purpose</th>'
-                    +   '<th class="px-4 py-2.5 text-center">Status</th>'
-                    +   '<th class="px-4 py-2.5 text-center">RofO</th>'
-                    +   '<th class="px-4 py-2.5 text-right">Actions</th>'
-                    + '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+                renderBatchChildren(cell, data);
             })
             .catch(function (err) {
                 cell.innerHTML = '<div class="px-8 py-6 text-xs text-rose-700">'
@@ -1043,6 +1517,218 @@
     // Approve every pending child of a batch straight from the Batches tab. The ids
     // are not on the page here (the tab lists batches, not rows), so they are
     // fetched first — the same endpoint the main list's batch row uses.
+    // Opening the batch's letter. Reachable from the batch menu and from any child
+    // row, because one document answers for the whole batch.
+    function viewMotherRecommendation(batchId, motherFileNo, summary, mime, childCount) {
+        var base = CHILDREN_URL + '/' + encodeURIComponent(batchId) + '/document';
+
+        openRecDocModal({
+            title:    'Mother recommendation',
+            subtitle: (motherFileNo ? motherFileNo + ' · ' : '') + batchId
+                        + (childCount ? ' · inherited by all ' + childCount + ' children' : ''),
+            meta:     summary,
+            mime:     mime,
+            url:      base,
+            resetUrl: base,
+            onReplace: function () {
+                uploadMotherRecommendation(batchId, motherFileNo || '', childCount || 0, true);
+            }
+        });
+    }
+
+    // The single record's own already-approved letter. No Reset: see the menu entry.
+    function viewApprovedRecommendation(recordId, fileNumber, summary, mime) {
+        openRecDocModal({
+            title:    'Approved recommendation',
+            subtitle: fileNumber ? fileNumber + ' · granted on paper' : 'Granted on paper',
+            meta:     summary,
+            mime:     mime,
+            url:      '{{ url('land-recommendations') }}/' + encodeURIComponent(recordId) + '/approved-recommendation',
+            onReplace: function () {
+                uploadApprovedRecommendation(recordId, fileNumber || '', true);
+            }
+        });
+    }
+
+    // ── The recommendation preview card ────────────────────────────────────
+    // The scan opened in a new tab before this: the browser's own viewer, with
+    // nothing saying which file the sheet belongs to and no way back to the batch.
+    // It is a document that belongs to a record, so it is shown inside the page
+    // that record is on, with the two actions that follow from looking at it —
+    // Replace, when the proof is wrong, and Reset, when it should not be there.
+    var recDoc = { resetUrl: '', replace: null, viewUrl: '' };
+
+    function openRecDocModal(opts) {
+        opts = opts || {};
+        recDoc.resetUrl = opts.resetUrl || '';
+        recDoc.replace  = (typeof opts.onReplace === 'function') ? opts.onReplace : null;
+        recDoc.viewUrl  = opts.url || '';
+
+        var modal   = document.getElementById('recDocModal');
+        var image   = document.getElementById('recDocModalImage');
+        var frame   = document.getElementById('recDocModalFrame');
+        var loading = document.getElementById('recDocModalLoading');
+        var error   = document.getElementById('recDocModalError');
+        var meta    = document.getElementById('recDocModalMeta');
+
+        document.getElementById('recDocModalTitle').textContent = opts.title || 'Recommendation';
+        document.getElementById('recDocModalSub').textContent   = opts.subtitle || '';
+        document.getElementById('recDocModalOpen').href         = recDoc.viewUrl;
+        document.getElementById('recDocModalErrorLink').href    = recDoc.viewUrl;
+
+        meta.textContent = opts.meta || '';
+        meta.classList.toggle('hidden', !opts.meta);
+
+        // Reset and Replace are only offered when the caller says how to do them —
+        // the same card is opened from places that own neither.
+        document.getElementById('recDocModalReset').classList.toggle('hidden', !recDoc.resetUrl);
+        document.getElementById('recDocModalReplace').classList.toggle('hidden', !recDoc.replace);
+
+        // Every state off, then exactly one on, so re-opening the card never shows
+        // the previous document underneath the new one.
+        image.classList.add('hidden');
+        frame.classList.add('hidden');
+        error.classList.add('hidden');
+        loading.classList.remove('hidden');
+        image.removeAttribute('src');
+        frame.removeAttribute('src');
+        image.classList.remove('rec-doc-zoomed');
+        image.style.maxHeight = '68vh';
+
+        // A cache-buster, so a Replace is not answered with the copy the browser
+        // already has under the same URL — this route serves whatever the batch
+        // currently points at, and the URL does not change when the file does.
+        var src = recDoc.viewUrl + (recDoc.viewUrl.indexOf('?') === -1 ? '?' : '&') + 'v=' + Date.now();
+
+        if (String(opts.mime || '').toLowerCase() === 'application/pdf') {
+            frame.src = src;
+            frame.classList.remove('hidden');
+            loading.classList.add('hidden');
+        } else {
+            image.onload = function () {
+                loading.classList.add('hidden');
+                image.classList.remove('hidden');
+            };
+            image.onerror = function () {
+                loading.classList.add('hidden');
+                error.classList.remove('hidden');
+            };
+            image.src = src;
+        }
+
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+        if (window.lucide) window.lucide.createIcons();
+    }
+
+    function closeRecDocModal() {
+        var modal = document.getElementById('recDocModal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = '';
+        // Dropped rather than left loaded: a 20 MB scan does not need to stay in
+        // memory behind a closed card.
+        document.getElementById('recDocModalImage').removeAttribute('src');
+        document.getElementById('recDocModalFrame').removeAttribute('src');
+    }
+
+    (function () {
+        var modal = document.getElementById('recDocModal');
+        if (!modal) return;
+
+        // The backdrop only. A click inside the card must not close it — dragging
+        // a selection across the scan ends in a mouseup that would otherwise land
+        // on the overlay and dismiss the whole thing.
+        modal.addEventListener('click', function (e) {
+            if (e.target === modal) closeRecDocModal();
+        });
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && !modal.classList.contains('hidden')) closeRecDocModal();
+        });
+
+        var image = document.getElementById('recDocModalImage');
+        image.addEventListener('click', function () {
+            var zoomed = image.classList.toggle('rec-doc-zoomed');
+            image.style.maxHeight = zoomed ? 'none' : '68vh';
+            image.style.cursor = zoomed ? 'zoom-out' : 'zoom-in';
+        });
+
+        document.getElementById('recDocModalReplace').addEventListener('click', function () {
+            var run = recDoc.replace;
+            closeRecDocModal();
+            if (run) run();
+        });
+
+        document.getElementById('recDocModalReset').addEventListener('click', function () {
+            resetRecDocUpload(recDoc.resetUrl);
+        });
+    })();
+
+    // Put the record back to "nothing uploaded". Not a correction — Replace is the
+    // correction — but the way out when the wrong document was attached to the
+    // wrong batch, which no amount of replacing fixes.
+    function resetRecDocUpload(url) {
+        if (!url) return;
+
+        Swal.fire({
+            icon: 'warning',
+            title: 'Reset this upload?',
+            html: '<p class="text-sm text-slate-600">The scan is removed and the record goes back to '
+                + '<b>nothing uploaded</b>.</p>'
+                + '<p class="text-xs text-amber-700 mt-2 font-semibold">Approval is held until a letter is on file '
+                + 'again, so any children still pending cannot be approved until you upload one.</p>',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, reset it',
+            confirmButtonColor: '#e11d48',
+            cancelButtonColor: '#64748b',
+            reverseButtons: true,
+            focusCancel: true,
+            showLoaderOnConfirm: true,
+            allowOutsideClick: function () { return !Swal.isLoading(); },
+            preConfirm: function () {
+                return fetch(url, {
+                    method: 'DELETE',
+                    credentials: 'same-origin',
+                    headers: {
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                })
+                .then(function (r) {
+                    return r.json().catch(function () { return {}; })
+                        .then(function (d) { return { ok: r.ok, data: d }; });
+                })
+                .then(function (res) {
+                    if (!res.ok || !res.data.success) {
+                        throw new Error(res.data.message || 'The upload could not be reset.');
+                    }
+                    return res.data;
+                })
+                .catch(function (err) {
+                    Swal.showValidationMessage(err.message || 'Network error while resetting the upload.');
+                    return false;
+                });
+            }
+        }).then(function (r) {
+            if (!r.isConfirmed || !r.value) return;
+
+            closeRecDocModal();
+
+            Swal.fire({
+                icon: 'success', title: 'Reset', text: r.value.message,
+                timer: 2000, showConfirmButton: false
+            }).then(function () {
+                // The batch menu, the child rows and the Approve gate all key off
+                // whether a document exists, and they are rendered in three places
+                // — so this is a reload rather than a patch in three.
+                window.location.reload();
+            });
+        });
+    }
+
     // ── The mother's scanned recommendation ────────────────────────────────
     // A subdivision's children inherit the mother's grant, so no letter is printed
     // for a child: the mother's signed sheet is scanned once and every child in the

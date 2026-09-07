@@ -591,17 +591,30 @@
             + icon('folder-open', 15) + ' '
             + escapeHtml(identity.file_number || snapshot.file_number || 'File')
             + '</span>'
-            + '<span style="font-size:10px;font-weight:700;color:#fff;background:#334155;'
-            + 'border-radius:9999px;padding:2px 8px;white-space:nowrap;">v'
-            + escapeHtml(snapshot.version) + '</span>'
+            // A LIVE card is the file's state composed on the fly for a file with no
+            // stored history (see FileIndexingController::snapshot). It gets its own
+            // badge rather than "v" with nothing after it, because "v" reads as a
+            // version that exists.
+            + (snapshot.is_live
+                ? '<span style="font-size:10px;font-weight:700;color:#fff;background:#0d9488;'
+                  + 'border-radius:9999px;padding:2px 8px;white-space:nowrap;">LIVE</span>'
+                : '<span style="font-size:10px;font-weight:700;color:#fff;background:#334155;'
+                  + 'border-radius:9999px;padding:2px 8px;white-space:nowrap;">v'
+                  + escapeHtml(snapshot.version) + '</span>')
             + '</div>'
             + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;'
             + 'margin-top:4px;font-size:11px;color:#64748b;">'
             + '<span>' + escapeHtml(snapshot.event_label || snapshot.event_type) + '</span>'
             + '<span style="white-space:nowrap;">' + escapeHtml(snapshot.performed_at || '') + '</span>'
             + '</div>'
-            + '<div style="font-size:11px;color:#64748b;">' + icon('user', 12) + ' '
-            + escapeHtml(snapshot.performed_by_name || 'Unknown user') + '</div>'
+            // Nobody "performed" a live read, so the author line is omitted rather
+            // than filled with "Unknown user" — who indexed the file is in the
+            // Indexing section below, which is the honest place for it.
+            + (snapshot.performed_by_name
+                ? '<div style="font-size:11px;color:#64748b;">' + icon('user', 12) + ' '
+                  + escapeHtml(snapshot.performed_by_name) + '</div>'
+                : (snapshot.is_live ? '' : '<div style="font-size:11px;color:#64748b;">'
+                  + icon('user', 12) + ' Unknown user</div>'))
             + '</div>';
 
         const tracking = payload.tracking || {};
@@ -662,8 +675,13 @@
             + renderChanges(snapshot.changes)
             + body
             + '<p style="font-size:10px;color:#94a3b8;margin-top:8px;text-align:left;">'
-            + 'Every edit, new transaction and new link writes a new snapshot version — '
-            + 'nothing here is ever overwritten.</p>';
+            + (snapshot.is_live
+                ? 'Read live from the record — this file was indexed before snapshots '
+                  + 'were kept, so there is no version history to compare against yet. '
+                  + 'Its next edit writes v1.'
+                : 'Every edit, new transaction and new link writes a new snapshot version — '
+                  + 'nothing here is ever overwritten.')
+            + '</p>';
     }
 
     /**

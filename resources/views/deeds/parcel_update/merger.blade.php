@@ -226,36 +226,6 @@
                                                 </div>
                                                 <div class="py-1">
                                                     @if($record->knupda_status === 'Approved')
-                                                        @if(!$record->application_generated_at)
-                                                            <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
-                                                            </button>
-                                                        @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
-                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                            </button>
-                                                        @endif
-
-                                                        @if($record->application_generated_at)
-                                                            <a href="{{ route('plot-merger.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
-                                                            </a>
-                                                        @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
-                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                            </button>
-                                                        @endif
-                                                    @else
-                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                            <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                        </button>
-                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                            <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                        </button>
-                                                    @endif
-                                                </div>
-                                                <div class="py-1">
-                                                    @if($record->knupda_status === 'Approved')
                                                         @if(!$record->recommendation_generated_at)
                                                             <button onclick="generateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                                 <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
@@ -285,10 +255,13 @@
                                                     @endif
                                                 </div>
                                                 <div class="py-1">
-                                                    {{-- Approve sits SECOND TO LAST, immediately above Delete: the
-                                                         approval is given on the strength of the recommendation memo, so
-                                                         it cannot be offered above the two documents it depends on. Same
-                                                         order of business the duplex register follows. --}}
+                                                    {{-- Approve sits BELOW the recommendation and above the
+                                                         application: the approval is given on the strength of the
+                                                         recommendation memo, so it cannot be offered above it. Reject
+                                                         is the same question's other answer and sits beside it - its
+                                                         handler has always existed here, it had simply never been put
+                                                         on the menu. Same order of business the duplex register
+                                                         follows. --}}
                                                     @if($record->status === 'approved')
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
                                                             <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
@@ -300,6 +273,45 @@
                                                     @else
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Record the KNUPDA Handshake first">
                                                             <i data-lucide="check-circle" class="w-4 h-4 text-slate-300"></i> Approve
+                                                        </button>
+                                                    @endif
+                                                    @if(in_array($record->status, ['approved', 'rejected', 'commissioned'], true))
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="{{ $record->status === 'rejected' ? 'Already rejected' : 'Nothing left to reject' }}">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-300"></i> Reject
+                                                        </button>
+                                                    @else
+                                                        <button onclick="rejectRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-400"></i> Reject
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                                <div class="py-1">
+                                                    @if($record->knupda_status === 'Approved')
+                                                        @if(!$record->application_generated_at)
+                                                            <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
+                                                            </button>
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
+                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                            </button>
+                                                        @endif
+
+                                                        @if($record->application_generated_at)
+                                                            <a href="{{ route('plot-merger.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
+                                                            </a>
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                            </button>
+                                                        @endif
+                                                    @else
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                        </button>
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
                                                         </button>
                                                     @endif
                                                 </div>

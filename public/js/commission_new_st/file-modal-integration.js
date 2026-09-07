@@ -705,6 +705,19 @@ function commissionFileNumber() {
         longitude: document.getElementById('propertyLongitude')?.value || null
     };
 
+
+    /*
+     | Applicant contact, for the ST commissioning SMS.
+     |
+     | This payload is hand-built: a new input on the blade sends NOTHING until
+     | it is named here. phone_confirmed is set by
+     | public/js/sms-applicant-phone.js when the officer has cleared the
+     | shared-number warning; without it the server records the message as
+     | skipped rather than texting what may be an agent's number.
+     */
+    payload.applicant_phone = document.getElementById('primary_applicant_phone')?.value || '';
+    payload.phone_confirmed = document.querySelector('#primary_applicant_phone ~ input[name="phone_confirmed"]')?.value === '1';
+
     // Add applicant-specific data
     switch (applicantType) {
         case 'individual':

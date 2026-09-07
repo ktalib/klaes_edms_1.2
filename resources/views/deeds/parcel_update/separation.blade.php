@@ -190,35 +190,6 @@
                                                 </div>
                                                 <div class="py-1">
                                                     @if($record->knupda_status === 'Approved')
-                                                        @if(!$record->application_generated_at)
-                                                            <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
-                                                            </button>
-                                                        @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
-                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                            </button>
-                                                        @endif
-                                                        @if($record->application_generated_at)
-                                                            <a href="{{ route('plot-separation.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
-                                                            </a>
-                                                        @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
-                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                            </button>
-                                                        @endif
-                                                    @else
-                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                            <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
-                                                        </button>
-                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
-                                                            <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
-                                                        </button>
-                                                    @endif
-                                                </div>
-                                                <div class="py-1">
-                                                    @if($record->knupda_status === 'Approved')
                                                         @if(!$record->recommendation_generated_at)
                                                             <button onclick="generateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                                 <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
@@ -247,14 +218,17 @@
                                                     @endif
                                                 </div>
                                                 <div class="py-1">
-                                                    {{-- Approve sits SECOND TO LAST, immediately above Delete: the
-                                                         approval is given on the strength of the recommendation memo, so
-                                                         it cannot be offered above the two documents it depends on. Same
+                                                    {{-- Approve sits BELOW the recommendation and above the
+                                                         application: the approval is given on the strength of the
+                                                         recommendation memo, so it cannot be offered above it. Reject
+                                                         is the same question's other answer and sits beside it. Same
                                                          order of business the duplex register follows.
 
                                                          This page had no Approve item at all - the route and the
                                                          controller action existed, but the only way to approve was the
-                                                         KNUPDA Handshake, which is a different decision. --}}
+                                                         KNUPDA Handshake, which is a different decision. Reject is in
+                                                         the same position: the route exists, the menu never offered it,
+                                                         and this page still needs its own rejectRecord() below. --}}
                                                     @if($record->status === 'approved')
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
                                                             <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
@@ -266,6 +240,44 @@
                                                     @else
                                                         <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Record the KNUPDA Handshake first">
                                                             <i data-lucide="check-circle" class="w-4 h-4 text-slate-300"></i> Approve
+                                                        </button>
+                                                    @endif
+                                                    @if(in_array($record->status, ['approved', 'rejected', 'commissioned'], true))
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="{{ $record->status === 'rejected' ? 'Already rejected' : 'Nothing left to reject' }}">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-300"></i> Reject
+                                                        </button>
+                                                    @else
+                                                        <button onclick="rejectRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                            <i data-lucide="x-circle" class="w-4 h-4 text-slate-400"></i> Reject
+                                                        </button>
+                                                    @endif
+                                                </div>
+                                                <div class="py-1">
+                                                    @if($record->knupda_status === 'Approved')
+                                                        @if(!$record->application_generated_at)
+                                                            <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
+                                                            </button>
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Application already generated">
+                                                                <i data-lucide="check-circle-2" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                            </button>
+                                                        @endif
+                                                        @if($record->application_generated_at)
+                                                            <a href="{{ route('plot-separation.print-application', $record->id) }}" target="_blank" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-500"></i> Print Application
+                                                            </a>
+                                                        @else
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Generate application first">
+                                                                <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
+                                                            </button>
+                                                        @endif
+                                                    @else
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
+                                                        </button>
+                                                        <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
                                                         </button>
                                                     @endif
                                                 </div>
@@ -867,6 +879,47 @@
             }
         } catch (error) {
             Swal.fire('Error!', 'Failed to approve record.', 'error');
+        }
+    }
+
+    /**
+     * Reject a separation application - the other answer to the question Approve asks,
+     * so it sits beside it on the menu. The reason is carried to the controller, which
+     * files it in remarks; the other parcel-update pages ask for it the same way.
+     */
+    async function rejectRecord(id) {
+        const { value: reason } = await Swal.fire({
+            title: 'Reject Application',
+            input: 'textarea',
+            inputLabel: 'Reason for rejection',
+            inputPlaceholder: 'Enter reason here...',
+            showCancelButton: true,
+            confirmButtonColor: '#f97316',
+            confirmButtonText: 'Reject'
+        });
+
+        if (reason === undefined) return;
+
+        try {
+            const response = await fetch(`{{ url('plot-separation') }}/${id}/reject`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ reason })
+            });
+            const res = await response.json();
+
+            if (res.success) {
+                Swal.fire('Rejected!', res.message, 'success');
+                location.reload();
+            } else {
+                Swal.fire('Error!', res.message || 'Failed to reject record.', 'error');
+            }
+        } catch (error) {
+            Swal.fire('Error!', 'Failed to reject record.', 'error');
         }
     }
 

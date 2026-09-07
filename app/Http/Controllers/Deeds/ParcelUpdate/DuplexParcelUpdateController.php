@@ -628,19 +628,20 @@ class DuplexParcelUpdateController extends Controller
             ], 422);
         }
 
-        // Approval comes LAST. Each of these is a document the approver is meant to
-        // have read, and the register's menu greys the action out for the same reasons
-        // - but a greyed button is a reminder, and this is the rule. Reported one at a
-        // time, in the order the work is done, so the answer is always the next step
-        // rather than a list.
+        // Each of these is a document the approver is meant to have read, and the
+        // register's menu greys the action out for the same reasons - but a greyed
+        // button is a reminder, and this is the rule. Reported one at a time, in the
+        // order the work is done, so the answer is always the next step rather than
+        // a list.
+        //
+        // The conveyance is NOT among them any more: it reports the decision, so it
+        // is drawn after the approval, and generateConveyance() holds it there.
         $missing = null;
 
         if (strcasecmp((string) $duplex->knupda_status, 'Approved') !== 0) {
             $missing = 'Record the KNUPDA/Physical Planning clearance before approving.';
-        } elseif (!$duplex->conveyance_generated_at) {
-            $missing = 'Generate the conveyance before approving.';
         } elseif (!$duplex->recommendation_generated_at) {
-            $missing = 'Generate the memo before approving — the approval is given on the strength of it.';
+            $missing = 'Generate the recommendation before approving — the approval is given on the strength of it.';
         } elseif (trim((string) $duplex->site_plan) === '') {
             // Also covers a plan removed after capture, which the wizard cannot see.
             $missing = 'Attach the site plan before approving — it is the drawing the recommendation is read against.';
@@ -724,9 +725,30 @@ class DuplexParcelUpdateController extends Controller
         return view('deeds.parcel_update.duplex.print.recommendation', compact('duplex'));
     }
 
+    /**
+     * The conveyance carries the Commissioner's answer to the applicant, so there has
+     * to be an answer first. It used to be drawn before the approval - which asked the
+     * officer to write out a decision nobody had taken - and approve() required it in
+     * return, holding the two in the wrong order. The register's menu now lists it
+     * below Approve, and this is the rule behind that.
+     */
     public function generateConveyance(int $id): JsonResponse
     {
         $duplex = DuplexParcelUpdate::findOrFail($id);
+
+        $approved = in_array($duplex->status, [
+            DuplexParcelUpdate::STATUS_APPROVED,
+            DuplexParcelUpdate::STATUS_IN_LAND,
+            DuplexParcelUpdate::STATUS_COMMITTED,
+        ], true);
+
+        if (!$approved) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Approve the duplex before generating the conveyance — the conveyance reports the approval.',
+            ], 422);
+        }
+
         $duplex->update(['conveyance_generated_at' => now(), 'updated_by' => Auth::id()]);
 
         return response()->json(['success' => true, 'message' => 'Conveyance generated.']);
@@ -754,7 +776,7 @@ class DuplexParcelUpdateController extends Controller
         if (!$duplex->conveyance_generated_at || !$duplex->recommendation_generated_at) {
             return response()->json([
                 'success' => false,
-                'message' => 'Generate the memo and the conveyance before sending to Land.',
+                'message' => 'Generate the recommendation and the conveyance before sending to Land.',
             ], 422);
         }
 

@@ -275,6 +275,15 @@ function collectSuAApplicantData() {
         applicant_type: applicantType
     };
 
+    /*
+     | Applicant contact, for the ST commissioning SMS. This payload is
+     | hand-built, so a new input on the blade sends NOTHING until it is named
+     | here. phone_confirmed is set by public/js/sms-applicant-phone.js when the
+     | officer has cleared the shared-number warning.
+     */
+    data.applicant_phone = document.getElementById('sua_applicant_phone')?.value || '';
+    data.phone_confirmed = document.querySelector('#sua_applicant_phone ~ input[name="phone_confirmed"]')?.value === '1';
+
     // Collect data based on applicant type
     if (applicantType === 'individual') {
         data.applicant_title = document.getElementById('sua_title')?.value || '';

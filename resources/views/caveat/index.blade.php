@@ -448,6 +448,21 @@
                                             <label class="text-sm font-medium">Applicant/Solicitor <span class="required-asterisk">*</span></label>
                                             <input type="text" id="petitioner" placeholder="Name of person/organization entering caveat" class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                         </div>
+                                        {{--
+                                            The caveator's phone, for the caveat placed/lifted SMS. The
+                                            table recorded a petitioner and their address and no way to
+                                            reach them, so this field and caveats.petitioner_phone were
+                                            added together. It prefills from the file the officer has
+                                            already chosen, and warns when that number is on file against
+                                            many other files -- an agent's rather than this caveator's.
+                                        --}}
+                                        <div class="space-y-2">
+                                            <label class="text-sm font-medium">Applicant/Solicitor Phone</label>
+                                            <input type="text" id="petitioner-phone" placeholder="08031234567"
+                                                   data-sms-phone
+                                                   data-sms-phone-for="#file_number"
+                                                   class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        </div>
                                         <div class="space-y-2">
                                             <label class="text-sm font-medium">Party 1</label>
                                             <input type="text" id="grantor" placeholder="Name of party 1" class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -880,6 +895,8 @@
         <script src="{{ asset('js/file-number-search.js') }}"></script>
 
         <!-- 4. Event listeners -->
+        {{-- Prefills and vets the Applicant/Solicitor phone. --}}
+        <script src="{{ asset('js/sms-applicant-phone.js') }}?v={{ @filemtime(public_path('js/sms-applicant-phone.js')) }}" defer></script>
         <script src="{{ asset('js/caveat-events.js') }}"></script>
         
         <!-- 5. Global File Number Modal -->

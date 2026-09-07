@@ -579,7 +579,15 @@
                         ];
                     })
                     ->filter(function ($item) {
-                        return is_array($item) && !empty($item['utility_type']);
+                        if (!is_array($item)) {
+                            return false;
+                        }
+
+                        $utilityType = trim((string) ($item['utility_type'] ?? ''));
+
+                        // __existing_structure__ is a JSI-card internal marker,
+                        // not an approved shared utility for Table B.
+                        return $utilityType !== '' && !str_starts_with($utilityType, '__');
                     })
                     ->values()
                     ->all();
@@ -614,7 +622,12 @@
             'block' => $item['block'] ?? null,
             'section' => $item['section'] ?? null,
         ];
-    })->filter()->values()->all();
+    })->filter(function ($item) {
+        $utilityType = trim((string) ($item['utility_type'] ?? ''));
+
+        // Keep this second guard for non-print and legacy data paths too.
+        return $utilityType !== '' && !str_starts_with($utilityType, '__');
+    })->values()->all();
 
     $formatDimensionDisplay = function ($displayValue, $numericValue = null, $decimals = null) {
         $stringDisplay = null;

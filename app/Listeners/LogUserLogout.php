@@ -8,6 +8,7 @@ use App\Models\StaffSmsLog;
 use App\Models\User;
 use App\Models\UserActivityLog;
 use App\Services\ActivityLogService;
+use App\Services\StaffAttendanceNotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 
@@ -74,6 +75,16 @@ class LogUserLogout
                 // shift — StaffAttendanceSmsService makes that call, so signing
                 // out for lunch sends nothing and spends nothing.
                 SendStaffAttendanceSms::queueFor((int) $userId, StaffSmsLog::TYPE_LOGOUT);
+
+                // The in-app notice, which has no such gate: a lunchtime
+                // sign-out costs nothing to record, so every sign-out leaves a
+                // bell entry. The user reads it at their next sign-in, which is
+                // exactly when an unexpected one matters.
+                app(StaffAttendanceNotificationService::class)->logout(
+                    $user,
+                    null,
+                    StaffAttendanceNotificationService::MODE_MANUAL
+                );
             }
         } catch (\Exception $e) {
             \Log::error('Failed to log user logout: ' . $e->getMessage());
