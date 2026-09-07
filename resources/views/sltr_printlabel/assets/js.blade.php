@@ -616,6 +616,27 @@ document.addEventListener('DOMContentLoaded', function() {
         h+='<button onclick="fetchGeneratedBatches(document.getElementById(\'statusFilter\').value,'+(p.current_page+1)+')" class="px-3 py-1 border border-gray-300 rounded-md text-sm '+(p.current_page===p.last_page?'opacity-50 cursor-not-allowed':'hover:bg-gray-50')+'" '+(p.current_page===p.last_page?'disabled':'')+'>Next</button>';
         ctrl.innerHTML=h;
     }
+    // The Group column can hold a long CSV of sub prefixes (e.g. "300,301,...,331");
+    // printed raw it overflows into the neighbouring columns. Collapse it to a range
+    // (or a "first ... +N" summary) and keep the full list in the tooltip.
+    function formatBatchGroup(raw) {
+        var s=(raw===null||raw===undefined)?'':String(raw).trim();
+        if(!s)return{text:'—',title:''};
+        var parts=s.split(',').map(function(v){return v.trim();}).filter(function(v){return v!=='';});
+        if(!parts.length)return{text:'—',title:''};
+        var full=parts.join(', ');
+        if(parts.length===1)return{text:parts[0],title:parts[0]};
+        var nums=parts.map(function(v){return /^\d+$/.test(v)?parseInt(v,10):null;});
+        var text=parts[0]+' … +'+(parts.length-1);
+        if(nums.every(function(n){return n!==null;})){
+            var sorted=nums.slice().sort(function(a,b){return a-b;});
+            var consecutive=sorted.every(function(n,i){return i===0||n===sorted[i-1]+1;});
+            text=consecutive?(sorted[0]+'–'+sorted[sorted.length-1]+' ('+parts.length+')')
+                            :(sorted[0]+'…'+sorted[sorted.length-1]+' ('+parts.length+')');
+        }
+        return{text:text,title:full};
+    }
+    function attrEscape(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
     function renderBatchList() {
         var el=document.getElementById('batchListContent');
         if(!state.generatedBatches.length){el.innerHTML='<div class="p-8 text-center text-gray-500"><div class="mb-2"><i data-lucide="package" class="h-8 w-8 mx-auto text-gray-400"></i></div><p>No batches generated yet</p><p class="text-sm">Create your first batch in the "Select Files" tab</p></div>';lucide.createIcons();return;}
@@ -625,9 +646,9 @@ document.addEventListener('DOMContentLoaded', function() {
             var sc=colors[b.status]||'bg-gray-100 text-gray-800';var dt=new Date(b.created_at).toLocaleDateString();var cn=b.creator?b.creator.name:'Unknown';
             var fc=b.batch_items_count||(b.batch_items?b.batch_items.length:0)||b.generated_count||0;
             var dr=b.digit_rank?b.digit_rank:'—';
-            var grp=b.sub_prefix||'—';
+            var grp=formatBatchGroup(b.sub_prefix);
             var shelfRack = b.full_label || '—';
-            html+='<div class="p-3 grid grid-cols-10 gap-4 hover:bg-gray-50"><div class="font-medium truncate min-w-0" title="'+b.batch_number+'">'+b.batch_number+'</div><div class="text-sm">'+shelfRack+'</div><div class="text-sm">'+dr+'</div><div class="text-sm">'+grp+'</div><div class="text-sm">'+dt+'</div><div class="text-sm">'+fc+'</div><div class="text-sm">QR Code</div><div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+sc+'">'+(b.status.charAt(0).toUpperCase()+b.status.slice(1))+'</span></div><div class="text-sm">'+cn+'</div><div class="flex gap-1"><button onclick="viewBatchDetails('+b.id+')" class="p-1 text-blue-600 hover:text-blue-800" title="View"><i data-lucide="eye" class="h-4 w-4"></i></button>';
+            html+='<div class="p-3 grid grid-cols-10 gap-4 hover:bg-gray-50"><div class="font-medium truncate min-w-0" title="'+b.batch_number+'">'+b.batch_number+'</div><div class="text-sm">'+shelfRack+'</div><div class="text-sm">'+dr+'</div><div class="text-sm truncate min-w-0" title="'+attrEscape(grp.title)+'">'+grp.text+'</div><div class="text-sm">'+dt+'</div><div class="text-sm">'+fc+'</div><div class="text-sm">QR Code</div><div><span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium '+sc+'">'+(b.status.charAt(0).toUpperCase()+b.status.slice(1))+'</span></div><div class="text-sm">'+cn+'</div><div class="flex gap-1"><button onclick="viewBatchDetails('+b.id+')" class="p-1 text-blue-600 hover:text-blue-800" title="View"><i data-lucide="eye" class="h-4 w-4"></i></button>';
             if(b.status==='generated')html+='<button onclick="printBatchLabels('+b.id+')" class="p-1 text-green-600 hover:text-green-800" title="Print"><i data-lucide="printer" class="h-4 w-4"></i></button>';
             if(b.status!=='printed'&&b.status!=='completed')html+='<button onclick="deleteBatch('+b.id+')" class="p-1 text-red-600 hover:text-red-800" title="Delete"><i data-lucide="trash-2" class="h-4 w-4"></i></button>';
             html+='</div></div>';

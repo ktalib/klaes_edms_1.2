@@ -3793,44 +3793,92 @@
     };
 
     /**
-     * The approval decision: approve or reject, in one place.
+     * The approval decision: approve or reject, asked once, answered in a card.
      *
-     * They are two answers to the same question, so the menu asks it once and the modal
-     * carries both. Reject used to sit further down the menu as if it were an unrelated
-     * action, which invited it being clicked by mistake on the way past.
+     * They are two answers to the same question, so the menu carries one item and
+     * this opens with both. What the split into two menu items was protecting
+     * against — a live-looking approval on a duplex that cannot be approved — is
+     * handled inside the card instead: Approve is offered only when the register
+     * says it is available, and otherwise sits greyed with the first missing step
+     * spelled out. The rules themselves are the register's, and the server
+     * enforces them again on the way in.
      *
-     * `canApprove` is false once the duplex is already approved — the decision is then
-     * only whether to reject it, so the approve button is not offered.
+     * `opts` is what the row knows: { label, canApprove, canReject, blocker }.
+     * Called without it — nothing does today — both answers are offered and the
+     * server has the last word.
      */
-    /**
-     * The approval, with its consequences stated before it is given.
-     *
-     * Only ever reached from an ENABLED Approval item, which the register gates on the
-     * chain up to this point — stages, KNUPDA/Physical Planning, recommendation, site
-     * plan. The conveyance is not among them: it reports this decision, so it comes
-     * after. So this no longer has to explain why approving is impossible; when it
-     * opens, it is possible. Reject has its own menu item and is no longer carried here.
-     */
-    window.openApprovalDecision = async function (id) {
+    window.openApprovalDecision = async function (id, opts) {
+        const o = opts || {};
+        const canApprove = o.canApprove !== false;
+        const canReject  = o.canReject  !== false;
+        const label      = o.label ? String(o.label) : '';
+
+        // No SweetAlert2 (it has failed to load before): fall back to the two
+        // actions' own confirmations rather than leaving the item dead.
         if (!window.Swal) {
+            if (!canApprove) return rejectDuplex(id);
             return approveDuplex(id);
         }
 
-        const r = await Swal.fire({
-            icon: 'question',
-            title: 'Approve this duplex?',
-            html: '<p style="font-size:13px;color:#475569;line-height:1.6">Approving closes the '
-                + 'KNUPDA/Physical Planning answer and the recommendation as they stand, opens '
-                + 'the conveyance, and lists the duplex for commissioning.</p>',
-            showCancelButton: true,
-            confirmButtonText: 'Approve',
-            confirmButtonColor: '#059669',
-            cancelButtonText: 'Cancel',
-            reverseButtons: true,
-            allowOutsideClick: false,
+        const esc = s => String(s ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        const option = (key, title, note, enabled) =>
+            '<button type="button" id="dx-decide-' + key + '" class="dx-decision dx-decision-' + key + '"'
+            + (enabled ? '' : ' disabled') + '>'
+            + '<span class="dx-decision-title">' + title + '</span>'
+            + '<span class="dx-decision-note">' + note + '</span>'
+            + '</button>';
+
+        // Which duplex, by name. The menu is detached from its row and floats over
+        // the register, so a card that only said "Approval decision" would leave the
+        // officer to remember which line they opened it from.
+        const html = '<div style="text-align:left">'
+            + (label
+                ? '<p style="margin:0 0 .35rem;font-size:11px;font-weight:800;letter-spacing:.06em;'
+                  + 'text-transform:uppercase;color:#94a3b8">' + esc(label) + '</p>'
+                : '')
+            + option('approve', 'Approve',
+                canApprove
+                    ? 'Closes the KNUPDA/Physical Planning answer and the recommendation as they '
+                      + 'stand, opens the conveyance, and lists the duplex for commissioning.'
+                    : esc(o.blocker || 'Not available yet'),
+                canApprove)
+            + option('reject', 'Reject',
+                'Closes the duplex: every action except viewing is disabled. You will be asked '
+                + 'for a reason.',
+                canReject)
+            + '</div>';
+
+        // The answer is read off the card and acted on AFTER it has closed:
+        // Swal.fire() settles when the popup is gone, and Reject opens a second
+        // popup straight away — firing that while the first is still animating
+        // out loses it.
+        let choice = null;
+
+        await Swal.fire({
+            title: 'Approval decision',
+            html: html,
+            showConfirmButton: false,
+            showCloseButton: true,
+            focusConfirm: false,
+            allowOutsideClick: true,
+            didOpen: () => {
+                const popup = Swal.getPopup();
+                const pick = (key) => {
+                    const el = popup.querySelector('#dx-decide-' + key);
+                    if (el) el.addEventListener('click', () => { choice = key; Swal.close(); });
+                };
+                pick('approve');
+                pick('reject');
+            },
         });
 
-        if (r.isConfirmed) return approveDuplex(id, true);
+        // Approve acts on the card's own click: the card is the decision point and
+        // states what approving does, so a second "are you sure" would only be a
+        // second click on the same answer. Reject still asks — it takes a reason.
+        if (choice === 'approve') return approveDuplex(id, true);
+        if (choice === 'reject')  return rejectDuplex(id);
     };
 
     /** `decided` skips the confirmation — the approval modal has already asked. */

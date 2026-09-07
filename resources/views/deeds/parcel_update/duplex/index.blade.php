@@ -363,26 +363,29 @@
                                                     class="menu-item block {{ $canPrintRec ? '' : 'is-disabled' }}">Print Recommendation</a>
                                             </div>
 
-                                            {{-- Approve and reject were ONE item opening a modal that carried
-                                                 both answers. That made Approval read as available on a duplex
-                                                 that cannot be approved: the item was disabled only when it
-                                                 could be neither approved NOR rejected, and a draft can always
-                                                 be rejected — so on every draft it sat there in bold, live,
-                                                 above four greyed steps it is supposed to come after.
+                                            {{-- Approve and Reject are two answers to ONE question, so the menu
+                                                 asks it once and the card carries both.
 
-                                                 Two items now, each enabled by its own rule, so what the menu
-                                                 shows is what the action will do. Reject is kept quiet — small
-                                                 and grey, not red — because it is the rarer answer and this is
-                                                 a menu people pass through on the way to something else. --}}
+                                                 They were split into separate items for a reason worth keeping:
+                                                 a single item enabled whenever EITHER answer was possible read
+                                                 as an approval invitation on a draft — a draft can always be
+                                                 rejected, so the item sat live and bold above four greyed steps
+                                                 it is supposed to come after. That is answered in the card
+                                                 rather than by splitting the menu: the item is only green and
+                                                 bold once the duplex can actually be approved, and inside the
+                                                 card the Approve option is offered only when it is really
+                                                 available — otherwise it is greyed and says, in words, the
+                                                 first thing still missing. --}}
                                             <div class="py-1">
-                                                <button onclick="openApprovalDecision({{ $record->id }})"
-                                                    @disabled(!$canApprove)
-                                                    title="{{ $why($canApprove, $approvalBlocker) }}"
-                                                    class="menu-item text-emerald-700 font-bold">Approve</button>
-                                                <button onclick="rejectDuplex({{ $record->id }})"
-                                                    @disabled(!$canReject)
-                                                    title="{{ $why($canReject, 'Nothing left to reject') }}"
-                                                    class="menu-item">Reject</button>
+                                                <button onclick="openApprovalDecision({{ $record->id }}, @js([
+                                                        'label'      => $record->duplex_id,
+                                                        'canApprove' => $canApprove,
+                                                        'canReject'  => $canReject,
+                                                        'blocker'    => $approvalBlocker,
+                                                    ]))"
+                                                    @disabled(!$canApprove && !$canReject)
+                                                    title="{{ $why($canApprove || $canReject, 'Nothing left to decide') }}"
+                                                    class="menu-item {{ $canApprove ? 'text-emerald-700 font-bold' : '' }}">Approve / Reject</button>
                                             </div>
 
                                             <div class="py-1">
@@ -462,5 +465,28 @@
        disappearing — the officer can still see where they are in the sequence. */
     .menu-item:disabled,
     .menu-item.is-disabled { color:#cbd5e1; cursor:not-allowed; pointer-events:none; }
+
+    /* The two answers on the approval card. Each states what it does underneath
+       itself, so the decision is read rather than guessed at; an answer that is
+       not available greys out in place and says why, instead of vanishing and
+       leaving the officer to wonder where it went. */
+    .dx-decision {
+        display:block; width:100%; text-align:left; margin-top:.6rem;
+        padding:.85rem 1rem; border:1px solid #e2e8f0; border-radius:.9rem;
+        background:#fff; cursor:pointer; transition:border-color .12s ease, background .12s ease, box-shadow .12s ease;
+    }
+    .dx-decision:hover:not(:disabled) { box-shadow:0 4px 14px rgb(15 23 42 / .08); }
+    .dx-decision:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+    .dx-decision-title { display:block; font-size:.85rem; font-weight:800; }
+    .dx-decision-note  { display:block; font-size:.72rem; line-height:1.5; color:#64748b; margin-top:.2rem; }
+
+    .dx-decision-approve .dx-decision-title { color:#047857; }
+    .dx-decision-approve:hover:not(:disabled) { border-color:#6ee7b7; background:#f0fdf4; }
+    .dx-decision-reject  .dx-decision-title { color:#b91c1c; }
+    .dx-decision-reject:hover:not(:disabled) { border-color:#fca5a5; background:#fef2f2; }
+
+    .dx-decision:disabled { cursor:not-allowed; background:#f8fafc; border-style:dashed; }
+    .dx-decision:disabled .dx-decision-title { color:#94a3b8; }
+    .dx-decision:disabled .dx-decision-note  { color:#94a3b8; }
 </style>
 @endsection
