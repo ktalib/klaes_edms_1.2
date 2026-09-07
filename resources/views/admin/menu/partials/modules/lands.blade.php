@@ -261,7 +261,7 @@
 
 
       <!-- d. Land Registration -->
-      @if($hasRole('Land Registration') || $hasRole('Supper Admin'))
+      @if($hasRole('Land Registration') || $hasRole('Super Admin'))
         <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
           data-section="land-registration">
           <div class="flex items-center gap-2">
@@ -277,19 +277,23 @@
                the ones registered through this system, which hold a number from
                the vault. They are deliberately not merged. --}}
 
-          <!-- i. Land Registry (historical, from PRA) -->
-          <a href="{{ route('land-registration.capture.index') }}"
-            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-registration.capture.index') ? 'active' : '' }}">
-            <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
-            <span>Land Registry</span>
-          </a>
+        
 
-          <!-- ii. Land Registry (New Registration) -->
+          <!-- i. Land Registry (New Registration) -->
           <a href="{{ route('land-registration.registration.index') }}"
             class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-registration.registration.*') ? 'active' : '' }}">
             <i data-lucide="book-open" class="h-3.5 w-3.5 text-orange-400"></i>
             <span>Land Registry (New Registration)</span>
           </a>
+
+          <!-- iI. Land Registry (historical, from PRA) -->
+
+  <a href="{{ route('land-registration.capture.index') }}"
+            class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-registration.capture.index') ? 'active' : '' }}">
+            <i data-lucide="archive" class="h-3.5 w-3.5 text-orange-400"></i>
+            <span>Land Registry (Legacy)</span>
+          </a>
+
         </div>
       @endif
       <!-- e. File History (parent menu: History View + Related Files + File Search) -->

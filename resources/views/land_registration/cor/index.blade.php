@@ -225,7 +225,7 @@
             }
 
             .title {
-                font-size: 11px !important;
+                font-size: 13px !important;
                 margin-bottom: 4px !important;
             }
 
@@ -248,8 +248,8 @@
                slip. It is deliberately smaller than the body text: it is a stamp
                impression, not prose. */
             .stamp-block {
-                font-size: 8.5px !important;
-                line-height: 1.25 !important;
+                font-size: 13px !important;
+                line-height: 1.3 !important;
             }
 
             /* The type shrinks for print but the signing gap must not: it is
@@ -346,7 +346,7 @@
             text-align: center;
             margin-bottom: 6px;
             font-weight: bold;
-            font-size: 11px;
+            font-size: 13px;
         }
 
         .red-box-compact {
@@ -365,7 +365,7 @@
            of the certificate's body text. */
         .stamp-block {
             padding: 2px 2px;
-            font-size: 9px;
+            font-size: 13px;
             line-height: 1.3;
             color: #111;
             letter-spacing: 0.02em;
