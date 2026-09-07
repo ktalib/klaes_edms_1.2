@@ -4478,6 +4478,168 @@ class LegalSearchService
     }
 
     /**
+     * The db source keys the report engine emits, mapped back to the short labels
+     * the "Existing Records" table and the Timeline modal both display. Synthetic
+     * sources ("File Commissioning", "Related Fileno", "Temporary File") are not
+     * listed: they already read as labels and pass through unchanged.
+     */
+    private const TIMELINE_SOURCE_LABELS = [
+        'pra' => 'PRA',
+        'file_history_staging' => 'File History',
+        'CofO_staging' => 'CofO',
+        'deed_registrations' => 'Deed Reg.',
+    ];
+
+    /**
+     * The file's dealings exactly as the Property Timeline shows them.
+     *
+     * Backs the "Existing Records for this File" table in the Add Property Record
+     * dialog. The raw union below (findRecordsForFileNumberAllSources) lists every
+     * row every source holds, which means the operator sees the same deed twice
+     * whenever File History and PRA both carry it — and in no particular order.
+     *
+     * Rather than grow a second set of dedupe and ordering rules that would drift
+     * from the timeline's (it has drifted before: the Property Timeline modal once
+     * kept both copies of a duplicated PRA deed), this reads the rows straight out
+     * of buildPrintReport() — the same engine behind the Legal Search timeline, the
+     * certified slip and the Property Timeline modal. Its verdict on what is a
+     * duplicate, and its arrangement, are the ones the operator already sees
+     * elsewhere for the same file.
+     *
+     * The prop_id is resolved and passed because the engine scopes the timeline to
+     * the parcel with it: without it a KANGIS alias's own rows join the list as
+     * untyped "Related Fileno" entries the modal does not show.
+     *
+     * The engine's synthetic rows are then dropped. It emits lifecycle events —
+     * File Commissioning, Recertification, Temporary File, Decommissioning — that
+     * are derived, not captured: they name no instrument and have no registration
+     * of their own. This panel exists to be compared against an instrument being
+     * keyed in, so it lists only rows that came from one of the four real source
+     * tables.
+     *
+     * Falls back to the raw union when the engine yields nothing, so a file it
+     * cannot key on still fills the panel.
+     *
+     * @return array Rows in the shape the dialog renders, oldest dealing first
+     */
+    public function findTimelineRecordsForFileNumber(string $fileNo): array
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return [];
+        }
+
+        $rows = [];
+
+        try {
+            $query = ['file_number' => $fileNo];
+
+            $propId = $this->resolvePropIdForFileNumber($fileNo);
+            if ($propId !== null) {
+                $query['prop_id'] = $propId;
+            }
+
+            $report = $this->buildPrintReport($query);
+            if (($report['status'] ?? null) === 200) {
+                $rows = $report['payload']['data']['rows'] ?? [];
+            }
+        } catch (\Throwable $e) {
+            // The panel is an aid, never a gate — a failed engine run must leave the
+            // operator with the raw union rather than an empty table.
+            Log::warning('findTimelineRecordsForFileNumber: report engine failed', [
+                'file_no' => $fileNo,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if (empty($rows)) {
+            return $this->findRecordsForFileNumberAllSources($fileNo);
+        }
+
+        // Real instruments only. A row that came from a source table carries that
+        // table's key here (mapPrintRowToExistingRecord turns it back into a label);
+        // anything else is one of the engine's derived lifecycle rows.
+        $rows = array_filter($rows, static function (array $row): bool {
+            return isset(self::TIMELINE_SOURCE_LABELS[(string) ($row['source_table'] ?? '')]);
+        });
+
+        return array_values(array_map(
+            fn(array $row) => $this->mapPrintRowToExistingRecord($row),
+            $rows
+        ));
+    }
+
+    /**
+     * One print-report row in the shape the "Existing Records" table renders.
+     *
+     * The report formats for paper: "-" stands in for an absent value and the
+     * registration particulars arrive pre-joined as "serial/page/volume" with 0 for
+     * each missing part. Both are unpicked here — the table has its own em-dash for
+     * empty, and its duplicate check compares the three parts separately, where a
+     * "0" means "not recorded" and must not read as the serial number zero.
+     */
+    private function mapPrintRowToExistingRecord(array $row): array
+    {
+        $blank = static fn($v) => (trim((string) $v) === '-' ? '' : trim((string) $v));
+
+        $regNo = $blank($row['reg_no'] ?? '');
+        $parts = $regNo !== '' ? array_pad(explode('/', $regNo), 3, '') : ['', '', ''];
+        $part = static fn($v) => (trim((string) $v) === '0' ? '' : trim((string) $v));
+
+        $source = (string) ($row['source_table'] ?? '');
+
+        return [
+            'source_table' => self::TIMELINE_SOURCE_LABELS[$source] ?? $source,
+            'file_number' => $blank($row['file_no'] ?? ''),
+            'transaction_type' => $blank($row['instrument_type'] ?? ''),
+            'party_1' => $blank($row['grantor'] ?? ''),
+            'party_2' => $blank($row['grantee'] ?? ''),
+            'party_3' => $blank($row['party_3'] ?? ''),
+            'serial_no' => $part($parts[0]),
+            'page_no' => $part($parts[1]),
+            'volume_no' => $part($parts[2]),
+            // Kept whole as well so the table prints the same "0/0/0" the timeline
+            // does instead of an em-dash for a row with no particulars on record.
+            'reg_no' => $regNo,
+            'transaction_date' => $blank($row['transaction_date'] ?? '') ?: $blank($row['reg_date'] ?? ''),
+            'root_of_title' => $blank($row['root_of_title'] ?? ''),
+        ];
+    }
+
+    /**
+     * The parcel's prop_id from PropID_Master, the canonical registry — file_indexings
+     * carries a wrong prop_id on a large share of legacy rows. Null when the file is
+     * not registered there, which leaves the timeline unscoped rather than empty.
+     */
+    private function resolvePropIdForFileNumber(string $fileNo): ?string
+    {
+        $fileNo = trim($fileNo);
+        if ($fileNo === '') {
+            return null;
+        }
+
+        try {
+            $aliasColumns = ['primary_file_number', 'mlsFNo', 'kangisFileNo', 'NewKANGISFileno', 'temp_fileno'];
+
+            $propId = DB::connection('sqlsrv')->table('PropID_Master')
+                ->where(function ($q) use ($aliasColumns, $fileNo) {
+                    foreach ($aliasColumns as $col) {
+                        $q->orWhereRaw("UPPER(LTRIM(RTRIM({$col}))) = ?", [strtoupper($fileNo)]);
+                    }
+                })
+                ->whereNotNull('prop_id')
+                ->orderBy('id')
+                ->value('prop_id');
+
+            $propId = trim((string) $propId);
+
+            return $propId !== '' ? $propId : null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
      * Every record held against a file number across ALL four sources, newest first.
      *
      * Backs the "Existing Records for this File" table inside the Add Property
@@ -4506,14 +4668,21 @@ class LegalSearchService
             }
         }
 
-        // Newest first: the instrument most likely to be re-keyed sits at the top.
+        // Chronological, oldest first: the panel is read as the file's dealings in
+        // the order they happened, so the instrument a new one follows on from is
+        // the row above it. Rows whose date will not parse sink to the bottom
+        // rather than leading the list with an unknown.
+        //
         // sort_date is the unformatted value normalizeRow() carries for exactly
         // this purpose — transaction_date is already display-formatted.
-        usort($all, function ($a, $b) {
-            $da = strtotime((string) ($a['sort_date'] ?? $a['transaction_date'] ?? '')) ?: 0;
-            $db = strtotime((string) ($b['sort_date'] ?? $b['transaction_date'] ?? '')) ?: 0;
+        $sortKey = static function (array $row): int {
+            $parsed = strtotime((string) ($row['sort_date'] ?? $row['transaction_date'] ?? ''));
 
-            return $db <=> $da;
+            return $parsed === false ? PHP_INT_MAX : $parsed;
+        };
+
+        usort($all, static function ($a, $b) use ($sortKey) {
+            return $sortKey($a) <=> $sortKey($b);
         });
 
         return $all;

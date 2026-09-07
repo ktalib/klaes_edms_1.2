@@ -137,6 +137,48 @@
         'Deed of Surrender and Release': 'Surrenderor_2'
     };
 
+    // Historical Deed of Purchase Register capture. The register names its sides
+    // plainly, so the card asks for "Party 1" / "Party 2" rather than the
+    // Grantor / Grantee wording every other instrument falls back to.
+    const PURCHASE_PARTY_LABELS = { first: 'Party 1', second: 'Party 2' };
+
+    /**
+     * Matched on the substring, not the catalogue key, so the legacy spellings
+     * in the lookup table ("Deed of Purchase", "Deed of Purchase Registration")
+     * all reach the same rules -- the same way the Payment/Receipt fields match.
+     */
+    function isDeedOfPurchaseType(transactionType) {
+        return String(transactionType || '').toLowerCase().includes('deed of purchase');
+    }
+
+    /**
+     * Party labels for an instrument type, with the caller's own fallback for
+     * types the table does not name.
+     */
+    function resolvePartyLabels(transactionType, fallback) {
+        if (isDeedOfPurchaseType(transactionType)) {
+            return Object.assign({}, PURCHASE_PARTY_LABELS);
+        }
+
+        return TRANSACTION_PARTY_LABELS[transactionType] || fallback;
+    }
+
+    /**
+     * Rename a party label without destroying the rest of it -- the label
+     * carries a required marker beside the name, and writing textContent on the
+     * label itself takes that marker with it.
+     */
+    function setPartyLabelText(labelElement, text) {
+        if (!labelElement || !text) return;
+
+        const span = labelElement.querySelector('[data-role="label-text"]');
+        if (span) {
+            span.textContent = text;
+        } else {
+            labelElement.textContent = text;
+        }
+    }
+
     const GOVERNMENT_TRANSACTION_TYPES = [
         'Certificate of Occupancy',
         'ST Certificate of Occupancy',
@@ -189,6 +231,10 @@
             this.partyLabelSecond = container.querySelector('[data-role="party-label-second"]');
             this.partyLabelThird = container.querySelector('[data-role="party-label-third"]');
             this.partyLabelFourth = container.querySelector('[data-role="party-label-fourth"]');
+            // The "*" beside Party 1 and the note under it -- both answer to the
+            // Deed of Purchase rule that Party 1 may be left blank.
+            this.partyRequiredFirst = container.querySelector('[data-role="party-required-first"]');
+            this.purchasePartyHint = container.querySelector('[data-role="purchase-party-hint"]');
             this.partyInputFirst = container.querySelector('[data-name-key="firstParty"]');
             this.partyInputSecond = container.querySelector('[data-name-key="secondParty"]');
             this.partyInputThird = container.querySelector('[data-name-key="thirdParty"]');
@@ -210,6 +256,9 @@
             this.existingRecordsCount = container.querySelector('[data-role="existing-records-count"]');
             this.existingRecordsLoading = container.querySelector('[data-role="existing-records-loading"]');
             this.duplicateWarning = container.querySelector('[data-role="duplicate-warning"]');
+            // Deed of Purchase only: the "Use as Party 1" column in the existing
+            // records table, and the note that explains it.
+            this.existingRecordsPickerNote = container.querySelector('[data-role="existing-records-picker-note"]');
             this.existingRecordsUrl = container.dataset.existingRecordsUrl || '';
             this.existingRecords = [];
             // Set once the operator confirms "Add anyway" on an exact duplicate;
@@ -1235,7 +1284,7 @@
             }
 
             const transactionType = this.state.transactionType || '';
-            const labels = TRANSACTION_PARTY_LABELS[transactionType] || { first: 'Grantor', second: 'Grantee' };
+            const labels = resolvePartyLabels(transactionType, { first: 'Grantor', second: 'Grantee' });
             const normalizedTx = String(transactionType || '').toLowerCase();
             const isOpTransaction = normalizedTx.includes('occupancy permit')
                 || normalizedTx.includes('occupation permit')
@@ -1256,15 +1305,7 @@
                 }
             }
 
-            const updateLabelText = (labelElement, text) => {
-                if (!labelElement || !text) return;
-                const span = labelElement.querySelector('[data-role="label-text"]');
-                if (span) {
-                    span.textContent = text;
-                } else {
-                    labelElement.textContent = text;
-                }
-            };
+            const updateLabelText = setPartyLabelText;
 
             if (this.partyLabelFirst && labels.first) {
                 updateLabelText(this.partyLabelFirst, labels.first);
@@ -1346,6 +1387,12 @@
                 this.syncModelElement('receiptNo', '');
             }
 
+            // Party 1 is optional for a Deed of Purchase alone: the register is
+            // being captured for files that are often not indexed yet, and the
+            // seller's name is only readable off the physical file. Saved blank
+            // now, filled in at indexing. Party 2 stays required.
+            this.applyPurchasePartyRules(isPurchaseTransaction);
+
             if (!isOpTransaction) {
                 this.setState('opType', '', { silent: true });
                 this.syncModelElement('opType', '');
@@ -1384,6 +1431,101 @@
             this.updateTripartiteControls();
         }
 
+        /** True while the card is capturing a historical Deed of Purchase. */
+        isDeedOfPurchaseCapture() {
+            return isDeedOfPurchaseType(this.state.transactionType);
+        }
+
+        /**
+         * Party 1 rules for a Deed of Purchase.
+         *
+         * The Purchase Register is being captured off paper, for files that have
+         * frequently not been indexed yet -- the seller is only known once the
+         * physical file is read. So Party 1 drops its `required` and its "*",
+         * and the note under it says why. Every other instrument is untouched.
+         */
+        applyPurchasePartyRules(isPurchase) {
+            if (this.partyInputFirst) {
+                this.partyInputFirst.required = !isPurchase;
+            }
+
+            if (this.partyRequiredFirst) {
+                this.partyRequiredFirst.classList.toggle('hidden', Boolean(isPurchase));
+            }
+
+            if (this.purchasePartyHint) {
+                this.purchasePartyHint.classList.toggle('hidden', !isPurchase);
+            }
+
+            // The picker in the existing-records table belongs to this mode too.
+            this.updateExistingRecordsPartyPicker();
+        }
+
+        /**
+         * Show or hide the "Use as Party 1" column on the existing-records table.
+         *
+         * The table itself is unconditional -- it is the duplicate check every
+         * instrument gets. Only the column that carries a row's Party 1 into the
+         * form is confined to Deed of Purchase capture.
+         */
+        updateExistingRecordsPartyPicker() {
+            const isPurchase = this.isDeedOfPurchaseCapture();
+
+            if (!this.existingRecordsSection) return;
+
+            this.existingRecordsSection
+                .querySelectorAll('[data-col="use-party1"]')
+                .forEach((cell) => cell.classList.toggle('hidden', !isPurchase));
+
+            if (this.existingRecordsPickerNote) {
+                const hasRows = (this.existingRecords || []).length > 0;
+                this.existingRecordsPickerNote.classList.toggle('hidden', !(isPurchase && hasRows));
+            }
+        }
+
+        /**
+         * Carry one existing transaction's Party 1 into the form's Party 1.
+         *
+         * Explicitly officer-driven: nothing is copied until a row is picked, and
+         * the first row is never assumed. Only Party 1 moves -- the rest of the
+         * Deed of Purchase is keyed from the document in hand.
+         */
+        applyExistingRecordPartyOne(record, rowIndex) {
+            const party1 = normalizeText(record && record.party_1);
+
+            // Rows without a Party 1 are never given a button, so this is a guard
+            // rather than a case the operator can reach.
+            if (!party1 || party1 === '-') return;
+
+            this.setState('firstParty', party1);
+
+            // Mark which row the name came from. Carried on the button rather
+            // than the row's background, which evaluateDuplicate() repaints.
+            this.markPickedPartyOneRow(rowIndex);
+
+            if (this.partyInputFirst) {
+                this.partyInputFirst.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                this.partyInputFirst.focus();
+            }
+        }
+
+        /** Leave the picked row's button reading as the chosen one, and reset the rest. */
+        markPickedPartyOneRow(rowIndex) {
+            if (!this.existingRecordsBody) return;
+
+            const idleClasses = ['text-blue-700', 'bg-white', 'border-blue-300', 'hover:bg-blue-50'];
+            const pickedClasses = ['text-emerald-800', 'bg-emerald-50', 'border-emerald-400', 'hover:bg-emerald-100'];
+
+            this.existingRecordsBody.querySelectorAll('[data-action="use-party1"]').forEach((button) => {
+                const row = button.closest('tr');
+                const isPicked = row && row.getAttribute('data-existing-row') === String(rowIndex);
+
+                button.classList.remove(...(isPicked ? idleClasses : pickedClasses));
+                button.classList.add(...(isPicked ? pickedClasses : idleClasses));
+                button.textContent = isPicked ? '✓ Party 1' : 'Use as Party 1';
+            });
+        }
+
         updateTripartiteControls() {
             const transactionType = this.state.transactionType || '';
             const isTripartiteDropdown = transactionType === 'Tripartite Mortgage';
@@ -1392,7 +1534,9 @@
 
             const checkboxElement = this.modelElements.get('tripartiteHasThird');
             const fourthPartyCheckbox = this.modelElements.get('hasFourthParty');
-            const labels = TRANSACTION_PARTY_LABELS[transactionType] || {};
+            // Empty fallback on purpose: the branch below only overwrites the
+            // second-party label when the table actually names one.
+            const labels = resolvePartyLabels(transactionType, {});
 
             if (this.tripartiteToggleWrapper) {
                 this.tripartiteToggleWrapper.classList.toggle('hidden', !(isTripartiteDropdown || isSurrender || isMortgage));
@@ -1524,10 +1668,10 @@
 
                 // Update Labels
                 if (this.partyLabelSecond) {
-                    this.partyLabelSecond.textContent = isSurrender ? 'Surrenderee' : (labels.second || 'Second Party');
+                    setPartyLabelText(this.partyLabelSecond, isSurrender ? 'Surrenderee' : (labels.second || 'Second Party'));
                 }
                 if (this.partyLabelThird) {
-                    this.partyLabelThird.textContent = isSurrender ? 'Co-Surrenderor' : (labels.third || 'Co-mortgagor');
+                    setPartyLabelText(this.partyLabelThird, isSurrender ? 'Co-Surrenderor' : (labels.third || 'Co-mortgagor'));
                 }
 
                 // Update Placeholders
@@ -1545,7 +1689,7 @@
                     this.partyInputSecond.name = SECOND_PARTY_FIELD_MAP[transactionType] || 'Grantee';
                 }
                 if (this.partyLabelSecond) {
-                    this.partyLabelSecond.textContent = labels.second || 'Second Party';
+                    setPartyLabelText(this.partyLabelSecond, labels.second || 'Second Party');
                 }
                 if (this.partyInputSecond) {
                     const labelLower = (labels.second || 'second party').toLowerCase();
@@ -1673,7 +1817,10 @@
             if (this.existingRecordsLoading) this.existingRecordsLoading.classList.remove('hidden');
 
             try {
-                const url = `${this.existingRecordsUrl}?file_number=${encodeURIComponent(cleaned)}&source=all`;
+                // "timeline", not "all": the deduplicated, arranged set the Property
+                // Timeline shows for this file, rather than the raw union that lists
+                // the same deed once per source table and in no order.
+                const url = `${this.existingRecordsUrl}?file_number=${encodeURIComponent(cleaned)}&source=timeline`;
                 const response = await fetch(url, {
                     headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     credentials: 'same-origin'
@@ -1729,10 +1876,11 @@
                 // A file with nothing on it is the ordinary "new record" case — say
                 // so plainly rather than showing an empty grid.
                 this.existingRecordsBody.innerHTML =
-                    '<tr><td colspan="8" class="px-2 py-4 text-center text-gray-400">' +
+                    '<tr><td colspan="9" class="px-2 py-4 text-center text-gray-400">' +
                     'No records held against this file yet — this will be the first.' +
                     '</td></tr>';
                 this.existingRecordsSection.classList.remove('hidden');
+                this.updateExistingRecordsPartyPicker();
                 return;
             }
 
@@ -1749,6 +1897,16 @@
                 const reg = this.formatExistingRegParticulars(record);
                 const date = record.transaction_date || record.instrument_date || '—';
 
+                // "Use as Party 1" — only where there is a Party 1 to carry over.
+                // Hidden outside Deed of Purchase capture by
+                // updateExistingRecordsPartyPicker().
+                const hasParty1 = party1 !== '—' && normalizeText(party1) !== '-';
+                const pickCell = hasParty1
+                    ? '<button type="button" data-action="use-party1"'
+                        + ' class="px-2 py-0.5 text-[10px] font-semibold text-blue-700 bg-white border border-blue-300 rounded hover:bg-blue-50 whitespace-nowrap">'
+                        + 'Use as Party 1</button>'
+                    : '<span class="text-gray-300">—</span>';
+
                 tr.innerHTML = `
                     <td class="px-2 py-1.5 text-gray-400">${index + 1}</td>
                     <td class="px-2 py-1.5"><span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600">${escapeExistingHtml(source)}</span></td>
@@ -1758,15 +1916,31 @@
                     <td class="px-2 py-1.5 text-gray-600">${escapeExistingHtml(party2)}</td>
                     <td class="px-2 py-1.5 text-gray-600">${escapeExistingHtml(reg)}</td>
                     <td class="px-2 py-1.5 whitespace-nowrap text-gray-600">${escapeExistingHtml(date)}</td>
+                    <td class="px-2 py-1.5 text-right hidden" data-col="use-party1">${pickCell}</td>
                 `;
+
+                const pickButton = tr.querySelector('[data-action="use-party1"]');
+                if (pickButton) {
+                    pickButton.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        this.applyExistingRecordPartyOne(record, index);
+                    });
+                }
 
                 this.existingRecordsBody.appendChild(tr);
             });
 
             this.existingRecordsSection.classList.remove('hidden');
+            this.updateExistingRecordsPartyPicker();
         }
 
         formatExistingRegParticulars(record) {
+            // The timeline source pre-joins the particulars and prints "0/0/0" where
+            // nothing is on record. Show that as it stands, so the row reads the same
+            // here as it does on the Property Timeline.
+            const joined = normalizeText(record.reg_no ?? record.regNo ?? '');
+            if (joined) return joined;
+
             const serial = normalizeText(record.serial_no ?? record.serialNo ?? '');
             const page = normalizeText(record.page_no ?? record.pageNo ?? '');
             const volume = normalizeText(record.volume_no ?? record.volumeNo ?? '');

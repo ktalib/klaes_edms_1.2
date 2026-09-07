@@ -153,6 +153,76 @@
                         This file number has a mortgage.
                     </div>
 
+                    {{-- ===== Existing Records for this File =====
+                         Everything the file already holds across PRA, File History,
+                         Deeds Registration and CofO — the same shape the Legal Search
+                         Timeline shows. Rendered here so a duplicate is visible at the
+                         point of entry; rows matching what is being typed are
+                         highlighted and raise the banner below.
+                         Populated by PraFormController.loadExistingRecordsTable(). --}}
+                    <div class="mt-4 hidden" data-role="existing-records-section">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                </svg>
+                                Existing Records for this File
+                                <span data-role="existing-records-count"
+                                      class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600"></span>
+                            </h3>
+                            <span class="text-[11px] text-gray-400" data-role="existing-records-hint">
+                                Check here before saving to avoid a duplicate entry.
+                            </span>
+                        </div>
+
+                        {{-- Deed of Purchase only: the officer picks which transaction the
+                             purchase follows on from, and its Party 1 is carried into the
+                             form. Never assumed — nothing is copied until a row is picked. --}}
+                        <div class="hidden mb-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-medium text-red-700"
+                             data-role="existing-records-picker-note">
+                            Select the transaction this purchase follows on from and click
+                            <span class="font-semibold">Use as Party 1</span> to carry its Party 1
+                            into the form.
+                        </div>
+
+                        {{-- Duplicate flag — raised live as the instrument type, registration
+                             particulars or transaction date are filled in. --}}
+                        <div class="hidden mb-2 rounded-md border px-3 py-2 text-xs"
+                             data-role="duplicate-warning"></div>
+
+                        {{-- The rows come from the Legal Search report engine, the same one
+                             behind the Property Timeline — a few seconds per file, so say
+                             what is being waited on rather than showing a bare spinner. --}}
+                        <div data-role="existing-records-loading" class="hidden py-4 text-center text-xs text-gray-400">
+                            Building this file's timeline…
+                        </div>
+
+                        <div class="border border-gray-200 rounded-md overflow-hidden">
+                            <div class="overflow-x-auto max-h-72 overflow-y-auto">
+                                <table class="w-full text-[11px]">
+                                    <thead class="bg-gray-50 sticky top-0 z-10">
+                                        <tr class="text-left text-gray-500">
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:34px;">S/N</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:80px;">Source</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:130px;">File No</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:150px;">Instrument Type</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 1</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 2</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:90px;">Reg Particulars</th>
+                                            <th class="px-2 py-1.5 font-medium" style="min-width:95px;">Date</th>
+                                            {{-- Shown only during Deed of Purchase capture. --}}
+                                            <th class="px-2 py-1.5 font-medium text-right hidden" data-col="use-party1"
+                                                style="min-width:96px;">Use</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody data-role="existing-records-body"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    {{-- ===== /Existing Records for this File ===== --}}
+
                     <!-- Transaction Details Section -->
                     <div class="form-section hidden" data-section="transaction-details">
                         <h4 class="form-section-title">Transaction Details</h4>
@@ -182,7 +252,10 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div class="space-y-1">
                                 <label class="text-sm font-medium" data-role="party-label-first">
-                                    <span data-role="label-text">First Party</span> <span class="text-red-500">*</span>
+                                    <span data-role="label-text">First Party</span>
+                                    {{-- Hidden for a Deed of Purchase, whose Party 1 may be left
+                                         blank until the physical file is indexed. --}}
+                                    <span class="text-red-500" data-role="party-required-first">*</span>
                                 </label>
                                 <input type="text" class="form-input text-sm" data-model="firstParty"
                                     data-name-key="firstParty" data-government-placeholder="KANO STATE GOVERNMENT"
@@ -196,6 +269,13 @@
                                     aria-label="Local Government that issued the Occupancy Permit">
                                     @include('partials.kano_lga_options', ['selected' => null])
                                 </select>
+                                {{-- Deed of Purchase only. Shown by applyPurchasePartyRules(). --}}
+                                <p class="text-xs text-gray-500 hidden" data-role="purchase-party-hint">
+                                    Optional. If the file is already indexed, pick the transaction it
+                                    comes from in <span class="font-medium">Existing Records for this
+                                    File</span> above. If the file is not indexed yet, leave this blank
+                                    and fill it in from the physical file later.
+                                </p>
                             </div>
                             <div class="space-y-1 hidden" data-role="party-third-wrapper">
                                 <label class="text-sm font-medium" data-role="party-label-third">
@@ -307,61 +387,6 @@
                             (or specified Other Street Name), District (or specified Other District Name), LGA, and
                             State.</div>
                     </div>
-
-
-                    {{-- ===== Existing Records for this File =====
-                         Everything the file already holds across PRA, File History,
-                         Deeds Registration and CofO — the same shape the Legal Search
-                         Timeline shows. Rendered here so a duplicate is visible at the
-                         point of entry; rows matching what is being typed are
-                         highlighted and raise the banner below.
-                         Populated by PraFormController.loadExistingRecordsTable(). --}}
-                    <div class="mt-4 hidden" data-role="existing-records-section">
-                        <div class="flex items-center justify-between mb-2">
-                            <h3 class="text-sm font-semibold text-gray-700 flex items-center gap-1.5">
-                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                                </svg>
-                                Existing Records for this File
-                                <span data-role="existing-records-count"
-                                      class="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-100 text-gray-600"></span>
-                            </h3>
-                            <span class="text-[11px] text-gray-400" data-role="existing-records-hint">
-                                Check here before saving to avoid a duplicate entry.
-                            </span>
-                        </div>
-
-                        {{-- Duplicate flag — raised live as the instrument type, registration
-                             particulars or transaction date are filled in. --}}
-                        <div class="hidden mb-2 rounded-md border px-3 py-2 text-xs"
-                             data-role="duplicate-warning"></div>
-
-                        <div data-role="existing-records-loading" class="hidden py-4 text-center text-xs text-gray-400">
-                            Loading existing records…
-                        </div>
-
-                        <div class="border border-gray-200 rounded-md overflow-hidden">
-                            <div class="overflow-x-auto max-h-72 overflow-y-auto">
-                                <table class="w-full text-[11px]">
-                                    <thead class="bg-gray-50 sticky top-0 z-10">
-                                        <tr class="text-left text-gray-500">
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:34px;">S/N</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:80px;">Source</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:130px;">File No</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:150px;">Instrument Type</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 1</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:110px;">Party 2</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:90px;">Reg Particulars</th>
-                                            <th class="px-2 py-1.5 font-medium" style="min-width:95px;">Date</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody data-role="existing-records-body"></tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    {{-- ===== /Existing Records for this File ===== --}}
 
                     <div class="flex justify-end space-x-3 pt-2 border-t mt-4 sticky bottom-0 bg-white z-10">
                         <button id="property-submit-btn" type="submit" class="btn btn-primary"

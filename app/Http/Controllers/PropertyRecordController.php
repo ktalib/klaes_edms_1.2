@@ -987,10 +987,22 @@ class PropertyRecordController extends Controller
                     }
                 }
             } elseif (strpos($tx, 'purchase') !== false) {
-                if (!$hasFirst)
+                // A Deed of Purchase is the historical Purchase Register being
+                // captured off paper, frequently against a file that has not been
+                // indexed yet -- Party 1 is only readable from the physical file,
+                // so the row is allowed to be saved without it and completed at
+                // indexing. Certificate of Purchase keeps both parties required.
+                $isDeedOfPurchase = strpos($tx, 'deed of purchase') !== false;
+
+                if (!$hasFirst && !$isDeedOfPurchase)
                     $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
                 if (!$hasSecond)
-                    $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
+                    $validator->errors()->add(
+                        'Purchaser',
+                        $isDeedOfPurchase
+                            ? 'Party 2 is required for a Deed of Purchase.'
+                            : 'The Purchaser name is required for Purchase transactions.'
+                    );
             } elseif (strpos($tx, 'gift') !== false) {
                 if (!$hasFirst)
                     $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');
@@ -1711,10 +1723,22 @@ class PropertyRecordController extends Controller
                     }
                 }
             } elseif (strpos($tx, 'purchase') !== false) {
-                if (!$hasFirst)
+                // A Deed of Purchase is the historical Purchase Register being
+                // captured off paper, frequently against a file that has not been
+                // indexed yet -- Party 1 is only readable from the physical file,
+                // so the row is allowed to be saved without it and completed at
+                // indexing. Certificate of Purchase keeps both parties required.
+                $isDeedOfPurchase = strpos($tx, 'deed of purchase') !== false;
+
+                if (!$hasFirst && !$isDeedOfPurchase)
                     $validator->errors()->add('Vendor', 'The Vendor name is required for Purchase transactions.');
                 if (!$hasSecond)
-                    $validator->errors()->add('Purchaser', 'The Purchaser name is required for Purchase transactions.');
+                    $validator->errors()->add(
+                        'Purchaser',
+                        $isDeedOfPurchase
+                            ? 'Party 2 is required for a Deed of Purchase.'
+                            : 'The Purchaser name is required for Purchase transactions.'
+                    );
             } elseif (strpos($tx, 'gift') !== false) {
                 if (!$hasFirst)
                     $validator->errors()->add('Donor', 'The Donor name is required for Gift transactions.');

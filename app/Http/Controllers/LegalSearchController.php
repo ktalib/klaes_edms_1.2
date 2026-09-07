@@ -470,18 +470,24 @@ class LegalSearchController extends Controller
     {
         $request->validate([
             'file_number' => 'required|string|max:255',
-            // "all" merges every source — used by the Add Property Record dialog's
-            // "Existing Records for this File" table and its duplicate check.
-            'source' => 'required|string|in:all,pra,file_history_staging,CofO_staging,deed_registrations',
+            // "timeline" is the deduplicated, arranged set the Property Timeline and
+            // the certified slip show — what the Add Property Record dialog's
+            // "Existing Records for this File" table and its duplicate check read.
+            // "all" is the raw union of every source, duplicates and all.
+            'source' => 'required|string|in:timeline,all,pra,file_history_staging,CofO_staging,deed_registrations',
         ]);
 
         try {
             $source = $request->input('source');
             $fileNumber = $request->input('file_number');
 
-            $records = $source === 'all'
-                ? $this->searchService->findRecordsForFileNumberAllSources($fileNumber)
-                : $this->searchService->findRecordsForFileNumber($fileNumber, $source);
+            if ($source === 'timeline') {
+                $records = $this->searchService->findTimelineRecordsForFileNumber($fileNumber);
+            } elseif ($source === 'all') {
+                $records = $this->searchService->findRecordsForFileNumberAllSources($fileNumber);
+            } else {
+                $records = $this->searchService->findRecordsForFileNumber($fileNumber, $source);
+            }
 
             return response()->json([
                 'success' => true,
