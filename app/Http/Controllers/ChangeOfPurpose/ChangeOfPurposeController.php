@@ -8,6 +8,7 @@ use App\Models\Entity;
 use App\Models\ChangeOfPurposeApplication;
 use App\Services\ParcelUpdateNotificationService;
 use App\Services\TitleStatusParcelRouter;
+use App\Support\MasterJsiGate;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -507,7 +508,7 @@ class ChangeOfPurposeController extends Controller
         // The recommendation memo is the document that goes UP to the Permanent
         // Secretary/Honourable Commissioner for approval, so it must be available
         // while the application is still pending. The only precondition — the one
-        // the listing menu enforces — is KNUPDA clearance.
+        // the listing menu enforces — is the planning clearance.
         $record = ChangeOfPurposeApplication::query()
             ->where(function ($q) {
                 $q->whereNull('is_deleted')->orWhere('is_deleted', 0);
@@ -518,10 +519,13 @@ class ChangeOfPurposeController extends Controller
             return response()->json(['success' => false, 'message' => 'Application not found.'], 404);
         }
 
-        if (strcasecmp((string) $record->knupda_status, 'Approved') !== 0) {
+        // The clearance is an approved Master JSI. MasterJsiGate also lets through
+        // a record cleared by the old KNUPDA handshake, which is why this is asked
+        // through the gate rather than by reading either status here.
+        if (!MasterJsiGate::clearedFor($record, 'change_of_purpose')) {
             return response()->json([
                 'success' => false,
-                'message' => 'KNUPDA approval is required before the recommendation can be generated.',
+                'message' => 'An approved Master JSI is required before the recommendation can be generated.',
             ], 422);
         }
 

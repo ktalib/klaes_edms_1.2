@@ -1,6 +1,6 @@
     <!-- 2. Digital Files -->
     @if(
-      $hasRole('Log a File') || $hasRole('File Tracker/Tracking - RFID') || $hasRole('File Digital Library - Doc-WARE') || $hasRole('EDMS Update')
+      $hasRole('File Digital Library - Doc-WARE') || $hasRole('EDMS Update')
     )
     <div class="py-1 px-3 mb-0.5 border-t border-slate-100">
       <div class="sidebar-module-header flex items-center justify-between py-2 px-3 mb-0.5 cursor-pointer hover:bg-slate-50 rounded-md" data-module="digitalFiles">
@@ -12,27 +12,6 @@
       </div>
     
       <div class="pl-4 mt-1 space-y-0.5 hidden" data-content="digitalFiles">
-
-         <a href="{{ route('file-tracker.dashboard') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('file-tracker.dashboard') && !request('url') ? 'active' : '' }}">
-        <i data-lucide="radio-tower" class="h-4 w-4 text-blue-500"></i>
-        <span>File Tracker Dashboard</span>
-      </a>
-    <a href="{{ route('track-file-archive.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('track-file-archive.index') && !request('url') ? 'active' : '' }}">
-        <i data-lucide="radio-tower" class="h-4 w-4 text-blue-500"></i>
-        <span>Track File (Archive)</span>
-      </a>
-
-      <a href="{{ route('create-file-tracker.quick-search') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.quick-search') && !request('url') ? 'active' : '' }}">
-        <i data-lucide="search" class="h-4 w-4 text-indigo-500"></i>
-        <span>Quick Search</span>
-      </a>
-
-      @if($hasRole('Log a File'))
-      <a href="{{ route('create-file-tracker.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('create-file-tracker.index') && !request('url') ? 'active' : '' }}">
-        <i data-lucide="file-plus" class="h-4 w-4 text-blue-500"></i>
-        <span>Log a File</span>
-      </a>
-      @endif
 
       @if($hasRole('File Tracker/Tracking - RFID'))
       {{-- <a href="{{ route('filetracker.index') }}" class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('filetracker.index') ? 'active' : '' }}">

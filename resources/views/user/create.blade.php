@@ -353,7 +353,10 @@
                                             <span class="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400"><i class="fas fa-phone"></i></span>
                                             {{ Form::text('phone', null, [
                                                 'class' => 'w-full rounded-md border border-gray-300 p-2 pl-10 text-sm',
-                                                'placeholder' => __('Enter Phone Number')
+                                                'placeholder' => '08012345678',
+                                                'required' => 'required',
+                                                'data-phone-ng' => true,
+                                                'data-phone-ng-required' => true,
                                             ]) }}
                                         </div>
                                     </div>

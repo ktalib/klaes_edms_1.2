@@ -347,7 +347,7 @@
                                     <x-instrument-select id="firstPartyState" label="" icon="map-pin"
                                         :options="$states" placeholder="State" value="{{ $record->party_1_state ?? '' }}" />
                                 </div>
-                                <x-instrument-input id="firstPartyPhone" label="" icon="phone"
+                                <x-instrument-input id="firstPartyPhone" label="" icon="phone" :phone="true"
                                     placeholder="Phone Number" value="{{ $record->party_1_phone ?? '' }}" />
                             </div>
                         </div>
@@ -389,7 +389,7 @@
                                 <x-instrument-select id="secondPartyState" label="" icon="map-pin"
                                     :options="$states" placeholder="State" value="{{ $record->party_2_state ?? '' }}" />
                             </div>
-                            <x-instrument-input id="secondPartyPhone" label="" icon="phone"
+                            <x-instrument-input id="secondPartyPhone" label="" icon="phone" :phone="true" :phone-required="true"
                                 placeholder="Phone Number" value="{{ $record->party_2_phone ?? '' }}" />
                         </div>
                     </div>

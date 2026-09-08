@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\NigerianPhone;
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -2016,8 +2018,13 @@ class MlsFileNoController extends Controller
                 // captured. phone_confirmed is set by the form when the officer
                 // has cleared the shared-number warning -- see
                 // App\Services\Sms\ApplicantPhoneResolver.
-                'phone_no' => 'nullable|string|max:100',
-                'rep_phone_no' => 'nullable|string|max:100',
+                // Required at commissioning: this is the applicant's own number and
+                // the one the commissioning SMS is sent to. Deliberately NOT applied
+                // to the edit modal or generateBatch — all 6,078 existing
+                // mls_file_no rows have a blank phone_no, and requiring one there
+                // would block every edit of a legacy record.
+                'phone_no' => ['required', 'string', 'max:100', new NigerianPhone()],
+                'rep_phone_no' => ['nullable', 'string', 'max:100', new NigerianPhone()],
                 'phone_confirmed' => 'nullable|boolean',
                 'allocated_by_filter' => 'nullable|string|max:100',
                 'default_allocation_type' => 'nullable|string|max:50',
@@ -4274,7 +4281,7 @@ class MlsFileNoController extends Controller
                 'location_entries.*.longitude' => 'nullable|numeric|between:-180,180',
                 'location_entries.*.tracking_id' => 'nullable|string|max:100',
                 'location_entries.*.file_name' => 'nullable|string|max:500',
-                'location_entries.*.phone_no' => 'nullable|string|max:100',
+                'location_entries.*.phone_no' => ['nullable', 'string', 'max:100', new NigerianPhone()],
                 'location_entries.*.address' => 'nullable|string|max:500',
                 'commissioned_by' => 'nullable|string|max:255',
                 'commission_date' => 'nullable|date',

@@ -27,6 +27,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     _ossEnsureSwalOnTop();
 
+    /* The Land page renders two fewer columns than the Change of Ownership page
+       (it hides OP Serial No and Original Holder), so the position of the last
+       two columns — Date Created, then Actions — is not the same on both. Read
+       the count off the rendered header instead of hardcoding the indices, so
+       adding or hiding a column can never silently mis-target them again. */
+    var _lssColCount = document.querySelectorAll('#lss-applications-table thead th').length;
+
     var table = $('#lss-applications-table').DataTable({
         dom: '<"lss-table-scroll"t>',
         pageLength: -1,
@@ -37,10 +44,10 @@ document.addEventListener('DOMContentLoaded', function () {
         paging: false,
         autoWidth: false,
         scrollX: false,
-        order: [[14, 'desc']],
-        columnDefs: [
-            { orderable: false, targets: [15] }
-        ],
+        order: _lssColCount >= 2 ? [[_lssColCount - 2, 'desc']] : [],
+        columnDefs: _lssColCount >= 1
+            ? [{ orderable: false, targets: [_lssColCount - 1] }]
+            : [],
         language: {
             info: 'Showing _START_ to _END_ of _TOTAL_ applications',
             infoEmpty: 'No applications available',

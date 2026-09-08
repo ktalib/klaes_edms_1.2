@@ -8,6 +8,7 @@ use App\Models\DuplexParcelUpdateFile;
 use App\Models\DuplexParcelUpdateStage;
 use App\Models\StreetName;
 use App\Support\FileNumberLandUse;
+use App\Support\MasterJsiGate;
 use App\Support\PersonName;
 use App\Services\DuplexCommitService;
 use App\Services\DuplexSummaryService;
@@ -638,8 +639,8 @@ class DuplexParcelUpdateController extends Controller
         // is drawn after the approval, and generateConveyance() holds it there.
         $missing = null;
 
-        if (strcasecmp((string) $duplex->knupda_status, 'Approved') !== 0) {
-            $missing = 'Record the KNUPDA/Physical Planning clearance before approving.';
+        if (!MasterJsiGate::clearedFor($duplex, 'duplex')) {
+            $missing = 'Capture and approve the Master JSI before approving — it is the planning clearance.';
         } elseif (!$duplex->recommendation_generated_at) {
             $missing = 'Generate the recommendation before approving — the approval is given on the strength of it.';
         } elseif (trim((string) $duplex->site_plan) === '') {
@@ -706,10 +707,10 @@ class DuplexParcelUpdateController extends Controller
     {
         $duplex = DuplexParcelUpdate::findOrFail($id);
 
-        if (strcasecmp((string) $duplex->knupda_status, 'Approved') !== 0) {
+        if (!MasterJsiGate::clearedFor($duplex, 'duplex')) {
             return response()->json([
                 'success' => false,
-                'message' => 'KNUPDA approval is required before the recommendation can be generated.',
+                'message' => 'An approved Master JSI is required before the recommendation can be generated.',
             ], 422);
         }
 

@@ -37,6 +37,18 @@
         <span>Title Status</span>
       </a>
 
+      {{-- b. Master JSI — the site observation behind a parcel update, for both
+           SPU (the five single workflows) and APU (the duplex). An approved sheet
+           is the planning clearance the recommendation and the approval rest on,
+           which is why it sits in Physical Planning and not under Parcel/Title
+           Management: the inspection is this department's work, the parcel update
+           is not. --}}
+      {{-- <a href="{{ route('master-jsi.index') }}"
+        class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('master-jsi.*') ? 'active' : '' }}">
+        <i data-lucide="ruler" class="h-4 w-4 text-red-500"></i>
+        <span>Master JSI</span>
+      </a> --}}
+
     @if($hasRole('Shadow File Commissioning'))
       <!-- Shadow File Commissioning -->
       <a href="{{ route('lands-file-no-matching.index') }}"

@@ -653,6 +653,28 @@
                                             class="w-full form-input-clean uppercase" placeholder="ENTER FILE TITLE" required>
                                     </div>
 
+                                    {{-- Root of Title — the pre-grant instrument/holder the title springs
+                                         from. It sits directly under File Title because File Title IS the
+                                         Current Holder line here, and a title reads Root -> Original ->
+                                         Current (client spec 2026-08-20 SS12).
+
+                                         Shown, and required, ONLY for the two registry combinations that
+                                         have a root to state: SLTR (either registry field), and Land
+                                         Registry with Physical Registry "Registry 3 - Land". Starts hidden
+                                         so it never flashes on an unrelated registry before the toggle
+                                         below runs. This form PUTs to FileIndexingController::update(),
+                                         which requires the field for exactly those registries — so without
+                                         it here an SLTR file could not be saved from this page at all. --}}
+                                    <div class="sm:col-span-2 hidden" id="root-of-title-group">
+                                        <label for="root-of-title" class="form-label-clean">
+                                            Root of Title <span class="text-red-500">*</span>
+                                        </label>
+                                        <input type="text" id="root-of-title" name="root_of_title"
+                                            value="{{ old('root_of_title', $fileIndexing->root_of_title) }}"
+                                            class="w-full form-input-clean"
+                                            placeholder="e.g. Customary Right of Occupancy - ALIYU MUSA">
+                                    </div>
+
                                   <div>
     <label for="land_use_type" class="form-label-clean">
         Land Use Type <span class="text-red-500">*</span>
@@ -2512,6 +2534,55 @@
 
                 // Initialize on page load
                 toggleRCNoField();
+            })();
+
+            // Root of Title — show/hide the field, and its `required` attribute, to
+            // match the registry pair. Mirrors rootOfTitleApplies() in
+            // create-indexing-dialog.js and FileIndexingController::rootOfTitleIsRequired().
+            // The three tests must agree: this form PUTs to that same update(), so a
+            // field that is absent (or hidden while required) blocks the save with an
+            // error pointing at nothing the officer can see.
+            (function () {
+                const group = document.getElementById('root-of-title-group');
+                const input = document.getElementById('root-of-title');
+                const general = document.getElementById('general_registry');
+                const physical = document.getElementById('physical_registry');
+
+                if (!group || !input) return;
+
+                function rootOfTitleApplies() {
+                    const norm = (el) => (el?.value || '').toUpperCase().replace(/\s+/g, ' ').trim();
+                    const squash = (v) => v.replace(/[^A-Z0-9]/g, '');
+
+                    const g = norm(general);
+                    const p = norm(physical);
+
+                    return g.includes('SLTR')
+                        || p.includes('SLTR')
+                        || (g.includes('LAND REGISTRY') && squash(p).includes('REGISTRY3'));
+                }
+
+                function syncRootOfTitleVisibility() {
+                    const applies = rootOfTitleApplies();
+                    group.classList.toggle('hidden', !applies);
+
+                    // validateForm() walks [required], so the attribute has to come off
+                    // with the field — otherwise a hidden empty input fails the check
+                    // and the submit dies with no visible red field to fix.
+                    if (applies) {
+                        input.setAttribute('required', 'required');
+                    } else {
+                        input.removeAttribute('required');
+                    }
+                    // The value is deliberately NOT cleared when the field hides: a
+                    // registry change must never silently destroy a root already typed,
+                    // and a record edited under a non-applicable registry keeps the root
+                    // it was captured with.
+                }
+
+                general?.addEventListener('change', syncRootOfTitleVisibility);
+                physical?.addEventListener('change', syncRootOfTitleVisibility);
+                syncRootOfTitleVisibility();
             })();
 
             // Kangis FileNo Placeholder — show/hide and assemble based on general_registry

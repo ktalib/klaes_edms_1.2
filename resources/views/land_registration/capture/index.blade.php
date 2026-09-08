@@ -37,13 +37,6 @@
                         {{ config('land_registration.instrument_type') }} records captured through PRA
                     </p>
                 </div>
-                <div class="flex items-center gap-2">
-                    <a href="{{ route('land-registration.registration.index') }}"
-                        class="inline-flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                        <i data-lucide="book-open" class="h-4 w-4 text-gray-500"></i>
-                        <span>New Registration</span>
-                    </a>
-                </div>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
@@ -190,7 +183,7 @@
                         columnDefs: [{ targets: [0], orderable: false }],
                         language: {
                             search: 'Search:',
-                            searchPlaceholder: 'file no, vendor, purchaser, district…',
+                            searchPlaceholder: 'file no, party 1, party 2, district…',
                             emptyTable: 'No records.',
                             zeroRecords: 'No records match that search.',
                             info: 'Showing _START_ to _END_ of _TOTAL_ records',

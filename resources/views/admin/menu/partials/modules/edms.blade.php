@@ -40,38 +40,48 @@
               <span>File Indexing Assistant</span>
             </a>
 
-            {{-- Match OP (ToT). It lives with indexing because that is the comparison it
-                 makes — the Occupancy Permit's holder against the File Indexing name —
-                 and the officers who work these files are indexing officers.
+            {{-- Match OP. The two halves of the same job, so they sit under one
+                 collapsible entry: an officer looking for "Match OP" finds both here
+                 rather than two differently-named siblings.
 
-                 No role check, here or on the page itself: anyone who can reach this
-                 menu can open it. The write it performs is still guarded on its own
-                 terms — the card only offers Match on a file whose chain has no
-                 transfer explaining the change, and the officer confirms both names
-                 before anything is recorded. --}}
-       
+                 It lives with indexing because that is the comparison it makes — the
+                 Occupancy Permit's holder against the File Indexing name — and the
+                 officers who work these files are indexing officers. --}}
+            <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+              data-section="matchOp">
+              <div class="flex items-center gap-2">
+                <i data-lucide="git-merge" class="h-4 w-4 text-emerald-500"></i>
+                <span>Match OP</span>
+              </div>
+              <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="matchOp"></i>
+            </div>
+
+            <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="matchOp">
+              {{-- 1. Match OP (ToT) — writes the missing transfer.
+
+                   No role check, here or on the page itself: anyone who can reach this
+                   menu can open it. The write it performs is still guarded on its own
+                   terms — the card only offers Match on a file whose chain has no
+                   transfer explaining the change, and the officer confirms both names
+                   before anything is recorded. --}}
               <a href="{{ route('land-recommendations.create') }}?match-op"
                 class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('land-recommendations.create') && request()->has('match-op') && request()->query('from') !== 'tot' ? 'active' : '' }}">
                 <i data-lucide="git-merge" class="h-3.5 w-3.5 text-emerald-400"></i>
                 <span>Match OP (ToT)</span>
               </a>
 
-            {{-- Match OP (FC) — the OP → File Property ID Matching page. A different
-                 job from Match OP (ToT) above: that one writes a missing transfer,
-                 this one moves permits that were captured before their file existed
-                 onto the file's parcel id, so the file's records stop reading as
-                 separate properties. Filed here for the same reason — it is indexing
-                 officers who hold the confirmed file.
-
-                 The two are named as one pair on purpose: an officer looking for
-                 "Match OP" wants both halves of the job in one place, not one entry
-                 called Match OP and another called something else. Route and page
-                 keep their own op-propid-match names. --}}
-            <a href="{{ route('op-propid-match.index') }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('op-propid-match.*') ? 'active' : '' }}">
-              <i data-lucide="link-2" class="h-3.5 w-3.5 text-emerald-400"></i>
-              <span>Match OP (FC)</span>
-            </a>
+              {{-- 2. Match OP (FC) — the OP → File Property ID Matching page. A different
+                   job from Match OP (ToT) above: that one writes a missing transfer,
+                   this one moves permits that were captured before their file existed
+                   onto the file's parcel id, so the file's records stop reading as
+                   separate properties. Route and page keep their own op-propid-match
+                   names. --}}
+              <a href="{{ route('op-propid-match.index') }}"
+                class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('op-propid-match.*') ? 'active' : '' }}">
+                <i data-lucide="link-2" class="h-3.5 w-3.5 text-emerald-400"></i>
+                <span>Match OP (FC)</span>
+              </a>
+            </div>
 
             {{-- Unlink / Reassign OP — HIDDEN. Unmatching turned out not to need a page
                  of its own: it is the same officer, the same permits and the same parcel

@@ -12,6 +12,7 @@ use App\Services\TitleStatusParcelRouter;
 // not laravel.log — see config/logging.php channel "plot_subdivision".
 use App\Support\ParcelSizeSummary;
 use App\Support\PlotSubdivisionLog as Log;
+use App\Support\MasterJsiGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -292,9 +293,27 @@ class PlotSubdivisionController extends Controller
         return view('deeds.parcel_update.print.subdivision_application', compact('record'));
     }
 
+    /**
+     * The recommendation memo, which the approval is then given on the strength of.
+     *
+     * It used to require status = approved. That only ever passed because the KNUPDA
+     * handshake set BOTH knupda_status and status in one go, so the application was
+     * approved before the memo recommending it existed — the two the wrong way
+     * round. The handshake no longer approves anything, so the precondition is the
+     * planning clearance, and the approval follows the memo the way the duplex
+     * register already runs it.
+     */
     public function generateRecommendation(int $id): JsonResponse
     {
-        $record = PlotSubdivisionApplication::where('status', PlotSubdivisionApplication::STATUS_APPROVED)->findOrFail($id);
+        $record = PlotSubdivisionApplication::findOrFail($id);
+
+        if (!MasterJsiGate::clearedFor($record, 'subdivision')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An approved Master JSI is required before the recommendation can be generated.',
+            ], 422);
+        }
+
         $record->update([
             'recommendation_generated_at' => now(),
             'updated_by' => Auth::id(),
@@ -314,27 +333,33 @@ class PlotSubdivisionController extends Controller
         return view('deeds.parcel_update.print.subdivision_recommendation', compact('record'));
     }
 
+    /**
+     * The KNUPDA/Physical Planning handshake, kept only for the records that used it.
+     *
+     * The planning clearance is now the Master JSI (App\Support\MasterJsiGate), and
+     * the handshake is off the action menu. This endpoint stays because the route
+     * and any cached page still point at it, and because knupda_status is history
+     * that DuplexCommitService and the legacy arm of the gate both still read.
+     *
+     * What it no longer does is APPROVE the application. It used to set
+     * status = approved on a KNUPDA 'Approved' and rejected on a 'Declined', so a
+     * planning note silently decided the whole application — a decision nobody had
+     * taken and no memo recorded. The approval is now the explicit Approve action
+     * on the listing, given on the strength of the recommendation, as it is
+     * everywhere else in this module.
+     */
     public function updateKnupda(Request $request, int $id): JsonResponse
     {
         $record = PlotSubdivisionApplication::findOrFail($id);
         $knupdaStatus = $request->input('knupda_status');
-        
-        $updateData = [
+
+        $record->update([
             'land_value' => $request->input('land_value'),
             'knupda_fee' => $request->input('knupda_fee'),
             'knupda_status' => $knupdaStatus,
             'knupda_remarks' => $request->input('knupda_remarks'),
             'updated_by' => Auth::id(),
-        ];
-
-        // Auto-approve or Auto-reject based on KNUPDA status
-        if ($knupdaStatus === 'Approved') {
-            $updateData['status'] = PlotSubdivisionApplication::STATUS_APPROVED;
-        } elseif ($knupdaStatus === 'Declined') {
-            $updateData['status'] = PlotSubdivisionApplication::STATUS_REJECTED;
-        }
-
-        $record->update($updateData);
+        ]);
 
         Log::info('Subdivision KNUPDA status updated', [
             'application_id' => $record->id,
@@ -342,8 +367,6 @@ class PlotSubdivisionController extends Controller
             'knupda_status' => $knupdaStatus,
             'land_value' => $request->input('land_value'),
             'knupda_fee' => $request->input('knupda_fee'),
-            // KNUPDA Approved/Declined silently flips the application status too.
-            'auto_status' => $updateData['status'] ?? null,
         ]);
 
         return response()->json(['success' => true, 'message' => 'KNUPDA status updated.']);

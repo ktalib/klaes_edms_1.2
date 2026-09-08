@@ -9,6 +9,7 @@ use App\Models\SltrRecommendation;
 use App\Models\StreetName;
 use App\Services\Pra\RofoPraSyncer;
 use Illuminate\Http\Request;
+use App\Rules\NigerianPhone;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -122,6 +123,7 @@ class SltrRecommendationController extends Controller
             'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sqlsrv.sltr_recommendations', 'sltr_number')->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
+            'applicant_phone'  => ['required', 'string', new NigerianPhone()],
             'application_date' => 'nullable|date',
             'location'         => 'nullable|string|max:300',
             'lga'              => 'nullable|string|max:200',
@@ -154,6 +156,7 @@ class SltrRecommendationController extends Controller
             'sltr_number'      => ['nullable', 'string', 'max:100', Rule::unique('sqlsrv.sltr_recommendations', 'sltr_number')->ignore($rec->id)->whereNull('deleted_at')],
             'applicant_name'   => 'required|string|max:300',
             'applicant_address'=> 'nullable|string|max:500',
+            'applicant_phone'  => ['required', 'string', new NigerianPhone()],
             'application_date' => 'nullable|date',
             'location'         => 'nullable|string|max:300',
             'lga'              => 'nullable|string|max:200',

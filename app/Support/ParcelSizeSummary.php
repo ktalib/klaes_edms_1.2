@@ -24,6 +24,12 @@ use Illuminate\Support\Collection;
  */
 class ParcelSizeSummary
 {
+    /** Square metres in a hectare. The one copy — see hectares(). */
+    public const M2_PER_HECTARE = 10000;
+
+    /** How many sides an area can be derived from: length x width, and nothing else. */
+    public const DERIVABLE_SIDES = 2;
+
     /**
      * @param  iterable|null  $sizes  PlotApplicationSize rows (any `type`).
      * @return array{list:string,total:string,has:bool,phrase:string,total_phrase:string}
@@ -76,6 +82,51 @@ class ParcelSizeSummary
             ->values();
 
         return $sides->isEmpty() ? null : $sides->implode(' x ');
+    }
+
+    /**
+     * The area those sides give, or null where it cannot honestly be derived.
+     *
+     * A parcel is a polygon, not always a rectangle — which is how the Ministry's
+     * own memo states it — so an area is only derived from EXACTLY two sides.
+     * Any other count returns null and the officer types the measured area off the
+     * plan rather than being handed an invented one.
+     *
+     * The same rule the capture forms apply in JS (areaFromTerms). It lives here so
+     * the two cannot drift: a form posting sides without an area gets the same
+     * answer the officer saw on screen, and a payload that never went through the
+     * form is not stored with a blank measurement.
+     */
+    public static function areaFromSides($terms): ?float
+    {
+        $sides = Collection::make(\is_array($terms) ? $terms : [])
+            ->map(fn ($v) => (float) $v)
+            ->filter(fn ($v) => is_finite($v) && $v > 0)
+            ->values();
+
+        return $sides->count() === self::DERIVABLE_SIDES
+            ? $sides[0] * $sides[1]
+            : null;
+    }
+
+    /**
+     * The same area in hectares: 1410 -> "0.141", 39591 -> "3.9591".
+     *
+     * The sheets state a measurement as "m²/ha", so the two always travel together
+     * and the hectare figure is DERIVED — square metres are the stored authority.
+     * Four decimal places because a plot is a fraction of a hectare and 0.14 loses
+     * the metres; trailing zeros are dropped so a clean 2 ha does not print
+     * "2.0000".
+     *
+     * Written here rather than inline for the fourth time: the /10000 was
+     * duplicated in subdivision.blade.php, duplex/js.blade.php and the JSI print
+     * clone, each with its own rounding.
+     */
+    public static function hectares($value): string
+    {
+        $ha = (float) $value / self::M2_PER_HECTARE;
+
+        return rtrim(rtrim(number_format($ha, 4, '.', ''), '0'), '.') ?: '0';
     }
 
     /** 1410 -> "1,410"; 1410.5 -> "1,410.5"; 1410.00 -> "1,410". */

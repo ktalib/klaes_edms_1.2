@@ -712,7 +712,8 @@ class LandCaptureController extends Controller
 
             fputcsv($out, [
                 'ID', 'MLS File No', 'KANGIS File No', 'New KANGIS File No', 'Temp File No',
-                'Vendor', 'Purchaser', 'Property', 'LGA', 'District', 'Registered On',
+                config('land_registration.parties.first'), config('land_registration.parties.second'),
+                'Property', 'LGA', 'District', 'Registered On',
                 'Registration No', 'Serial', 'Page', 'Volume',
             ]);
 

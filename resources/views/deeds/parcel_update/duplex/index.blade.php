@@ -7,6 +7,21 @@
      * modal instead. So ?mode=land is the register with no actions on it.
      */
     $readOnly = request()->query('mode') === 'land';
+
+    /**
+     * The planning clearance, resolved for the whole page in two queries.
+     *
+     * It used to be the KNUPDA/Physical Planning handshake — a four-field modal on
+     * this menu. It is now an approved Master JSI, captured by Physical Planning on
+     * their own register. MasterJsiGate answers the question, so the legacy arm
+     * (a duplex already cleared through the handshake) is applied here too and
+     * pre-cutover records do not deadlock behind a modal that no longer exists.
+     *
+     * Asked per page rather than per row: the register renders 25 rows and each row
+     * asks three times over, which would be this page's slowest query by far.
+     */
+    $jsiCleared = \App\Support\MasterJsiGate::clearedMap('duplex', $records);
+    $jsiReports = \App\Support\MasterJsiGate::reportMap('duplex', $records);
 @endphp
 
 @section('styles')
@@ -111,7 +126,7 @@
                 {{-- The pipeline, spelled out. New officers cannot infer these steps from
                      the row menu alone, and skipping one is the usual support call. --}}
                 <div class="px-7 py-3.5 border-t border-slate-100 bg-slate-50/70 flex flex-wrap items-center gap-x-2 gap-y-2 text-[11px] font-bold text-slate-400">
-                    @foreach (['Capture stages', 'KNUPDA/Physical Planning', 'Recommendation', 'Approve', 'Conveyance', 'Send to Land', 'Commission'] as $i => $step)
+                    @foreach (['Capture stages', 'Master JSI', 'Recommendation', 'Approve', 'Conveyance', 'Send to Land', 'Commission'] as $i => $step)
                         @if ($i)<i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-300"></i>@endif
                         {{-- $loop->last, not a fixed index: this list has changed length now
                              and a hard-coded 5 leaves the highlight on the wrong step. --}}
@@ -250,7 +265,8 @@
                                             $frozen      = $isRejected || $isCommitted;
 
                                             $isApproved  = in_array($record->status, ['approved', 'in_land', 'committed'], true);
-                                            $knupdaOk    = strcasecmp((string) $record->knupda_status, 'Approved') === 0;
+                                            $jsiOk       = $jsiCleared[$record->id] ?? false;
+                                            $jsiReport   = $jsiReports[$record->id] ?? null;
                                             $allCaptured = $record->stageRows->every(fn ($st) => $st->status === 'done');
 
                                             /**
@@ -267,7 +283,7 @@
                                              * meant to have read:
                                              *
                                              *   every stage captured   — there is something to approve
-                                             *   KNUPDA/PP approved     — the planning authority has cleared it
+                                             *   Master JSI approved    — Physical Planning has cleared it
                                              *   recommendation drawn   — the memo carrying it up exists
                                              *   site plan attached     — the drawing the memo is read against
                                              *
@@ -276,30 +292,26 @@
                                              */
                                             $hasSitePlan   = trim((string) $record->site_plan) !== '';
                                             $canApprove    = !$frozen && !$isApproved && $allCaptured
-                                                             && $knupdaOk
+                                                             && $jsiOk
                                                              && $record->recommendation_generated_at
                                                              && $hasSitePlan;
 
                                             // Naming the FIRST thing still missing, in the order it is done.
                                             $approvalBlocker = !$allCaptured ? 'Capture every stage first'
-                                                : (!$knupdaOk ? 'Record the KNUPDA/Physical Planning clearance first'
+                                                : (!$jsiOk ? \App\Support\MasterJsiGate::blocker($jsiReport)
                                                 : (!$record->recommendation_generated_at ? 'Generate the recommendation first'
                                                 : (!$hasSitePlan ? 'Attach the site plan first'
                                                 : 'Already approved')));
 
                                             $canReject     = !$frozen;
-                                            // KNUPDA is settled BEFORE the approval — the approval is given on
-                                            // the strength of it — so once the duplex is approved that answer is
-                                            // part of the record and is not reopened from this menu.
-                                            $canKnupda     = !$frozen && $allCaptured && !$isApproved;
-                                            $canGenApp     = !$frozen && $knupdaOk && !$record->application_generated_at;
+                                            $canGenApp     = !$frozen && $jsiOk && !$record->application_generated_at;
                                             $canPrintApp   = (bool) $record->application_generated_at;
 
                                             // The recommendation is the first paper drawn: it opens straight off
                                             // the KNUPDA clearance, and it is what the approval is given on. It
                                             // used to wait for the conveyance, which put the two the wrong way
                                             // round.
-                                            $canGenRec     = !$frozen && $knupdaOk && !$record->recommendation_generated_at;
+                                            $canGenRec     = !$frozen && $jsiOk && !$record->recommendation_generated_at;
                                             $canPrintRec   = (bool) $record->recommendation_generated_at;
 
                                             // The conveyance reports a decision, so it cannot be drawn before
@@ -328,10 +340,33 @@
                                                 <button onclick="viewDuplex({{ $record->id }})" class="menu-item">View stages</button>
                                             </div>
 
+                                            {{-- The planning clearance. This was the KNUPDA/Physical Planning
+                                                 handshake — a four-field modal recording a fee and a status,
+                                                 standing in for a site inspection that had nowhere to live.
+                                                 The inspection now exists as the Master JSI, so the menu
+                                                 opens that instead: captured against this duplex, approved on
+                                                 the Physical Planning register, and read back here by
+                                                 MasterJsiGate.
+
+                                                 Send JSI to Deeds is NOT here: the handover is Physical
+                                                 Planning acting on their own inspection, so it lives on the
+                                                 Master JSI register beside Generate / Submit / Approve
+                                                 rather than sitting greyed out on this menu waiting for
+                                                 another department to approve the sheet. --}}
                                             <div class="py-1">
-                                                <button onclick="openKnupda({{ $record->id }})" @disabled(!$canKnupda)
-                                                    title="{{ $why($canKnupda, $isApproved ? 'Settled — the duplex is already approved' : 'Capture every stage first') }}"
-                                                    class="menu-item">KNUPDA/Physical Planning</button>
+                                                @if ($jsiReport)
+                                                    <a href="{{ route('master-jsi.show', $jsiReport->id) }}"
+                                                        class="menu-item block">View Master JSI ({{ strtoupper($jsiReport->status) }})</a>
+                                                @else
+                                                    <a href="{{ route('master-jsi.create', [
+                                                            'subject_type' => 'duplex',
+                                                            'subject_id'   => $record->id,
+                                                            'category'     => 'APU',
+                                                            'return'       => request()->fullUrl(),
+                                                        ]) }}"
+                                                        title="{{ $allCaptured ? '' : 'Capture every stage first' }}"
+                                                        class="menu-item block {{ $allCaptured && !$frozen ? '' : 'is-disabled' }}">Capture Master JSI</a>
+                                                @endif
                                             </div>
 
                                             {{-- The menu now runs in the order the work is done: the
@@ -442,7 +477,10 @@
     <script src="{{ asset('js/shared/record-summary-card.js') }}?v={{ @filemtime(public_path('js/shared/record-summary-card.js')) }}"></script>
 <script src="{{ asset('js/duplex-summary-card.js') }}?v={{ @filemtime(public_path('js/duplex-summary-card.js')) }}"></script>
 @include('deeds.parcel_update.duplex.partials.wizard')
-    @include('deeds.parcel_update.duplex.partials.knupda_modal')
+    {{-- The KNUPDA/Physical Planning modal is gone: the planning clearance is now
+         the Master JSI, captured on the Physical Planning register. The partial,
+         the route and the knupda_* columns all still exist as history — see
+         App\Support\MasterJsiGate for the legacy pass they feed. --}}
     @include('deeds.parcel_update.duplex.partials.view_modal')
 </div>
 

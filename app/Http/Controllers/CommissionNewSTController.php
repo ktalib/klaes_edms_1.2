@@ -1,6 +1,8 @@
 <?php
 
 namespace App\Http\Controllers;
+
+use App\Rules\NigerianPhone;
 use App\Models\AllocationSourceLookup;
 use App\Services\FileIndexingPropagationService;
 use App\Services\AllocationSourceResolver;
@@ -645,7 +647,7 @@ class CommissionNewSTController extends Controller
                 'rc_number' => 'nullable|string',
                 // Applicant contact, for the ST commissioning SMS. st_file_numbers
                 // had no phone column at all until 2026_09_06_000200.
-                'applicant_phone' => 'nullable|string|max:100',
+                'applicant_phone' => ['nullable', 'string', 'max:100', new NigerianPhone()],
                 'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',
@@ -1757,7 +1759,7 @@ class CommissionNewSTController extends Controller
                 'rc_number' => 'nullable|string',
                 // Applicant contact, for the ST commissioning SMS. st_file_numbers
                 // had no phone column at all until 2026_09_06_000200.
-                'applicant_phone' => 'nullable|string|max:100',
+                'applicant_phone' => ['nullable', 'string', 'max:100', new NigerianPhone()],
                 'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',
@@ -1951,7 +1953,7 @@ class CommissionNewSTController extends Controller
                 'rc_number' => 'nullable|string',
                 // Applicant contact, for the ST commissioning SMS. st_file_numbers
                 // had no phone column at all until 2026_09_06_000200.
-                'applicant_phone' => 'nullable|string|max:100',
+                'applicant_phone' => ['nullable', 'string', 'max:100', new NigerianPhone()],
                 'phone_confirmed' => 'nullable|boolean',
                 'commissioned_by' => 'nullable|string',
                 'commissioned_date' => 'nullable|date',

@@ -8,6 +8,7 @@ use App\Models\Notification;
 use App\Models\PackageTransaction;
 use App\Models\Subscription;
 use App\Models\User;
+use App\Rules\NigerianPhone;
 use App\Models\UserRole;
 use App\Models\UserType;
 use App\Models\UserLevel;
@@ -381,6 +382,15 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
+        // create.blade.php posts `phone`; edit.blade.php posts `phone_number`.
+        // Settle on one key so validation and the assignment below agree, and
+        // fold +234/spacing into the canonical 0XXXXXXXXXX the gateways expect.
+        $request->merge([
+            'phone_number' => NigerianPhone::normalize(
+                $request->input('phone_number', $request->input('phone'))
+            ),
+        ]);
+
         if (\Auth::user()->type == 'super admin') {
                 $validator = \Validator::make(
                     $request->all(),
@@ -389,6 +399,7 @@ class UserController extends Controller
                         'username' => 'required|unique:users', // add username validation
                         'password' => 'required|min:6',
                         'work_station' => $this->workStationValidationRule(false),
+                        'phone_number' => ['required', 'string', new NigerianPhone()],
                         'profile' => $this->profileUploadRules(),
                     ]
                 );
@@ -463,6 +474,7 @@ class UserController extends Controller
                     [
                         'first_name' => 'required',
                         'last_name' => 'required',
+                        'phone_number' => ['required', 'string', new NigerianPhone()],
                         'password' => 'required|min:6',
                         // A Supper Admin is not scoped to a department and carries no role
                         // grid, so Step 1 and Step 4 are optional for that user type only.
@@ -670,6 +682,15 @@ class UserController extends Controller
 
     public function update(Request $request, $id)
     {
+        // create.blade.php posts `phone`; edit.blade.php posts `phone_number`.
+        // Settle on one key so validation and the assignment below agree, and
+        // fold +234/spacing into the canonical 0XXXXXXXXXX the gateways expect.
+        $request->merge([
+            'phone_number' => NigerianPhone::normalize(
+                $request->input('phone_number', $request->input('phone'))
+            ),
+        ]);
+
         if (\Auth::user()->type == 'super admin') {
                 $user = User::findOrFail($id);
 
@@ -678,6 +699,7 @@ class UserController extends Controller
                     [
                         'name' => 'required',
                         'username' => 'required|unique:users,username,' . $id, // add username validation
+                        'phone_number' => ['required', 'string', new NigerianPhone()],
                         'work_station' => $this->workStationValidationRule(false),
                         'password' => 'nullable|min:6',
                         'profile' => $this->profileUploadRules(),
@@ -716,6 +738,7 @@ class UserController extends Controller
                     [
                         'first_name' => 'required',
                         'last_name' => 'required',
+                        'phone_number' => ['required', 'string', new NigerianPhone()],
                         // A Supper Admin is not scoped to a department and carries no role
                         // grid, so Step 1 and Step 4 are optional for that user type only.
                         'department_id' => 'required_unless:user_type,' . self::SUPPER_ADMIN_ROLE,

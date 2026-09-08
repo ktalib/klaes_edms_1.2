@@ -339,6 +339,8 @@
   };
 </script>
 <script src="{{ asset('js/notification-flash.js') }}?v={{ filemtime(public_path('js/notification-flash.js')) }}" defer></script>
+{{-- Shared Nigerian phone-number validation; mirrors App\Rules\NigerianPhone. --}}
+<script src="{{ asset('js/nigerian-phone.js') }}?v={{ filemtime(public_path('js/nigerian-phone.js')) }}" defer></script>
 
 
 

@@ -7,6 +7,7 @@ use App\Models\PlotExtensionApplication;
 use App\Models\StreetName;
 use App\Services\ParcelUpdateNotificationService;
 use App\Services\TitleStatusParcelRouter;
+use App\Support\MasterJsiGate;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -213,9 +214,25 @@ class PlotExtensionController extends Controller
         return view('lands_one_stop_shop.print.extension_application', compact('record'));
     }
 
+    /**
+     * The recommendation memo, which the approval is then given on the strength of.
+     *
+     * It used to require status = approved — which only passed because the KNUPDA
+     * handshake set both statuses at once, approving the application before the memo
+     * recommending it existed. The precondition is now the planning clearance, and
+     * the approval follows the memo as it does on the duplex register.
+     */
     public function generateRecommendation(int $id): JsonResponse
     {
-        $record = PlotExtensionApplication::where('status', PlotExtensionApplication::STATUS_APPROVED)->findOrFail($id);
+        $record = PlotExtensionApplication::findOrFail($id);
+
+        if (!MasterJsiGate::clearedFor($record, 'extension')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An approved Master JSI is required before the recommendation can be generated.',
+            ], 422);
+        }
+
         $record->update([
             'recommendation_generated_at' => now(),
             'updated_by' => Auth::id(),

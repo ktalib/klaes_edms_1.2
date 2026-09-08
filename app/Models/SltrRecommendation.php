@@ -51,6 +51,7 @@ class SltrRecommendation extends Model
         'sltr_number',
         'applicant_name',
         'applicant_address',
+        'applicant_phone',
         'application_date',
         // The date the letter is issued, printed on it as DATE OF ISSUE. Its own
         // column: application_date is the applicant's and rofo_date_generated is

@@ -507,7 +507,7 @@
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-700 mb-1">Phone No.</label>
-                                <input type="text" id="oss_res_phone" name="phone" placeholder="e.g. 08012345678"
+                                <input type="text" id="oss_res_phone" name="phone" placeholder="e.g. 08012345678" data-phone-ng
                                        class="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500/20 focus:border-green-500">
                             </div>
                         </div>

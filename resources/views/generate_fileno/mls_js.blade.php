@@ -2661,6 +2661,22 @@
             }
         }
 
+        // Applicant phone. The inline onsubmit="" runs before the shared helper's
+        // own submit listener, so nigerian-phone.js cannot stop this form on its
+        // own — ask it here. Placed AFTER the batch-mode return above: a batch is
+        // validated per entry on its own summary modal, not here.
+        const applicantPhone = document.getElementById('generatePhoneNo');
+        if (applicantPhone && window.NigerianPhone && !window.NigerianPhone.validateField(applicantPhone, false)) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Phone No of Applicant Required',
+                text: 'Enter an 11-digit phone number starting with 0, such as 08012345678.',
+                confirmButtonColor: '#f59e0b'
+            });
+            applicantPhone.focus();
+            return;
+        }
+
         // LGA is required when Application Type is Conversion
         if (alpineData && alpineData.applicationType === 'conversion') {
             const lgaValue = (alpineData.lga || '').toString().trim();

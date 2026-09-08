@@ -716,7 +716,7 @@
                                     <x-instrument-select id="firstPartyState" label="" icon="map-pin"
                                         :options="$states" placeholder="State" value="{{ $record->party_1_state ?? 'Kano' }}" />
                                 </div>
-                                <x-instrument-input id="firstPartyPhone" label="" icon="phone"
+                                <x-instrument-input id="firstPartyPhone" label="" icon="phone" :phone="true"
                                     placeholder="Phone Number" value="{{ $record->party_1_phone ?? '' }}" />
                             </div>
                         </div>
@@ -767,7 +767,7 @@
                                     :options="$states" placeholder="State" value="{{ $record->party_2_state ?? 'Kano' }}" />
                             </div>
                             <div class="grid grid-cols-2 gap-3">
-                                <x-instrument-input id="secondPartyPhone" label="" icon="phone"
+                                <x-instrument-input id="secondPartyPhone" label="" icon="phone" :phone="true" :phone-required="true"
                                     placeholder="Phone Number" value="{{ $record->party_2_phone ?? '' }}" />
                                 {{-- Options come from the `genders` lookup table, never hard-coded — see
                                      App\Models\Gender::options() and the <x-gender-select> component. The

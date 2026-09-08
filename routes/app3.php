@@ -54,6 +54,7 @@ use App\Http\Controllers\Deeds\ParcelUpdate\PlotSeparationController;
 use App\Http\Controllers\Deeds\ParcelUpdate\DuplexParcelUpdateController;
 use App\Http\Controllers\Deeds\ParcelUpdate\PlotMergerController;
 use App\Http\Controllers\ChangeOfPurpose\ChangeOfPurposeController;
+use App\Http\Controllers\PhysicalPlanning\MasterJsiController;
 use App\Http\Controllers\TitleStatus\TitleStatusController;
 use App\Http\Controllers\RegrantController;
 use App\Http\Controllers\ChangeOfName\ChangeOfNameController;
@@ -420,6 +421,35 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/{id}/commission', [DuplexParcelUpdateController::class, 'commissionView'])->name('commission')->where('id', '[0-9]+');
         Route::post('/{id}/commit', [DuplexParcelUpdateController::class, 'commit'])->name('commit')->where('id', '[0-9]+');
         Route::delete('/{id}', [DuplexParcelUpdateController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
+    });
+
+    /**
+     * Master JSI - the Physical Planning site observation behind a parcel update.
+     *
+     * One register and one form for both categories: SPU (the five single
+     * workflows) and APU (the duplex). An approved report is the planning clearance
+     * that Generate Recommendation and Approve now rest on, in the place the
+     * KNUPDA/Physical Planning handshake used to hold - see App\Support\MasterJsiGate.
+     *
+     * Reached from the Physical Planning sidebar, and from the action menu on every
+     * parcel-update listing (?subject_type=&subject_id=&return=).
+     */
+    Route::prefix('master-jsi')->name('master-jsi.')->group(function () {
+        Route::get('/', [MasterJsiController::class, 'index'])->name('index');
+        Route::get('/create', [MasterJsiController::class, 'create'])->name('create');
+        Route::get('/resolve-subject', [MasterJsiController::class, 'resolveSubject'])->name('resolve-subject');
+        Route::get('/search-subjects', [MasterJsiController::class, 'searchSubjects'])->name('search-subjects');
+        Route::post('/', [MasterJsiController::class, 'store'])->name('store');
+        Route::get('/{id}', [MasterJsiController::class, 'show'])->name('show')->where('id', '[0-9]+');
+        Route::get('/{id}/edit', [MasterJsiController::class, 'edit'])->name('edit')->where('id', '[0-9]+');
+        Route::put('/{id}', [MasterJsiController::class, 'update'])->name('update')->where('id', '[0-9]+');
+        Route::post('/{id}/generate', [MasterJsiController::class, 'generate'])->name('generate')->where('id', '[0-9]+');
+        Route::post('/{id}/submit', [MasterJsiController::class, 'submit'])->name('submit')->where('id', '[0-9]+');
+        Route::post('/{id}/approve', [MasterJsiController::class, 'approve'])->name('approve')->where('id', '[0-9]+');
+        Route::post('/{id}/reject', [MasterJsiController::class, 'reject'])->name('reject')->where('id', '[0-9]+');
+        Route::post('/{id}/send-to-deeds', [MasterJsiController::class, 'sendToDeeds'])->name('send-to-deeds')->where('id', '[0-9]+');
+        Route::get('/{id}/print', [MasterJsiController::class, 'print'])->name('print')->where('id', '[0-9]+');
+        Route::delete('/{id}', [MasterJsiController::class, 'destroy'])->name('destroy')->where('id', '[0-9]+');
     });
 
     Route::prefix('loss-of-document')->name('loss-of-document.')->group(function () {

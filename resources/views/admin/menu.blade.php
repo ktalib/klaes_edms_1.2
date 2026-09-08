@@ -46,6 +46,7 @@
     @include('admin.menu.partials.modules.crm')
     @include('admin.menu.partials.modules.edms')
     @include('admin.menu.partials.modules.digital_archive')
+    @include('admin.menu.partials.modules.file_tracking')
     @include('admin.menu.partials.modules.programmes')
     @include('admin.menu.partials.modules.information_products')
     @include('admin.menu.partials.modules.revenue_management')

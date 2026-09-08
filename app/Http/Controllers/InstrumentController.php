@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\NigerianPhone;
+
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -120,7 +122,14 @@ class InstrumentController extends Controller
         $instrumentTypes = array_unique(array_merge($baseTypes, $opTypes, $stTypes));
         sort($instrumentTypes);
 
-        return view('instruments.index', compact('PageTitle', 'PageDescription', 'instruments', 'totalCount', 'pendingCount', 'verifiedCount', 'todayCount', 'fullDataForJs', 'instrumentTypes'));
+        // Feeds the "Update Solicitors Details" modal, which mirrors the capture
+        // card's Solicitor section. Districts are handed to the browser as JSON and
+        // the select is built the first time the modal opens - there are ~1,800 of
+        // them and this listing has no other reason to carry that many option nodes.
+        $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
+        $solicitorDistricts = $this->getDistrictsForSelect()->pluck('name')->values();
+
+        return view('instruments.index', compact('PageTitle', 'PageDescription', 'instruments', 'totalCount', 'pendingCount', 'verifiedCount', 'todayCount', 'fullDataForJs', 'instrumentTypes', 'states', 'solicitorDistricts'));
     }
 
     public function create()
@@ -279,6 +288,13 @@ class InstrumentController extends Controller
                 // and those are exactly what the gender reports cannot count.
                 // Must be a NAME from the `genders` lookup, never an id.
                 'secondPartyGender' => ['required', Rule::in(Gender::options())],
+                // Party 2 is the grantee — the party the registration SMS is sent
+                // to (see InstrumentRegistrationController::deedPartyPhone), so a
+                // reachable number is required at capture. Party 1 is optional:
+                // a grantor is often an estate or a government body with no
+                // mobile, but a number given must still be well formed.
+                'secondPartyPhone' => ['required', 'string', new NigerianPhone()],
+                'firstPartyPhone' => ['nullable', 'string', new NigerianPhone()],
             ];
 
             if (stripos($instrumentType, 'Occupancy Permit') !== false) {
@@ -305,6 +321,7 @@ class InstrumentController extends Controller
             }
 
             $messages = [
+                'secondPartyPhone.required' => 'Party 2 phone number is required — the registration notice is sent to it.',
                 'secondPartyGender.required' => 'Party 2 gender is required — please select one.',
                 'secondPartyGender.in' => 'Party 2 gender must be one of: ' . implode(', ', Gender::options()) . '.',
             ];
@@ -1738,6 +1755,212 @@ class InstrumentController extends Controller
 
             return redirect()->back()->with('error', $message)->withInput();
         }
+    }
+
+    /**
+     * Solicitor details for one captured instrument.
+     *
+     * The listing already ships every row to the browser in window.serverCofoData,
+     * but that copy is a page-load snapshot: after the first edit it is stale for
+     * every later edit made without a refresh, so the modal reads the current
+     * values back from the row it is about to write.
+     *
+     * State and LGA have no columns of their own - capture folds them into the
+     * composed office address - so they are recovered from that string by matching
+     * its comma-separated parts against the States and LGA tables. A legacy address
+     * that nothing matches comes back with both blank, and the modal then leaves
+     * the stored text alone unless the operator changes a location field.
+     */
+    public function solicitor($id)
+    {
+        $record = DB::connection('sqlsrv')->table('instrument_capture')
+            ->select('id', 'solicitor_name', 'solicitor_district', 'solicitor_address')
+            ->where('id', $id)
+            ->first();
+
+        if (!$record) {
+            return response()->json(['success' => false, 'message' => 'Instrument not found.'], 404);
+        }
+
+        [$state, $lga] = $this->resolveSolicitorStateAndLga($record->solicitor_address);
+
+        return response()->json([
+            'success' => true,
+            'solicitor' => [
+                'name' => $record->solicitor_name,
+                'district' => $record->solicitor_district,
+                'state' => $state,
+                'lga' => $lga,
+                'address' => $record->solicitor_address,
+            ],
+        ]);
+    }
+
+    /**
+     * Best-effort split of a composed office address back into [state, lga].
+     *
+     * The capture card joins district, LGA and state with ", ", so the parts are
+     * matched against the reference tables rather than read positionally - older
+     * rows were written by a space-joining composer and would otherwise line up
+     * wrongly. No match means no guess: both come back null.
+     */
+    private function resolveSolicitorStateAndLga(?string $address): array
+    {
+        $address = trim((string) $address);
+        if ($address === '') {
+            return [null, null];
+        }
+
+        $parts = collect(preg_split('/[,]+/', $address))
+            ->map(fn ($p) => trim((string) $p))
+            ->filter()
+            ->values();
+
+        if ($parts->isEmpty()) {
+            return [null, null];
+        }
+
+        $states = DB::connection('sqlsrv')->table('States')->pluck('StateName', 'StateID');
+        $state = null;
+        $stateId = null;
+
+        // Walk from the tail: the state is the last thing the composer appends.
+        foreach ($parts->reverse() as $part) {
+            $match = $states->search(fn ($name) => strcasecmp(trim((string) $name), $part) === 0);
+            if ($match !== false) {
+                $state = $states[$match];
+                $stateId = $match;
+                break;
+            }
+        }
+
+        if ($stateId === null) {
+            return [null, null];
+        }
+
+        $lgas = DB::connection('sqlsrv')->table('StatLGAs')
+            ->where('StateID', $stateId)
+            ->pluck('LGAName');
+
+        $lga = null;
+        foreach ($parts as $part) {
+            if (strcasecmp($part, (string) $state) === 0) {
+                continue;
+            }
+            $hit = $lgas->first(fn ($name) => strcasecmp(trim((string) $name), $part) === 0);
+            if ($hit !== null) {
+                $lga = $hit;
+                break;
+            }
+        }
+
+        return [$state, $lga];
+    }
+
+    /**
+     * Write back only the solicitor columns.
+     *
+     * Deliberately not routed through InstrumentCaptureService::update(): that
+     * rebuilds the whole row from the capture form's field names and would blank
+     * anything the small modal does not post. Nothing else stores solicitor
+     * details - deed_registrations has no such columns - so this row is the only
+     * write target.
+     *
+     * State and LGA are accepted but have no columns; like capture, they survive
+     * only inside the composed office address. Unlike the capture service this
+     * stores the posted address verbatim rather than re-appending district, LGA
+     * and state to it - the modal has already composed it, and appending again is
+     * what produced rows reading "... Nassarawa Kano Nassarawa Kano".
+     */
+    public function updateSolicitor(Request $request, $id)
+    {
+        $validator = Validator::make($request->all(), [
+            'solicitorName' => 'nullable|string|max:255',
+            'solicitorDistrict' => 'nullable|string|max:255',
+            'solicitorDistrictOther' => 'nullable|string|max:255',
+            'solicitorState' => 'nullable|string|max:255',
+            'solicitorLga' => 'nullable|string|max:255',
+            'solicitorAddress' => 'nullable|string|max:1000',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => $validator->errors()->first(),
+            ], 422);
+        }
+
+        $record = DB::connection('sqlsrv')->table('instrument_capture')->where('id', $id)->first();
+
+        if (!$record) {
+            return response()->json(['success' => false, 'message' => 'Instrument not found.'], 404);
+        }
+
+        // An emptied box means "clear this", so blanks are stored as NULL rather
+        // than as an empty string the listing would render as a stray line.
+        $clean = static function ($value) {
+            $value = trim((string) $value);
+            return $value === '' ? null : $value;
+        };
+
+        // "Other" is the picker's escape hatch for a district outside Kano's list;
+        // the typed value is what belongs on the record, matching how
+        // InstrumentCaptureService resolves the same pair of fields.
+        $district = $clean($request->input('solicitorDistrict'));
+        if ($district === 'Other') {
+            $district = $clean($request->input('solicitorDistrictOther'));
+        }
+
+        $payload = [
+            'solicitor_name' => $clean($request->input('solicitorName')),
+            'solicitor_district' => $district,
+            'solicitor_address' => $clean($request->input('solicitorAddress')),
+            'updated_at' => now(),
+            'updated_by' => Auth::id(),
+        ];
+
+        try {
+            DB::connection('sqlsrv')->table('instrument_capture')
+                ->where('id', $id)
+                ->update($payload);
+        } catch (\Throwable $e) {
+            $this->captureLog()->error('Solicitor update failed: ' . $e->getMessage(), [
+                'instrument_capture_id' => $id,
+                'user_id' => Auth::id(),
+                'exception' => get_class($e),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update solicitor details: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        $this->captureLog()->info('Solicitor details updated', [
+            'instrument_capture_id' => $id,
+            'user_id' => Auth::id(),
+            'state' => $request->input('solicitorState'),
+            'lga' => $request->input('solicitorLga'),
+            'before' => [
+                'solicitor_name' => $record->solicitor_name,
+                'solicitor_district' => $record->solicitor_district ?? null,
+                'solicitor_address' => $record->solicitor_address,
+            ],
+            'after' => Arr::except($payload, ['updated_at', 'updated_by']),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Solicitor details updated successfully.',
+            'solicitor' => [
+                'name' => $payload['solicitor_name'],
+                'district' => $payload['solicitor_district'],
+                'state' => $clean($request->input('solicitorState')),
+                'lga' => $clean($request->input('solicitorLga')),
+                'address' => $payload['solicitor_address'],
+            ],
+        ]);
     }
 
     public function destroy($id)

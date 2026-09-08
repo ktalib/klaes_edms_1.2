@@ -316,6 +316,7 @@
                                 <th class="px-4 py-3 text-left" style="min-width:110px">Application Type</th>
                                 <th class="px-4 py-3 text-left" style="min-width:65px">Plot No</th>
                                 <th class="px-4 py-3 text-left" style="min-width:65px">Plan No</th>
+                                <th class="px-4 py-3 text-left" style="min-width:120px">District</th>
                                 <th class="px-4 py-3 text-left" style="min-width:140px">Location</th>
                                 <th class="px-4 py-3 text-left" style="min-width:140px">Applicant Address</th>
                                 <th class="px-4 py-3 text-left" style="min-width:100px">Phone</th>
@@ -376,6 +377,7 @@
                                     </td>
                                     <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->plot_no ?: ($record->ic_plot_number ?: ($record->pra_plot_no ?: ($record->fi_plot_no ?: ($record->fn_plot_no ?: '—')))) }}</td>
                                     <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->plan_no ?: ($record->ic_plan_no ?: ($record->pra_plan_no ?: ($record->fi_plan_no ?: ($record->fn_plan_no ?: '—')))) }}</td>
+                                    <td class="px-4 py-2.5 text-slate-700 text-xs">{{ $record->district ?: ($record->ic_district ?: ($record->pra_district ?: ($record->fi_district ?: ($record->fn_district ?: '—')))) }}</td>
                                     <td class="lss-location-cell px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->location ?: ($record->ic_location ?: ($record->pra_location ?: ($record->fi_location ?: ($record->fn_location ?: '—')))) }}</td>
                                     <td class="lss-address-cell px-4 py-2.5 text-slate-600 text-xs leading-snug">{{ $record->address ?: ($record->residential_address ?: ($record->correspondence_address ?: '—')) }}</td>
                                     <td class="px-4 py-2.5 text-slate-600 text-xs">{{ $record->phone ?? '—' }}</td>
@@ -480,7 +482,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="{{ $isNoChangeOfName ? 14 : 16 }}" class="px-4 py-10 text-center text-slate-400 italic">No applications found. Click "New Application" to create one.</td>
+                                    <td colspan="{{ $isNoChangeOfName ? 15 : 17 }}" class="px-4 py-10 text-center text-slate-400 italic">No applications found. Click "New Application" to create one.</td>
                                 </tr>
                             @endforelse
                         </tbody>

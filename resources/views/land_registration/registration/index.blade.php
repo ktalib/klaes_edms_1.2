@@ -291,7 +291,7 @@
                     ],
                     language: {
                         search: 'Search:',
-                        searchPlaceholder: 'file no, vendor, purchaser, district…',
+                        searchPlaceholder: 'file no, party 1, party 2, district…',
                         emptyTable: 'The register is empty.',
                         zeroRecords: 'No registrations match that search.',
                         info: 'Showing _START_ to _END_ of _TOTAL_ registrations',

@@ -694,6 +694,8 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'instruments'], function () 
     Route::post('/resolve-op-duplicates', [App\Http\Controllers\InstrumentController::class, 'resolveOpDuplicates'])->name('instruments.resolveOpDuplicates');
     Route::get('/{id}', [App\Http\Controllers\InstrumentController::class, 'show'])->name('instruments.show');
     Route::get('/{id}/edit', [App\Http\Controllers\InstrumentController::class, 'edit'])->name('instruments.edit');
+    Route::get('/{id}/solicitor', [App\Http\Controllers\InstrumentController::class, 'solicitor'])->name('instruments.solicitor.show');
+    Route::post('/{id}/solicitor', [App\Http\Controllers\InstrumentController::class, 'updateSolicitor'])->name('instruments.solicitor.update');
     Route::put('/{id}', [App\Http\Controllers\InstrumentController::class, 'update'])->name('instruments.update');
     Route::delete('/{id}', [App\Http\Controllers\InstrumentController::class, 'destroy'])->name('instruments.destroy');
 });

@@ -1,4 +1,21 @@
 @extends('layouts.app')
+
+@php
+    /**
+     * The planning clearance, resolved for the whole page in two queries.
+     *
+     * It used to be the KNUPDA/Physical Planning Handshake on this menu. It is now
+     * an approved Master JSI, captured by Physical Planning on their own register.
+     * MasterJsiGate answers the question, so a record already cleared through the
+     * old handshake still passes and does not deadlock behind a modal that is gone.
+     *
+     * Asked per PAGE, not per row: each row asks two or three times over, which as
+     * a per-row query would be the slowest thing on the listing.
+     */
+    $jsiCleared = \App\Support\MasterJsiGate::clearedMap('subdivision', $records);
+    $jsiReports = \App\Support\MasterJsiGate::reportMap('subdivision', $records);
+@endphp
+
 @section('styles')
 <style>
     .swal2-container { z-index: 20000 !important; }
@@ -201,18 +218,14 @@
                                                         <button onclick="viewRecord({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                         </button>
-                                                        @if($record->knupda_status === 'Approved' || $record->knupda_status === 'Declined')
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="KNUPDA evaluation completed">
-                                                                <i data-lucide="handshake" class="w-4 h-4 text-slate-300"></i> KNUPDA Handshake
-                                                            </button>
-                                                        @else
-                                                            <button onclick="openKnupdaModal({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
-                                                                <i data-lucide="handshake" class="w-4 h-4 text-purple-500"></i> KNUPDA Handshake
-                                                            </button>
-                                                        @endif
+                                                        @include('deeds.parcel_update.partials.master_jsi_menu_items', [
+                                                            'record'      => $record,
+                                                            'subjectType' => 'subdivision',
+                                                            'jsiReport'   => $jsiReports[$record->id] ?? null,
+                                                        ])
                                                     </div>
                                                     <div class="py-1">
-                                                        @if($record->knupda_status === 'Approved')
+                                                        @if(($jsiCleared[$record->id] ?? false))
                                                             @if(!$record->recommendation_generated_at)
                                                                 <button onclick="generateRecommendation({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                                     <i data-lucide="file-check" class="w-4 h-4 text-emerald-500"></i> Generate Recommendation
@@ -233,10 +246,10 @@
                                                                 </button>
                                                             @endif
                                                         @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires an approved Master JSI">
                                                                 <i data-lucide="file-check" class="w-4 h-4 text-slate-300"></i> Generate Recommendation
                                                             </button>
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires an approved Master JSI">
                                                                 <i data-lucide="file-text" class="w-4 h-4 text-slate-300"></i> Print Recommendation
                                                             </button>
                                                         @endif
@@ -254,11 +267,11 @@
                                                                 <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
                                                             </button>
                                                         @elseif($record->status === 'approved')
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ $record->knupda_status === 'Approved' ? ' via the KNUPDA Handshake' : '' }}">
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed bg-slate-50/50" title="Already approved{{ ($jsiCleared[$record->id] ?? false) ? ' via the Master JSI' : '' }}">
                                                                 <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-300"></i> Approved
                                                             </button>
                                                         @else
-                                                            <button onclick="approveRecord({{ $record->id }}, {{ $record->knupda_status === 'Approved' ? 'false' : 'true' }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
+                                                            <button onclick="approveRecord({{ $record->id }}, {{ ($jsiCleared[$record->id] ?? false) ? 'false' : 'true' }})" class="flex items-center w-full px-4 py-2.5 text-sm text-emerald-700 hover:bg-emerald-50 gap-2 font-bold">
                                                                 <i data-lucide="check-circle" class="w-4 h-4 text-emerald-500"></i> Approve
                                                             </button>
                                                         @endif
@@ -273,7 +286,7 @@
                                                     @endif
                                                     </div>
                                                     <div class="py-1">
-                                                        @if($record->knupda_status === 'Approved')
+                                                        @if(($jsiCleared[$record->id] ?? false))
                                                             @if(!$record->application_generated_at)
                                                                 <button onclick="generateApplication({{ $record->id }})" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                                     <i data-lucide="file-plus" class="w-4 h-4 text-orange-500"></i> Generate Application
@@ -294,10 +307,10 @@
                                                                 </button>
                                                             @endif
                                                         @else
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires an approved Master JSI">
                                                                 <i data-lucide="file-plus" class="w-4 h-4 text-slate-300"></i> Generate Application
                                                             </button>
-                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires KNUPDA Approval">
+                                                            <button disabled class="flex items-center w-full px-4 py-2.5 text-sm text-slate-400 gap-2 cursor-not-allowed" title="Requires an approved Master JSI">
                                                                 <i data-lucide="printer" class="w-4 h-4 text-slate-300"></i> Print Application
                                                             </button>
                                                         @endif
@@ -1448,11 +1461,14 @@
     }
 
 
-    async function approveRecord(id, knupdaPending = false) {
+    // `jsiPending` — the planning clearance is an approved Master JSI now, where it
+    // used to be the KNUPDA Handshake. The approval is still allowed without it;
+    // the officer is told, and decides.
+    async function approveRecord(id, jsiPending = false) {
         const result = await Swal.fire({
             title: 'Approve Application?',
-            html: knupdaPending
-                ? "Are you sure you want to approve this subdivision application?<br><span class='text-amber-600 font-bold'>Note: the KNUPDA Handshake has not been recorded yet.</span>"
+            html: jsiPending
+                ? "Are you sure you want to approve this subdivision application?<br><span class='text-amber-600 font-bold'>Note: the Master JSI has not been approved yet.</span>"
                 : "Are you sure you want to approve this subdivision application?",
             icon: 'question',
             showCancelButton: true,
@@ -1626,4 +1642,6 @@
         document.getElementById('doc-preview-modal').classList.add('hidden');
     }
 </script>
+
+
 @endsection

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\LandsOneStopShop;
 
+use App\Rules\NigerianPhone;
+
 use App\Http\Controllers\Controller;
 use App\Models\Billing;
 use App\Models\LandRecommendation;
@@ -115,6 +117,14 @@ class ApplicationController extends Controller
         ]));
         $praLocationExpr = $buildPraValueExpr($locationCols);
 
+        // pra spells it districtName; keep `district` as a defensive alternative
+        // so the expression still resolves if the column is ever renamed.
+        $districtCols = array_values(array_filter([
+            $pickPraColumn(['districtName']),
+            $pickPraColumn(['district']),
+        ]));
+        $praDistrictExpr = $buildPraValueExpr($districtCols);
+
         $originalHolderCols = array_values(array_filter([
             $pickPraColumn(['Grantor']),
             $pickPraColumn(['party_1']),
@@ -133,6 +143,7 @@ class ApplicationController extends Controller
                     {$praPlanExpr} as plan_no,
                     {$praOpSerialExpr} as op_serial_number,
                     {$praLocationExpr} as location,
+                    {$praDistrictExpr} as district,
                     {$praOriginalHolderExpr} as original_holder
                 FROM pra p
                 WHERE {$praFileMatchSql}
@@ -152,6 +163,7 @@ class ApplicationController extends Controller
         };
         $fiFileNumberCol = $pickFiColumn(['file_number']);
         $fiLocationCol = $pickFiColumn(['location']);
+        $fiDistrictCol = $pickFiColumn(['district']);
         $fiPlotCol = $pickFiColumn(['plot_no', 'plot_number']);
         $fiPlanCol = $pickFiColumn(['plan_no', 'tp_no']);
 
@@ -161,6 +173,8 @@ class ApplicationController extends Controller
             $fiTopCols = [];
             if ($fiLocationCol)
                 $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiLocationCol}])), '') as fi_location";
+            if ($fiDistrictCol)
+                $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiDistrictCol}])), '') as fi_district";
             if ($fiPlotCol)
                 $fiTopCols[] = "NULLIF(LTRIM(RTRIM(fi.[{$fiPlotCol}])), '') as fi_plot_no";
             if ($fiPlanCol)
@@ -181,6 +195,7 @@ class ApplicationController extends Controller
         $fnApply = $hasFnTop ? "OUTER APPLY (
             SELECT TOP 1
                 NULLIF(LTRIM(RTRIM(fn.[location])), '') as fn_location,
+                NULLIF(LTRIM(RTRIM(fn.[district])), '') as fn_district,
                 NULLIF(LTRIM(RTRIM(fn.[plot_no])), '') as fn_plot_no,
                 NULLIF(LTRIM(RTRIM(fn.[tp_no])), '') as fn_plan_no
             FROM fileNumber fn
@@ -216,17 +231,22 @@ class ApplicationController extends Controller
                 'ic.plot_number as ic_plot_number',
                 'ic.survey_plan_no as ic_plan_no',
                 'ic.property_description as ic_location',
+                'ic.district as ic_district',
                 'ic.op_serial_number as ic_op_serial_number',
                 DB::raw($hasPraTop ? "pra_top.plot_no as pra_plot_no" : "NULL as pra_plot_no"),
                 DB::raw($hasPraTop ? "pra_top.plan_no as pra_plan_no" : "NULL as pra_plan_no"),
                 DB::raw($hasPraTop ? "pra_top.op_serial_number as pra_op_serial_number" : "NULL as pra_op_serial_number"),
                 DB::raw($hasPraTop ? "pra_top.location as pra_location" : "NULL as pra_location"),
+                // Aliased away from a bare `district`, which `oa.*` above already emits.
+                DB::raw($hasPraTop ? "pra_top.district as pra_district" : "NULL as pra_district"),
                 DB::raw($hasPraTop ? "pra_top.original_holder as pra_original_holder" : "NULL as pra_original_holder"),
                 'ic.party_1_name as ic_original_holder',
                 DB::raw($hasFiTop && $fiLocationCol ? "fi_top.fi_location" : "NULL as fi_location"),
+                DB::raw($hasFiTop && $fiDistrictCol ? "fi_top.fi_district" : "NULL as fi_district"),
                 DB::raw($hasFiTop && $fiPlotCol ? "fi_top.fi_plot_no" : "NULL as fi_plot_no"),
                 DB::raw($hasFiTop && $fiPlanCol ? "fi_top.fi_plan_no" : "NULL as fi_plan_no"),
                 DB::raw($hasFnTop ? "fn_top.fn_location" : "NULL as fn_location"),
+                DB::raw($hasFnTop ? "fn_top.fn_district" : "NULL as fn_district"),
                 DB::raw($hasFnTop ? "fn_top.fn_plot_no" : "NULL as fn_plot_no"),
                 DB::raw($hasFnTop ? "fn_top.fn_plan_no" : "NULL as fn_plan_no"),
             ])
@@ -384,6 +404,23 @@ class ApplicationController extends Controller
             ELSE COALESCE(oa.application_type, 'residential')
         END";
 
+        // District lives on the file's indexing record for 305 of the 352 CoN
+        // applications, against 2 on oss_applications itself and 2 on the Transfer
+        // of Title pra row joined below — without this apply the District column is
+        // almost entirely dashes. Measured at 0.30s over the whole CoN set; the
+        // no-change page skips its registry applies for the opposite reason (5,000+
+        // rows), so this one deliberately stays on the CoN side only.
+        $fiColumns = $this->sqlsrvColumnMap('file_indexings');
+        $fiApply = (isset($fiColumns['file_number']) && isset($fiColumns['district']))
+            ? "OUTER APPLY (
+                SELECT TOP 1 NULLIF(LTRIM(RTRIM(fi.[{$fiColumns['district']}])), '') as fi_district
+                FROM file_indexings fi
+                WHERE fi.[{$fiColumns['file_number']}] = oa.file_no
+                ORDER BY fi.id DESC
+            ) as fi_top"
+            : '';
+        $hasFiTop = $fiApply !== '';
+
         // Drive from oss_applications so every CoN application record is visible
         // even when its Transfer of Title pra row is absent (e.g. after a failed
         // restore). pra, fileNumber, and mls_file_no are LEFT-joined for enrichment.
@@ -392,12 +429,12 @@ class ApplicationController extends Controller
                 SELECT *, ROW_NUMBER() OVER (PARTITION BY file_no ORDER BY id DESC) as oa_rn
                 FROM oss_applications
                 $ossWhereSql
-            ) as oa"))
+            ) as oa {$fiApply}"))
             ->where('oa.oa_rn', 1)
             ->leftJoin(DB::raw("(
                 SELECT id, prop_id, mlsFNo, fileno, temp_fileno, instrument_type,
                     Grantor, Grantee, party_1, party_2, regNo, op_type,
-                    op_serial_number, property_description, location,
+                    op_serial_number, property_description, location, districtName,
                     created_by, created_at, plot_no, tp_no, lgsaOrCity,
                     land_use, system_source,
                     ROW_NUMBER() OVER (PARTITION BY COALESCE(NULLIF(mlsFNo,''), fileno) ORDER BY id DESC) as p_rn
@@ -495,6 +532,8 @@ class ApplicationController extends Controller
                 'p.plot_no as pra_plot_no_raw',
                 'p.tp_no',
                 'p.location as pra_location',
+                // Aliased away from a bare `district`, which `oa.*` above already emits.
+                'p.districtName as pra_district',
                 'p.property_description as pra_property_description',
                 // nvarchar column — convert here so a malformed value surfaces as NULL
                 // rather than reaching Carbon::parse() in the view (see orderByRaw below).
@@ -505,6 +544,8 @@ class ApplicationController extends Controller
                 'fn.plot_no as fn_plot_no',
                 'fn.tp_no as fn_plan_no',
                 'fn.location as fn_location',
+                'fn.district as fn_district',
+                DB::raw($hasFiTop ? 'fi_top.fi_district' : 'NULL as fi_district'),
                 'fn.temp_fileno as fn_temp_fileno',
                 'source_capture.id as source_instrument_capture_id',
                 'source_capture.party_1_name as source_party_1_name',
@@ -516,6 +557,7 @@ class ApplicationController extends Controller
                 'source_capture.plot_number as ic_plot_number',
                 'source_capture.tp_no as ic_plan_no',
                 'source_capture.property_description as ic_location',
+                'source_capture.district as ic_district',
                 'source_capture.op_serial_number as ic_op_serial_number',
                 DB::raw("COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(COALESCE(cb.first_name, ''), ' ', COALESCE(cb.last_name, '')))), ''), p.created_by, N'—') as pra_created_by_name"),
                 DB::raw("$resolvedLandUseSql as resolved_land_use"),
@@ -591,6 +633,17 @@ class ApplicationController extends Controller
                 $loc = trim((string) ($row->fn_location ?? ''));
             }
             $location = $loc;
+            // Same fallback ladder as location: the application's own captured
+            // district first, then the registry rows joined above. 'OTHER' is the
+            // location builder's placeholder, not a district, so keep looking.
+            $dist = '';
+            foreach ([$row->district ?? '', $row->pra_district ?? '', $row->fi_district ?? '', $row->ic_district ?? '', $row->fn_district ?? ''] as $candidate) {
+                $candidate = trim((string) $candidate);
+                if ($candidate !== '' && !in_array(strtoupper($candidate), ['OTHER', 'OTHERS'], true)) {
+                    $dist = $candidate;
+                    break;
+                }
+            }
             $fileNo = trim((string) ($row->file_no ?: ($row->temp_fileno ?: $row->fn_temp_fileno)));
             $createdAt = $row->pra_created_at ?: $row->oa_created_at;
             $workflowRecordId = $row->source_instrument_capture_id ?: $row->oa_instrument_capture_id ?: $row->pra_id;
@@ -620,6 +673,7 @@ class ApplicationController extends Controller
                 'plot_no' => $plotNo !== '' ? strtoupper($plotNo) : '—',
                 'plan_no' => $planNo !== '' ? strtoupper($planNo) : '—',
                 'location' => $location !== '' ? strtoupper($location) : '—',
+                'district' => $dist !== '' ? strtoupper($dist) : '—',
                 'created_at' => $createdAt,
                 'captured_by_name' => trim((string) ($row->oa_captured_by_name ?: $row->pra_created_by_name)) ?: '—',
                 'passport_photo_url' => $passportPhotoUrl,
@@ -652,6 +706,7 @@ class ApplicationController extends Controller
                 ['key' => 'applicant_name', 'label' => 'APPLICANT NAME'],
                 ['key' => 'application_type', 'label' => 'APPLICATION TYPE'],
                 ['key' => 'plot_no', 'label' => 'PLOT'],
+                ['key' => 'district', 'label' => 'DISTRICT'],
                 ['key' => 'location', 'label' => 'LOCATION'],
                 ['key' => 'captured_by_name', 'label' => 'COMMISSIONED BY'],
                 ['key' => 'created_at', 'label' => 'DATE CREATED'],
@@ -1754,7 +1809,7 @@ class ApplicationController extends Controller
             'party_1' => 'nullable|string|max:255',
             'party_2' => 'required|string|max:255',
             'residence_address' => 'nullable|string|max:500',
-            'phone' => 'nullable|string|max:50',
+            'phone' => ['nullable', 'string', 'max:50', new NigerianPhone()],
             'prop_id' => 'nullable',
             'op_serial_number' => 'nullable|string|max:100',
             'location' => 'nullable|string|max:500',
@@ -2224,7 +2279,7 @@ class ApplicationController extends Controller
             'land_use' => 'nullable|string|max:100',
             'purpose' => 'nullable|string|max:255',
             'purpose_id' => 'nullable|integer',
-            'phone_no' => 'nullable|string|max:50',
+            'phone_no' => ['nullable', 'string', 'max:50', new NigerianPhone()],
             'address' => 'nullable|string|max:500',
             'plot_no' => 'nullable|string|max:100',
             'tp_no' => 'nullable|string|max:100',
@@ -4042,7 +4097,7 @@ class ApplicationController extends Controller
             'file_no' => 'nullable|string|max:120',
             'application_type' => 'required|in:residential,commercial,industrial,agricultural',
             'applicant_name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:50',
+            'phone' => ['nullable', 'string', 'max:50', new NigerianPhone()],
             'email' => 'nullable|email|max:255',
             'state_of_origin' => 'nullable|string|max:100',
             'lga' => 'nullable|string|max:100',

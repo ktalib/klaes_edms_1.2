@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Rules\NigerianPhone;
+
 use App\Exceptions\PropIdAllocationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
@@ -65,7 +67,7 @@ class CaveatController extends Controller
             // The caveator's own number, for the placed/lifted messages. caveats
             // recorded a petitioner and their address and no way to reach them
             // until 2026_09_06_000300 added this column.
-            'petitioner_phone' => 'nullable|string|max:100',
+            'petitioner_phone' => ['required', 'string', 'max:100', new NigerianPhone()],
             'phone_confirmed' => 'nullable|boolean',
             'petitioner_address' => 'nullable|string|max:500',
             'grantee' => 'nullable|string|max:255',

@@ -69,8 +69,8 @@ return [
     | InstrumentCaptureService::mapParties() needs no change.
     */
     'parties' => [
-        'first' => 'Vendor',
-        'second' => 'Purchaser',
+        'first' => 'Party 1',
+        'second' => 'Party 2',
     ],
 
     /*

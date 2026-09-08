@@ -3756,34 +3756,20 @@
         modal.classList.remove('flex');
     };
 
-    window.openKnupda = function (id) {
-        document.getElementById('knupda-duplex-id').value = id;
-        const modal = document.getElementById('dx-knupda-modal');
-        modal.classList.remove('hidden');
-        modal.classList.add('flex');
-        icons();
-    };
-
-    window.closeKnupda = function () {
-        const modal = document.getElementById('dx-knupda-modal');
-        modal.classList.add('hidden');
-        modal.classList.remove('flex');
-    };
-
-    window.saveKnupda = async function () {
-        const id = document.getElementById('knupda-duplex-id').value;
-        const res = await post('{{ url('duplex-parcel-update') }}/' + id + '/knupda', {
-            land_value: document.getElementById('knupda-land-value').value,
-            knupda_fee: document.getElementById('knupda-fee').value,
-            knupda_status: document.getElementById('knupda-status').value,
-            knupda_remarks: document.getElementById('knupda-remarks').value,
-        });
-
-        if (!res.success) return toast('error', 'Not saved', res.message);
-        closeKnupda();
-        toast('success', 'KNUPDA updated');
-        setTimeout(() => window.location.reload(), 900);
-    };
+    /**
+     * openKnupda / closeKnupda / saveKnupda used to live here, driving the
+     * four-field KNUPDA modal that stood in for the site inspection. The
+     * inspection now exists as the Master JSI, captured and approved on the
+     * Physical Planning register, so this page only links to it.
+     *
+     * Sending the JSI to Deeds is not driven from here either — that is Physical
+     * Planning acting on their own record, and it lives on the Master JSI
+     * register's action menu.
+     *
+     * The endpoint (duplex-parcel-update.knupda) and the knupda_* columns remain:
+     * they are history, and MasterJsiGate reads knupda_status as a legacy pass so
+     * duplexes cleared before the cutover keep moving.
+     */
 
     window.generateDoc = async function (id, kind) {
         const res = await post('{{ url('duplex-parcel-update') }}/' + id + '/generate-' + kind, {});

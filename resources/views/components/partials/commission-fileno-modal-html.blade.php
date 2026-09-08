@@ -469,9 +469,9 @@
                                 <!-- Row 4, Col 1: Phone Number -->
                                 <div>
                                     <label for="generatePhoneNo" class="block text-xs font-medium text-gray-600 mb-1">
-                                        Phone No of Applicant
+                                        Phone No of Applicant <span class="text-red-500">*</span>
                                     </label>
-                                    <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no"
+                                    <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no" data-phone-ng data-phone-ng-required
                                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                            :class="{ 'bg-gray-100 opacity-75': isInherited }"
                                            :readonly="isInherited"
@@ -550,7 +550,7 @@
                                         <label for="generateRepPhoneNo" class="block text-xs font-medium text-gray-700 mb-1">
                                             Phone No
                                         </label>
-                                        <input type="text" id="generateRepPhoneNo" name="rep_phone_no" x-model="rep_phone_no"
+                                        <input type="text" id="generateRepPhoneNo" name="rep_phone_no" x-model="rep_phone_no" data-phone-ng
                                                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                                :class="{ 'bg-gray-100 opacity-75': isInherited }"
                                                :readonly="isInherited"

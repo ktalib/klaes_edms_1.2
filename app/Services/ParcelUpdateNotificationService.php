@@ -87,6 +87,38 @@ class ParcelUpdateNotificationService
         ]);
     }
 
+    /**
+     * Notify Deeds that a Master JSI has been handed over.
+     *
+     * The handover itself is a stamp on the report — no registry writes — so this
+     * notice is how Deeds learns there is something to read. Reuses the same Deeds
+     * resolution as notifyCommissioned() rather than growing a second one.
+     */
+    public function notifyJsiSentToDeeds(
+        string $type,
+        int $reportId,
+        string $jsiRef,
+        string $fileNo,
+        string $fileTitle = '',
+        string $sentBy = ''
+    ): void {
+        $label = $this->typeLabel($type);
+        $title = "Master JSI {$jsiRef} Sent to Deeds";
+        $body  = "The Master JSI for the {$label} of file {$fileNo}"
+            . ($fileTitle ? " ({$fileTitle})" : '')
+            . " has been approved by Physical Planning and sent to Deeds.";
+
+        $this->dispatchToDeedsUsers($title, $body, [
+            'type'       => $type,
+            'report_id'  => $reportId,
+            'jsi_ref'    => $jsiRef,
+            'file_no'    => $fileNo,
+            'file_title' => $fileTitle,
+            'sent_by'    => $sentBy,
+            'event'      => 'jsi_sent_to_deeds',
+        ]);
+    }
+
     // -------------------------------------------------------------------------
 
     /**

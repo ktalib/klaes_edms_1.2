@@ -1016,7 +1016,7 @@
                                             <!-- Row 4, Col 1: Phone Number -->
                                             <div>
                                                 <label for="generatePhoneNo" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    Phone No of Applicant
+                                                    Phone No of Applicant <span class="text-red-500">*</span>
                                                 </label>
                                                 {{--
                                                     This field has always existed and always posted; until the
@@ -1030,6 +1030,7 @@
                                                 --}}
                                                 <input type="text" id="generatePhoneNo" name="phone_no" x-model="phone_no"
                                                        data-sms-phone
+                                                       data-phone-ng-required
                                                        data-sms-phone-for="#extensionFileNo"
                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                                        :class="{ '': isInherited }"
@@ -2389,7 +2390,7 @@
                                     <i data-lucide="phone" class="w-4 h-4 inline mr-1 text-blue-500"></i>
                                     Phone No of Applicant
                                 </label>
-                                <input type="text" id="editPhoneNo" name="phone_no" 
+                                <input type="text" id="editPhoneNo" name="phone_no" data-phone-ng
                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                        placeholder="Enter Applicant Phone No">
                             </div>

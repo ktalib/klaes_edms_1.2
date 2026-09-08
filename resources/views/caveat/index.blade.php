@@ -457,9 +457,10 @@
                                             many other files -- an agent's rather than this caveator's.
                                         --}}
                                         <div class="space-y-2">
-                                            <label class="text-sm font-medium">Applicant/Solicitor Phone</label>
+                                            <label class="text-sm font-medium">Applicant/Solicitor Phone <span class="text-red-500">*</span></label>
                                             <input type="text" id="petitioner-phone" placeholder="08031234567"
                                                    data-sms-phone
+                                                   data-phone-ng-required
                                                    data-sms-phone-for="#file_number"
                                                    class="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
                                         </div>

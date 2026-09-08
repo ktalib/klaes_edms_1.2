@@ -8,6 +8,7 @@ use App\Models\PlotApplicationSize;
 use App\Models\StreetName;
 use App\Services\ParcelUpdateNotificationService;
 use App\Services\TitleStatusParcelRouter;
+use App\Support\MasterJsiGate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -204,9 +205,25 @@ class PlotSeparationController extends Controller
         return view('deeds.parcel_update.print.separation_application', compact('record'));
     }
 
+    /**
+     * The recommendation memo, which the approval is then given on the strength of.
+     *
+     * It used to require status = approved — which only passed because the KNUPDA
+     * handshake set both statuses at once, approving the application before the memo
+     * recommending it existed. The precondition is now the planning clearance, and
+     * the approval follows the memo as it does on the duplex register.
+     */
     public function generateRecommendation(int $id): JsonResponse
     {
-        $record = PlotSeparationApplication::where('status', PlotSeparationApplication::STATUS_APPROVED)->findOrFail($id);
+        $record = PlotSeparationApplication::findOrFail($id);
+
+        if (!MasterJsiGate::clearedFor($record, 'separation')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An approved Master JSI is required before the recommendation can be generated.',
+            ], 422);
+        }
+
         $record->update([
             'recommendation_generated_at' => now(),
             'updated_by'                  => Auth::id(),
@@ -220,26 +237,29 @@ class PlotSeparationController extends Controller
         return view('deeds.parcel_update.print.separation_recommendation', compact('record'));
     }
 
+    /**
+     * The KNUPDA/Physical Planning handshake, kept only for the records that used it.
+     *
+     * The planning clearance is now the Master JSI (App\Support\MasterJsiGate) and
+     * the handshake is off the action menu; knupda_status stays as history, which
+     * the gate's legacy arm still reads so pre-cutover records keep moving.
+     *
+     * It no longer APPROVES the application: setting status from a planning note
+     * let a decision be taken that nobody made and no memo recorded. Approval is
+     * the explicit Approve action, given on the strength of the recommendation.
+     */
     public function updateKnupda(Request $request, int $id): JsonResponse
     {
-        $record      = PlotSeparationApplication::findOrFail($id);
-        $knupdaStatus = $request->input('knupda_status');
+        $record = PlotSeparationApplication::findOrFail($id);
 
-        $updateData = [
+        $record->update([
             'land_value'     => $request->input('land_value'),
             'knupda_fee'     => $request->input('knupda_fee'),
-            'knupda_status'  => $knupdaStatus,
+            'knupda_status'  => $request->input('knupda_status'),
             'knupda_remarks' => $request->input('knupda_remarks'),
             'updated_by'     => Auth::id(),
-        ];
+        ]);
 
-        if ($knupdaStatus === 'Approved') {
-            $updateData['status'] = PlotSeparationApplication::STATUS_APPROVED;
-        } elseif ($knupdaStatus === 'Declined') {
-            $updateData['status'] = PlotSeparationApplication::STATUS_REJECTED;
-        }
-
-        $record->update($updateData);
         return response()->json(['success' => true, 'message' => 'KNUPDA status updated.']);
     }
 

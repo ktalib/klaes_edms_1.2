@@ -45,6 +45,9 @@
         };
 
         window.baseUrl = "{{ url('') }}";
+        // Built with url() so the page keeps working when the app is served from a
+        // sub-directory, where string-concatenating onto baseUrl would drop it.
+        window.solicitorEndpointBase = "{{ url('instruments') }}";
         window.instrumentRegistrationBase = "{{ url('') }}";
 
         window.serverCofoData = @json($fullDataForJs).map(item => {
@@ -228,12 +231,12 @@
                                         <td class="align-top text-proper">{{ $instrument->party_1_name ? ucwords(strtolower($instrument->party_1_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_2_name ? ucwords(strtolower($instrument->party_2_name)) : '' }}</td>
                                         <td class="align-top text-proper">{{ $instrument->party_3_name ? ucwords(strtolower($instrument->party_3_name)) : '' }}</td>
-                                        <td class="align-top expandable">
+                                        <td class="align-top expandable" data-solicitor-cell="{{ $instrument->id }}">
                                             <div class="flex flex-col">
-                                                <div class="font-bold text-gray-800 text-proper leading-tight w-full whitespace-normal">
+                                                <div class="font-bold text-gray-800 text-proper leading-tight w-full whitespace-normal" data-solicitor-name>
                                                     {{ $instrument->solicitor_name ? ucwords(strtolower($instrument->solicitor_name)) : '' }}
                                                 </div>
-                                                <div class="text-xs text-gray-500 text-proper mt-0.5 w-full whitespace-normal" style="font-size: 11px;">
+                                                <div class="text-xs text-gray-500 text-proper mt-0.5 w-full whitespace-normal" style="font-size: 11px;" data-solicitor-address>
                                                     {{ $instrument->solicitor_address ? ucwords(strtolower($instrument->solicitor_address)) : '' }}
                                                 </div>
                                             </div>
@@ -370,6 +373,17 @@
                                                     </button>
                                                 </form>
 
+                                                <div class="border-t border-gray-100 my-1"></div>
+
+                                                {{-- Solicitor details are hand-keyed at capture and are the one part of
+                                                     a captured instrument officers routinely have to correct afterwards.
+                                                     Full Edit is disabled on this screen, so this opens a small modal
+                                                     carrying the capture card's Solicitor fields. --}}
+                                                <a href="#" onclick="showUpdateSolicitorModal('{{ $instrument->id }}'); return false;"
+                                                   class="flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:bg-indigo-50 transition" role="menuitem">
+                                                    <i data-lucide="briefcase" class="w-4 h-4"></i> Update Solicitors Details
+                                                </a>
+
                                                 @if(!empty($instrument->registered_instrument_id))
                                                     <div class="border-t border-gray-100 my-1"></div>
                                                     
@@ -484,6 +498,104 @@
                     </div>
                 </div>
             </main>
+
+            <!-- Update Solicitor's Details -->
+            <div id="solicitor-modal" class="hidden fixed inset-0 z-[200] items-center justify-center bg-black/40 p-4">
+                <div class="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600">
+                                <i data-lucide="briefcase" class="w-4 h-4"></i>
+                            </span>
+                            <div>
+                                <h2 class="text-sm font-semibold text-gray-800">Update Solicitor's Details</h2>
+                                <p class="text-xs text-gray-500" id="solicitor-modal-subtitle">&nbsp;</p>
+                            </div>
+                        </div>
+                        <button type="button" onclick="closeSolicitorModal()" class="text-gray-400 hover:text-gray-600 focus:outline-none">
+                            <i data-lucide="x" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+
+                    <div class="px-6 py-5 max-h-[70vh] overflow-y-auto">
+                        <input type="hidden" id="solicitor-instrument-id">
+
+                        {{-- Same fields, order and controls as the Solicitor Details card on the
+                             capture screen (instruments/partials/types/sidebars/solicitor_toggle),
+                             so an officer correcting a record sees what they captured. --}}
+                        <div class="grid grid-cols-1 gap-3 bg-gray-50/50 p-3 rounded-lg border border-gray-100">
+                            <h4 class="font-medium text-gray-800 border-b pb-1 mb-1 text-[11px] uppercase tracking-wider">Solicitor Details</h4>
+
+                            <x-instrument-input id="solModalName" label="Name" icon="briefcase"
+                                placeholder="Law firm or lawyer name" />
+
+                            <div>
+                                <label for="solModalDistrict" class="block text-sm font-medium text-gray-700 mb-1">District</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i data-lucide="map-pin" class="h-4 w-4 text-gray-400"></i>
+                                    </div>
+                                    <select id="solModalDistrict" name="solModalDistrict"
+                                        class="w-full pl-10 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all text-sm appearance-none">
+                                        <option value="">Select District</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                        <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400"></i>
+                                    </div>
+                                </div>
+                                <div id="solModalDistrictOtherWrapper" class="mt-2 hidden">
+                                    <input type="text" id="solModalDistrictOther" placeholder="Specify district..."
+                                        class="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all">
+                                </div>
+                            </div>
+
+                            <x-instrument-select id="solModalState" label="State" icon="map-pin" :options="$states"
+                                placeholder="Select State" />
+
+                            <div>
+                                <label for="solModalLga" class="block text-sm font-medium text-gray-700 mb-1">LGA</label>
+                                <div class="relative">
+                                    <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <i data-lucide="map" class="h-4 w-4 text-gray-400"></i>
+                                    </div>
+                                    <select id="solModalLga" name="solModalLga"
+                                        class="w-full pl-10 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all text-sm appearance-none">
+                                        <option value="">Select LGA</option>
+                                    </select>
+                                    <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                                        <i data-lucide="chevron-down" class="h-4 w-4 text-gray-400"></i>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label for="solModalAddress" class="block text-sm font-medium text-gray-700 mb-1">Office Address</label>
+                                <div class="relative">
+                                    <div class="absolute top-3 left-3 pointer-events-none">
+                                        <i data-lucide="map-pin" class="h-4 w-4 text-gray-400"></i>
+                                    </div>
+                                    <textarea id="solModalAddress" name="solModalAddress" rows="2" readonly
+                                        class="w-full pl-10 px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg text-sm text-gray-700 outline-none"
+                                        placeholder="Auto-generated from selected district, LGA and state"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
+                        <button type="button" onclick="closeSolicitorModal()"
+                            class="px-4 py-2 text-sm text-gray-700 font-medium bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                            Cancel
+                        </button>
+                        <button type="button" id="solicitor-save-btn" onclick="saveSolicitorDetails()"
+                            class="px-5 py-2 text-sm text-white font-medium bg-indigo-600 rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                            <i data-lucide="save" class="w-4 h-4"></i>
+                            <span>Save Changes</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
 
             <!-- JavaScript -->
             @include('instruments.partial.js')
@@ -644,7 +756,302 @@
         document.addEventListener('keydown', function (event) {
             if (event.key === 'Escape') {
                 closeAllDropdowns();
+                closeSolicitorModal();
             }
+        });
+
+        // ─── Update Solicitor's Details ────────────────────────────────────────────
+        // Mirrors the Solicitor Details card on the capture screen: District, State
+        // and LGA drive a read-only Office Address. Only solicitor_name,
+        // solicitor_district and solicitor_address exist as columns - State and LGA
+        // survive, as they do at capture, inside the composed address.
+        const SOLICITOR_DISTRICTS = @json($solicitorDistricts);
+
+        // Set once the operator touches a location field. Until then the stored
+        // address is left exactly as it is, so fixing a misspelt name on a legacy
+        // record cannot silently replace a real street address with
+        // "District, LGA, State".
+        let solicitorAddressDirty = false;
+
+        function solicitorModalEl() {
+            return document.getElementById('solicitor-modal');
+        }
+
+        function openSolicitorModal() {
+            const modal = solicitorModalEl();
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function closeSolicitorModal() {
+            const modal = solicitorModalEl();
+            if (!modal) return;
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+        }
+
+        // ~1,800 districts: built the first time the modal opens rather than shipped
+        // as option nodes on every listing page load.
+        function ensureSolicitorDistrictOptions() {
+            const select = document.getElementById('solModalDistrict');
+            if (!select || select.dataset.populated === '1') return;
+
+            const other = select.querySelector('option[value="Other"]');
+            const frag = document.createDocumentFragment();
+            SOLICITOR_DISTRICTS.forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = name;
+                frag.appendChild(opt);
+            });
+            select.insertBefore(frag, other);
+            select.dataset.populated = '1';
+        }
+
+        function isKanoSolicitorState(value) {
+            return String(value || '').trim().toLowerCase() === 'kano';
+        }
+
+        function solicitorAddressParts() {
+            const districtSelect = document.getElementById('solModalDistrict');
+            const district = districtSelect.value === 'Other'
+                ? document.getElementById('solModalDistrictOther').value.trim()
+                : districtSelect.value.trim();
+            const lga = document.getElementById('solModalLga').value.trim();
+            const state = document.getElementById('solModalState').value.trim();
+
+            return [district, lga, state].filter(Boolean);
+        }
+
+        function updateSolicitorOfficeAddressModal() {
+            if (!solicitorAddressDirty) return;
+            document.getElementById('solModalAddress').value = solicitorAddressParts().join(', ');
+        }
+
+        function handleSolicitorModalDistrictChange() {
+            const select = document.getElementById('solModalDistrict');
+            const wrapper = document.getElementById('solModalDistrictOtherWrapper');
+            const other = document.getElementById('solModalDistrictOther');
+
+            if (select.value === 'Other') {
+                wrapper.classList.remove('hidden');
+            } else {
+                wrapper.classList.add('hidden');
+                other.value = '';
+            }
+            updateSolicitorOfficeAddressModal();
+        }
+
+        // Outside Kano the district list does not apply, so the picker is forced to
+        // "Other" and the specify box takes over - same rule as the capture card.
+        function applySolicitorStateRules() {
+            const stateEl = document.getElementById('solModalState');
+            const districtEl = document.getElementById('solModalDistrict');
+
+            if (stateEl.value && !isKanoSolicitorState(stateEl.value)) {
+                districtEl.value = 'Other';
+                districtEl.dataset.forcedOtherForState = '1';
+            } else if (districtEl.dataset.forcedOtherForState === '1') {
+                districtEl.value = '';
+                delete districtEl.dataset.forcedOtherForState;
+            }
+            handleSolicitorModalDistrictChange();
+        }
+
+        function loadSolicitorLgas(state, selected) {
+            const select = document.getElementById('solModalLga');
+            select.innerHTML = '<option value="">Select LGA</option>';
+            if (!state) return Promise.resolve();
+
+            return fetch(window.solicitorEndpointBase + '/get-lgas/' + encodeURIComponent(state), {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(res => res.json())
+                .then(lgas => {
+                    (lgas || []).forEach(lga => {
+                        const name = lga.LGAName || lga.name || '';
+                        if (!name) return;
+                        const opt = document.createElement('option');
+                        opt.value = name;
+                        opt.textContent = name;
+                        if (selected && name.toLowerCase() === String(selected).toLowerCase()) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                })
+                .catch(() => { /* an unreachable lookup leaves the LGA list empty, not the modal broken */ });
+        }
+
+        function showUpdateSolicitorModal(instrumentId) {
+            closeAllDropdowns();
+            ensureSolicitorDistrictOptions();
+            solicitorAddressDirty = false;
+
+            const cell = document.querySelector('[data-solicitor-cell="' + instrumentId + '"]');
+            const row = cell ? cell.closest('tr') : null;
+            const fileNoCell = row ? row.querySelector('td:first-child') : null;
+
+            document.getElementById('solicitor-instrument-id').value = instrumentId;
+            document.getElementById('solicitor-modal-subtitle').textContent =
+                fileNoCell ? fileNoCell.innerText.trim() : '';
+            document.getElementById('solModalName').value = '';
+            document.getElementById('solModalDistrict').value = '';
+            document.getElementById('solModalDistrictOther').value = '';
+            document.getElementById('solModalDistrictOtherWrapper').classList.add('hidden');
+            document.getElementById('solModalState').value = '';
+            document.getElementById('solModalLga').innerHTML = '<option value="">Select LGA</option>';
+            document.getElementById('solModalAddress').value = '';
+            openSolicitorModal();
+
+            fetch(window.solicitorEndpointBase + '/' + instrumentId + '/solicitor', {
+                headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+            })
+                .then(res => res.json())
+                .then(data => {
+                    if (!data.success) throw new Error(data.message || 'Unable to load solicitor details.');
+
+                    const sol = data.solicitor;
+                    document.getElementById('solModalName').value = sol.name || '';
+                    document.getElementById('solModalAddress').value = sol.address || '';
+
+                    // A district the picker does not carry (anything outside Kano)
+                    // comes back as "Other" plus the stored text, the same shape the
+                    // capture card posts it in.
+                    const districtSelect = document.getElementById('solModalDistrict');
+                    const district = sol.district || '';
+                    const known = district && Array.from(districtSelect.options).some(o => o.value === district);
+                    if (district && !known) {
+                        districtSelect.value = 'Other';
+                        document.getElementById('solModalDistrictOther').value = district;
+                        document.getElementById('solModalDistrictOtherWrapper').classList.remove('hidden');
+                    } else {
+                        districtSelect.value = district;
+                    }
+
+                    document.getElementById('solModalState').value = sol.state || '';
+                    document.getElementById('solModalName').focus();
+
+                    return loadSolicitorLgas(sol.state, sol.lga);
+                })
+                .catch(err => {
+                    closeSolicitorModal();
+                    Swal.fire({ icon: 'error', title: 'Could not load', text: err.message });
+                });
+        }
+
+        function saveSolicitorDetails() {
+            const instrumentId = document.getElementById('solicitor-instrument-id').value;
+            if (!instrumentId) return;
+
+            const btn = document.getElementById('solicitor-save-btn');
+            btn.disabled = true;
+
+            const payload = {
+                solicitorName: document.getElementById('solModalName').value,
+                solicitorDistrict: document.getElementById('solModalDistrict').value,
+                solicitorDistrictOther: document.getElementById('solModalDistrictOther').value,
+                solicitorState: document.getElementById('solModalState').value,
+                solicitorLga: document.getElementById('solModalLga').value,
+                solicitorAddress: document.getElementById('solModalAddress').value
+            };
+
+            fetch(window.solicitorEndpointBase + '/' + instrumentId + '/solicitor', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
+                },
+                body: JSON.stringify(payload)
+            })
+                .then(res => res.json().then(data => ({ ok: res.ok, data })))
+                .then(result => {
+                    if (!result.ok || !result.data.success) {
+                        throw new Error(result.data.message || 'Failed to update solicitor details.');
+                    }
+
+                    updateSolicitorCell(instrumentId, result.data.solicitor);
+                    closeSolicitorModal();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Updated',
+                        text: result.data.message,
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                })
+                .catch(err => {
+                    Swal.fire({ icon: 'error', title: 'Update failed', text: err.message });
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                });
+        }
+
+        // Repaint the row in place - the listing is paginated and server-sorted, so a
+        // reload would throw the operator back to page 1 after every correction.
+        function updateSolicitorCell(instrumentId, solicitor) {
+            const cell = document.querySelector('[data-solicitor-cell="' + instrumentId + '"]');
+            if (!cell) return;
+
+            const toProper = function (value) {
+                return (value || '').replace(/[^\s]+/g, function (w) {
+                    return w.charAt(0).toUpperCase() + w.substring(1).toLowerCase();
+                });
+            };
+
+            const nameEl = cell.querySelector('[data-solicitor-name]');
+            const addressEl = cell.querySelector('[data-solicitor-address]');
+            if (nameEl) nameEl.textContent = toProper(solicitor.name);
+            if (addressEl) addressEl.textContent = toProper(solicitor.address);
+
+            // Keep the in-page copy in step so exports and the RDS/CoR helpers that
+            // read window.serverCofoData do not hand back the pre-edit values.
+            if (Array.isArray(window.serverCofoData)) {
+                const row = window.serverCofoData.find(function (item) {
+                    return String(item.id) === String(instrumentId);
+                });
+                if (row) {
+                    row.solicitor_name = solicitor.name;
+                    row.solicitor_district = solicitor.district;
+                    row.solicitor_address = solicitor.address;
+                }
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const districtEl = document.getElementById('solModalDistrict');
+            const districtOtherEl = document.getElementById('solModalDistrictOther');
+            const stateEl = document.getElementById('solModalState');
+            const lgaEl = document.getElementById('solModalLga');
+            if (!districtEl || !stateEl || !lgaEl) return;
+
+            const markDirty = function () { solicitorAddressDirty = true; };
+
+            districtEl.addEventListener('change', function () {
+                markDirty();
+                handleSolicitorModalDistrictChange();
+            });
+            districtOtherEl.addEventListener('input', function () {
+                markDirty();
+                updateSolicitorOfficeAddressModal();
+            });
+            stateEl.addEventListener('change', function () {
+                markDirty();
+                applySolicitorStateRules();
+                loadSolicitorLgas(this.value, '').then(updateSolicitorOfficeAddressModal);
+            });
+            lgaEl.addEventListener('change', function () {
+                markDirty();
+                updateSolicitorOfficeAddressModal();
+            });
+        });
+
+        // Backdrop click closes, clicks inside the card do not.
+        document.addEventListener('click', function (event) {
+            if (event.target === solicitorModalEl()) closeSolicitorModal();
         });
     </script>
 

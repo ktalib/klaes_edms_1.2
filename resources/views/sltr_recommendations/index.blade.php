@@ -345,6 +345,14 @@
                             <input type="date" id="f-application_date"
                                 class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium">
                         </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">Phone Number <span class="text-red-500">*</span></label>
+                            <input type="text" id="f-applicant_phone"
+                                data-phone-ng data-phone-ng-required data-phone-error="f-applicant_phone-error"
+                                class="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:border-teal-500 focus:ring-2 focus:ring-teal-100 transition focus:bg-white text-sm font-medium"
+                                placeholder="08012345678">
+                            <p id="f-applicant_phone-error" class="mt-1 text-xs text-red-600 hidden"></p>
+                        </div>
                     </div>
                 </div>
 
@@ -919,7 +927,7 @@ function resetPropBuilder() {
 }
 
 // ── Scalar fields (not address-builder) ────────────────────────────
-const SCALAR_FIELDS = ['applicant_name','application_date','plot_number','page_application','page_survey','page_planning','purpose_of_clause','term','ground_rent','processing_fee','notes'];
+const SCALAR_FIELDS = ['applicant_name','applicant_phone','application_date','plot_number','page_application','page_survey','page_planning','purpose_of_clause','term','ground_rent','processing_fee','notes'];
 function syncLandUseText() {
     const sel = document.getElementById('f-land_use_id');
     const hid = document.getElementById('f-land_use');
@@ -1147,6 +1155,7 @@ function viewRecord(data, printUrl) {
     const rows = [
         ['File Number', esc(data.sltr_number)],
         ['Applicant Name', esc(data.applicant_name)],
+        ['Phone Number', esc(data.applicant_phone)],
         ['Applicant Address', esc(data.applicant_address)],
         ['Location', esc(data.location)],
         ['LGA', esc(data.lga)],
@@ -1207,6 +1216,20 @@ document.getElementById('rec-form').addEventListener('submit', async function(e)
         return;
     }
 
+    // ── Phone number ────────────────────────────────────────────────
+    // This modal saves by fetch, so the shared helper's submit interception
+    // never fires here — ask it explicitly.
+    const phoneEl = document.getElementById('f-applicant_phone');
+    if (phoneEl && window.NigerianPhone && !window.NigerianPhone.validateField(phoneEl, false)) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Phone Number Required',
+            text: 'Enter an 11-digit phone number starting with 0, such as 08012345678.'
+        });
+        phoneEl.focus();
+        return;
+    }
+
     const id = document.getElementById('rec-id').value;
     const url = id ? `/sltr-recommendations/${id}` : '/sltr-recommendations';
     const method = id ? 'PUT' : 'POST';
@@ -1243,6 +1266,16 @@ document.getElementById('rec-form').addEventListener('submit', async function(e)
             body: JSON.stringify(body)
         });
         const data = await res.json();
+        if (res.status === 422 && data.errors) {
+            // Laravel returns field errors, not `message` — show the first.
+            const firstError = Object.values(data.errors)[0];
+            Swal.fire({
+                icon: 'error',
+                title: 'Check the form',
+                text: Array.isArray(firstError) ? firstError[0] : String(firstError)
+            });
+            return;
+        }
         if (data.success) {
             closeModal();
             Swal.fire({

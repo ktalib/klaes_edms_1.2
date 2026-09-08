@@ -4,7 +4,12 @@
     'type' => 'text', 
     'placeholder' => '', 
     'icon' => 'file-text',
-    'value' => ''
+    'value' => '',
+    // Opt in to the shared Nigerian phone validator (public/js/nigerian-phone.js).
+    // NOT keyed off icon="phone": some of those fields are labelled "Phone/Email"
+    // and legitimately hold an address.
+    'phone' => false,
+    'phoneRequired' => false,
 ])
 
 <div {{ $attributes->merge(['class' => '']) }}>
@@ -15,7 +20,9 @@
         </div>
         <input id="{{ $id }}" name="{{ $id }}" type="{{ $type }}"
             class="w-full pl-10 px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all text-sm uppercase"
-            oninput="this.value = this.value.toUpperCase()"
+            @if($phone) data-phone-ng @endif
+            @if($phoneRequired) data-phone-ng-required required @endif
+            @unless($phone) oninput="this.value = this.value.toUpperCase()" @endunless
             placeholder="{{ $placeholder }}" value="{{ $value }}">
     </div>
 </div>

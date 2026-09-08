@@ -511,6 +511,21 @@ function handleCaveatSubmission() {
         });
         return;
     }
+
+    // Phone number. This form saves by fetch, so the shared helper's submit
+    // interception never fires — ask it explicitly. Mirrors the `required`
+    // + NigerianPhone rule on CaveatController::store.
+    const petitionerPhone = document.getElementById('petitioner-phone');
+    if (petitionerPhone && window.NigerianPhone && !window.NigerianPhone.validateField(petitionerPhone, false)) {
+        Swal.fire({
+            icon: 'error',
+            title: 'Phone Number Required',
+            text: 'Enter an 11-digit phone number starting with 0, such as 08012345678.',
+            confirmButtonColor: '#3b82f6'
+        });
+        petitionerPhone.focus();
+        return;
+    }
     
     // Show loading state
     const submitButton = document.getElementById('place-caveat');

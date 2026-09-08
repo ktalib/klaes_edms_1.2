@@ -258,7 +258,7 @@
                                             <x-instrument-select id="firstPartyState" label="" icon="map-pin"
                                                 :options="$states" placeholder="State" />
                                         </div>
-                                        <x-instrument-input id="firstPartyPhone" label="" icon="phone"
+                                        <x-instrument-input id="firstPartyPhone" label="" icon="phone" :phone="true"
                                             placeholder="Phone Number" />
                                     </div>
                                 </div>
@@ -281,7 +281,7 @@
                                             <x-instrument-select id="secondPartyState" label="" icon="map-pin"
                                                 :options="$states" placeholder="State" />
                                         </div>
-                                        <x-instrument-input id="secondPartyPhone" label="" icon="phone"
+                                        <x-instrument-input id="secondPartyPhone" label="" icon="phone" :phone="true" :phone-required="true"
                                             placeholder="Phone Number" />
                                     </div>
                                 </div>
