@@ -340,34 +340,19 @@
                                                 <button onclick="viewDuplex({{ $record->id }})" class="menu-item">View stages</button>
                                             </div>
 
-                                            {{-- The planning clearance. This was the KNUPDA/Physical Planning
-                                                 handshake — a four-field modal recording a fee and a status,
-                                                 standing in for a site inspection that had nowhere to live.
-                                                 The inspection now exists as the Master JSI, so the menu
-                                                 opens that instead: captured against this duplex, approved on
-                                                 the Physical Planning register, and read back here by
-                                                 MasterJsiGate.
+                                            {{-- The planning clearance is NOT on this menu.
 
-                                                 Send JSI to Deeds is NOT here: the handover is Physical
-                                                 Planning acting on their own inspection, so it lives on the
-                                                 Master JSI register beside Generate / Submit / Approve
-                                                 rather than sitting greyed out on this menu waiting for
-                                                 another department to approve the sheet. --}}
-                                            <div class="py-1">
-                                                @if ($jsiReport)
-                                                    <a href="{{ route('master-jsi.show', $jsiReport->id) }}"
-                                                        class="menu-item block">View Master JSI ({{ strtoupper($jsiReport->status) }})</a>
-                                                @else
-                                                    <a href="{{ route('master-jsi.create', [
-                                                            'subject_type' => 'duplex',
-                                                            'subject_id'   => $record->id,
-                                                            'category'     => 'APU',
-                                                            'return'       => request()->fullUrl(),
-                                                        ]) }}"
-                                                        title="{{ $allCaptured ? '' : 'Capture every stage first' }}"
-                                                        class="menu-item block {{ $allCaptured && !$frozen ? '' : 'is-disabled' }}">Capture Master JSI</a>
-                                                @endif
-                                            </div>
+                                                 It used to be, as the KNUPDA/Physical Planning handshake — a
+                                                 four-field modal recording a fee and a status, standing in
+                                                 for a site inspection that had nowhere to live. The
+                                                 inspection now exists as the Master JSI, and capturing,
+                                                 approving and sending it are all Physical Planning's work on
+                                                 their own register.
+
+                                                 This page only READS the answer: $jsiOk, via MasterJsiGate,
+                                                 decides what may be generated and approved, and
+                                                 $approvalBlocker says in words when the sheet is what is
+                                                 still missing. --}}
 
                                             {{-- The menu now runs in the order the work is done: the
                                                  recommendation is drawn and printed, the Commissioner

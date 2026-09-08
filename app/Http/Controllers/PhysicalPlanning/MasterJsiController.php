@@ -116,9 +116,25 @@ class MasterJsiController extends Controller
                 ?: ($subjectType ? MasterJsiSubjectResolver::categoryFor($subjectType) : null),
             'parcelUpdateType' => $type,
             'prefill'      => MasterJsiSubjectResolver::prefill($subjectType, $record),
+            'districts'    => $this->districts(),
             'returnUrl'    => $request->query('return') ?: route('master-jsi.index'),
             'PageTitle'    => 'New Master JSI',
         ]);
+    }
+
+    /**
+     * The district list behind the dropdown.
+     *
+     * One select on this page, so the full list is fine — the OOM this codebase hit
+     * before came from ~23 duplicated district selects on one screen, not from the
+     * 1,800 options themselves.
+     */
+    private function districts()
+    {
+        return DB::connection('sqlsrv')->table('districts')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['name']);
     }
 
     public function edit(int $id, Request $request): View
@@ -132,6 +148,7 @@ class MasterJsiController extends Controller
             'category'         => $report->category,
             'parcelUpdateType' => $report->parcel_update_type,
             'prefill'          => [],
+            'districts'        => $this->districts(),
             'returnUrl'        => $request->query('return') ?: route('master-jsi.index'),
             'PageTitle'        => 'Master JSI ' . $report->jsi_ref,
         ]);

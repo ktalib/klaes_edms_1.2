@@ -13,7 +13,6 @@
      * a per-row query would be the slowest thing on the listing.
      */
     $jsiCleared = \App\Support\MasterJsiGate::clearedMap('extension', $records);
-    $jsiReports = \App\Support\MasterJsiGate::reportMap('extension', $records);
 @endphp
 
 
@@ -145,11 +144,6 @@
                                                         <button onclick="peView(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                         </button>
-                                                        @include('deeds.parcel_update.partials.master_jsi_menu_items', [
-                                                            'record'      => $record,
-                                                            'subjectType' => 'extension',
-                                                            'jsiReport'   => $jsiReports[$record->id] ?? null,
-                                                        ])
                                                     </div>
                                                     <div class="py-1">
                                                         @if(($jsiCleared[$record->id] ?? false))

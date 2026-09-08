@@ -17,7 +17,6 @@
      */
     $jsiRows    = collect($pendingRecords)->concat(collect($approvedRecords));
     $jsiCleared = \App\Support\MasterJsiGate::clearedMap('change_of_purpose', $jsiRows);
-    $jsiReports = \App\Support\MasterJsiGate::reportMap('change_of_purpose', $jsiRows);
 @endphp
 
 
@@ -233,11 +232,6 @@
                                                         <button onclick="copViewApplication(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                         </button>
-                                                        @include('deeds.parcel_update.partials.master_jsi_menu_items', [
-                                                            'record'      => $record,
-                                                            'subjectType' => 'change_of_purpose',
-                                                            'jsiReport'   => $jsiReports[$record->id] ?? null,
-                                                        ])
                                                         <div class="py-1">
                                                             @if(($jsiCleared[$record->id] ?? false))
                                                                 @if(!$record->application_generated_at)
@@ -395,11 +389,6 @@
                                                         <button onclick="copViewApplication(this)" class="flex items-center w-full px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 gap-2">
                                                             <i data-lucide="eye" class="w-4 h-4 text-blue-500"></i> View Details
                                                         </button>
-                                                        @include('deeds.parcel_update.partials.master_jsi_menu_items', [
-                                                            'record'      => $record,
-                                                            'subjectType' => 'change_of_purpose',
-                                                            'jsiReport'   => $jsiReports[$record->id] ?? null,
-                                                        ])
                                                         <div class="py-1">
                                                             @if(($jsiCleared[$record->id] ?? false))
                                                                 @if(!$record->application_generated_at)

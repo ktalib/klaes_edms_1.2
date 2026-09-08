@@ -176,11 +176,6 @@
                         ['file_title', 'File Title', 'text'],
                         ['applicant_name', 'Applicant Name', 'text'],
                         ['inspection_date', 'Inspection Date', 'date'],
-                        ['plot_number', 'Plot Number', 'text'],
-                        ['location', 'Location', 'text'],
-                        ['district', 'District', 'text'],
-                        ['lga', 'LGA', 'text'],
-                        ['inspection_officer', 'Inspection Officer', 'text'],
                     ] as [$field, $label, $type])
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1.5">{{ $label }}</label>
@@ -190,6 +185,57 @@
                             class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
                     </div>
                     @endforeach
+
+                    {{-- The address, narrowest first: Plot Number, District, LGA, then
+                         the Location line the three of them sit on. --}}
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1.5">Plot Number</label>
+                        <input type="text" name="plot_number" id="plot_number" value="{{ $value('plot_number') }}"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                    </div>
+
+                    @php $districtValue = (string) $value('district'); @endphp
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1.5">District</label>
+                        <select name="district" id="district"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                            <option value="">Select district</option>
+                            @foreach ($districts as $d)
+                                <option value="{{ $d->name }}" @selected(strcasecmp($districtValue, (string) $d->name) === 0)>
+                                    {{ strtoupper($d->name) }}
+                                </option>
+                            @endforeach
+                            {{-- A district the registry holds but the list does not: the
+                                 captured value must survive being re-opened, rather than
+                                 silently resetting to blank on the next save. --}}
+                            <option value="OTHER" @selected($districtValue !== '' && !$districts->contains(fn ($d) => strcasecmp($districtValue, (string) $d->name) === 0))>OTHER</option>
+                        </select>
+                        <input type="text" name="district_other" id="district_other"
+                            value="{{ $districtValue !== '' && !$districts->contains(fn ($d) => strcasecmp($districtValue, (string) $d->name) === 0) ? $districtValue : '' }}"
+                            placeholder="Specify district"
+                            class="{{ $districtValue !== '' && !$districts->contains(fn ($d) => strcasecmp($districtValue, (string) $d->name) === 0) ? '' : 'hidden' }} mt-2 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1.5">LGA</label>
+                        <input type="text" name="lga" id="lga" value="{{ $value('lga') }}"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                    </div>
+
+                    {{-- The plot number is NOT repeated in here — it has its own box
+                         above, and stating it twice lets the two disagree. --}}
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-bold text-slate-600 mb-1.5">Location</label>
+                        <input type="text" name="location" id="location" value="{{ $value('location') }}"
+                            placeholder="Street, area — without the plot number"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-bold text-slate-600 mb-1.5">Inspection Officer</label>
+                        <input type="text" name="inspection_officer" value="{{ $value('inspection_officer') }}"
+                            class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                    </div>
                 </div>
             </div>
 
@@ -608,9 +654,15 @@ window.openFileSelector = function () {
                 setIfEmpty('file_title', name);
                 setIfEmpty('applicant_name', name);
                 setIfEmpty('plot_number', data.record.plot_no);
-                setIfEmpty('district', data.record.district || data.record.property_district);
+                setDistrict(data.record.district || data.record.property_district);
                 setIfEmpty('lga', data.record.lga);
-                setIfEmpty('location', data.record.location || data.record.Location);
+
+                // The plot number has its own box, so it comes off the front of the
+                // location rather than being stated twice.
+                setIfEmpty('location', locationWithoutPlot(
+                    data.record.location || data.record.Location,
+                    data.record.plot_no
+                ));
             }
 
             resolveSubject();
@@ -622,6 +674,62 @@ function setIfEmpty(name, value) {
     const el = document.querySelector(`[name="${name}"]`);
     if (el && !el.value && value) el.value = value;
 }
+
+/**
+ * The district select, filled from a registry value.
+ *
+ * A district the registry holds but the list does not falls to OTHER with the name
+ * typed in beside it — rather than silently staying blank and being saved as blank.
+ */
+function setDistrict(value) {
+    const select = document.getElementById('district');
+    const other  = document.getElementById('district_other');
+    if (!select || !value || select.value) return;
+
+    const match = [...select.options].find(
+        o => o.value && o.value.toUpperCase() === String(value).trim().toUpperCase()
+    );
+
+    if (match) {
+        select.value = match.value;
+        other.classList.add('hidden');
+        other.value = '';
+    } else {
+        select.value = 'OTHER';
+        other.classList.remove('hidden');
+        other.value = value;
+    }
+}
+
+/**
+ * "327, KATSINA ROAD, DAKATA" with plot 327 -> "KATSINA ROAD, DAKATA".
+ *
+ * Mirrors MasterJsiSubjectResolver::locationWithoutPlot(), which does the same for
+ * the values the server prefills — the two paths must agree or the same file would
+ * read differently depending on how the form was opened.
+ *
+ * Only a LEADING plot number is removed, and only when it matches: "3271" is not
+ * stripped for plot "327", and a road named further along the line is left alone.
+ */
+function locationWithoutPlot(location, plotNo) {
+    const loc  = String(location || '').trim();
+    const plot = String(plotNo || '').trim();
+    if (!loc || !plot) return loc;
+
+    const escaped = plot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('^\\s*(?:plot\\s*(?:no\\.?|number)?\\s*)?' + escaped + '\\s*[,\\-\\/]?\\s+', 'i');
+    const stripped = loc.replace(re, '').trim();
+
+    // A location that was ONLY the plot number is kept as it was, not blanked.
+    return stripped || loc;
+}
+
+// OTHER reveals the free-text box; any real district hides it again.
+document.getElementById('district').addEventListener('change', function () {
+    const other = document.getElementById('district_other');
+    other.classList.toggle('hidden', this.value !== 'OTHER');
+    if (this.value !== 'OTHER') other.value = '';
+});
 
 /**
  * Find the parcel-update application this file number belongs to.
@@ -671,7 +779,12 @@ async function resolveSubject() {
             note.textContent = data.message;
             note.className = 'mt-1 text-[10px] text-emerald-600 font-bold';
 
-            Object.entries(data.prefill || {}).forEach(([field, val]) => setIfEmpty(field, val));
+            Object.entries(data.prefill || {}).forEach(([field, val]) => {
+                // The district is a select with an OTHER escape, so it cannot be
+                // filled by assigning the value blindly.
+                if (field === 'district') setDistrict(val);
+                else setIfEmpty(field, val);
+            });
         } else {
             note.textContent = data.message || 'No matching application found. The inspection will be captured unlinked.';
             note.className = 'mt-1 text-[10px] text-amber-600 font-bold';
@@ -721,6 +834,13 @@ document.getElementById('masterJsiForm').addEventListener('submit', async (e) =>
     if (payload.portions && !Array.isArray(payload.portions)) {
         payload.portions = Object.values(payload.portions);
     }
+
+    // OTHER is a prompt, not a district — the typed name is what gets stored, so
+    // the record never carries the literal string "OTHER".
+    if (payload.district === 'OTHER') {
+        payload.district = (payload.district_other || '').trim();
+    }
+    delete payload.district_other;
 
     const url = IS_EDIT ? `/master-jsi/${REPORT_ID}` : '/master-jsi';
     const res = await fetch(url, {

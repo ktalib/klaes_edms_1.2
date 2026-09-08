@@ -81,7 +81,10 @@ class MasterJsiSubjectResolver
             'plot_number'    => $record->plot_no ?? null,
             'district'       => $record->district ?? null,
             'lga'            => $record->lga ?? null,
-            'location'       => $record->location ?? null,
+
+            // The plot number has its own box, so it is stripped off the front of
+            // the location rather than being stated twice.
+            'location'       => self::locationWithoutPlot($record->location ?? null, $record->plot_no ?? null),
 
             // Change of Purpose is the one sheet that states both land uses, and
             // the application already knows what it is asking to become.
@@ -101,6 +104,41 @@ class MasterJsiSubjectResolver
                 ? ($record->num_plots ?? null)
                 : null,
         ], fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * The location with the plot number taken off the front.
+     *
+     * Registry locations are stored as one line that opens with the plot number —
+     * "327, KATSINA ROAD, DAKATA, KUMBOTSO, KANO" — but the inspection sheet has a
+     * Plot Number box of its own, so carrying it in both prints it twice and lets
+     * the two disagree the moment either is corrected.
+     *
+     * Only a leading plot number is removed, and only when it matches the record's
+     * own: a road called "Plot 5 Road" further along the line is left alone, and a
+     * location that never carried the plot number comes back untouched.
+     */
+    public static function locationWithoutPlot(?string $location, $plotNo): ?string
+    {
+        $location = trim((string) $location);
+        $plotNo   = trim((string) $plotNo);
+
+        if ($location === '' || $plotNo === '') {
+            return $location ?: null;
+        }
+
+        // "327, KATSINA ROAD" / "327 KATSINA ROAD" / "PLOT 327, KATSINA ROAD"
+        $pattern = '/^\s*(?:plot\s*(?:no\.?|number)?\s*)?'
+            . preg_quote($plotNo, '/')
+            . '\s*[,\-\/]?\s+/i';
+
+        $stripped = preg_replace($pattern, '', $location, 1, $count);
+
+        // Never hand back an empty line: a location that was ONLY the plot number
+        // is better kept as it was than blanked.
+        return ($count && trim((string) $stripped) !== '')
+            ? trim((string) $stripped)
+            : $location;
     }
 
     /** How the record names itself in a picker: "KN1234 — Musa Bello". */
