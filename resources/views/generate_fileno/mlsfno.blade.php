@@ -1812,6 +1812,17 @@
                                                             class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">&#215;</button>
                                                 </div>
                                                 <input type="hidden" name="tp_no" id="generator_tp_no_val" :value="tpNo">
+                                                <!-- "Other (specify)": the TP number the officer holds is not always in
+                                                     the lookup table yet, so it is typed here. It is this box, never the
+                                                     "Other" sentinel, that fills tp_no. -->
+                                                <input type="text" id="tp_other_input"
+                                                       x-show="tpIsOther"
+                                                       x-cloak
+                                                       :value="tpOtherValue"
+                                                       @input="onTpOtherInput($event.target.value)"
+                                                       autocomplete="off"
+                                                       placeholder="Please specify TP number..."
+                                                       class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-blue-500">
                                                 <!-- Dropdown results -->
                                                 <div x-show="tpSearchOpen"
                                                      x-cloak
@@ -1820,7 +1831,10 @@
                                                     <div x-show="!tpSearchLoading && tpSearchResults.length === 0" class="px-3 py-2 text-xs text-gray-400">No results</div>
                                                     <template x-for="(result, index) in tpSearchResults" :key="result.id">
                                                         <div @mousedown.prevent="selectTpResult(result)"
-                                                             :class="tpFocusIndex === index ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50'"
+                                                             :class="[
+                                                                 tpFocusIndex === index ? 'bg-blue-50 text-blue-700' : 'hover:bg-gray-50',
+                                                                 result.id === '__other__' ? 'italic text-blue-700 border-t border-gray-200' : ''
+                                                             ]"
                                                              class="px-3 py-2 text-sm cursor-pointer"
                                                              x-text="result.text">
                                                         </div>
@@ -2414,9 +2428,31 @@
                                         <i data-lucide="hash" class="w-4 h-4 inline mr-1"></i>
                                         TP Number
                                     </label>
-                                    <input type="text" id="editTpNo" name="tp_no"
-                                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                                           placeholder="Enter TP number">
+                                    {{-- Searchable TP lookup with an "Other (specify)" escape, the same
+                                         control the generator form uses. The visible box is the search
+                                         term and carries NO name — #editTpNoValue is what the form posts,
+                                         so a half-typed search can never be saved as the TP number. --}}
+                                    <div class="relative" id="editTpWrap">
+                                        <div class="relative">
+                                            <input type="text" id="editTpNo"
+                                                   autocomplete="off"
+                                                   oninput="onEditTpSearchInput(this.value)"
+                                                   onblur="setTimeout(closeEditTpSearch, 150)"
+                                                   class="w-full px-3 py-2 pr-7 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                                                   placeholder="Type to search TP no...">
+                                            <button type="button" id="editTpClear" style="display:none;"
+                                                    onclick="clearEditTpNo()"
+                                                    class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg leading-none">&#215;</button>
+                                        </div>
+                                        <div id="editTpResults" style="display:none;"
+                                             class="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto"></div>
+                                        <input type="text" id="editTpNoOther" style="display:none;"
+                                               oninput="onEditTpOtherInput(this.value)"
+                                               autocomplete="off"
+                                               placeholder="Please specify TP number..."
+                                               class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md uppercase focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                        <input type="hidden" id="editTpNoValue" name="tp_no">
+                                    </div>
                                 </div>
 
                                 <!-- Plot Number -->

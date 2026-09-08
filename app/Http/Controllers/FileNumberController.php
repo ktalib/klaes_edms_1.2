@@ -850,6 +850,22 @@ class FileNumberController extends Controller
     }
 
     /**
+     * A TP number as it should be stored, or null when what arrived was the picker's
+     * "Other" placeholder rather than a number. Twin of the same guard on the
+     * commissioning paths in MlsFileNoController.
+     */
+    private function sanitizeTpNumber($value): ?string
+    {
+        $tpNo = trim((string) ($value ?? ''));
+
+        if ($tpNo === '' || in_array(strtolower($tpNo), ['__other__', 'other', 'others'], true)) {
+            return null;
+        }
+
+        return $tpNo;
+    }
+
+    /**
      * Match the Root of Title decision used by Legal Search for commissioned files.
      *
      * A recertification is the one case the source alone gets wrong. An RC file is
@@ -1873,6 +1889,17 @@ class FileNumberController extends Controller
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
             ], 422);
+        }
+
+        // The TP picker's "Other (specify)" row is a UI sentinel, not a TP number. The
+        // form replaces it with what the officer types in the specify box, but a stale
+        // post can still carry the placeholder through — and land_recommendations already
+        // holds rows where exactly that was saved as the TP number.
+        // Only when it was actually sent: every consumer below decides whether to touch
+        // the column with $request->has('tp_no'), so merging unconditionally would turn
+        // "field not submitted" into "clear the TP number".
+        if ($request->has('tp_no')) {
+            $request->merge(['tp_no' => $this->sanitizeTpNumber($request->input('tp_no'))]);
         }
 
         try {

@@ -1058,6 +1058,13 @@ class LandRecommendationController extends Controller
                 'house_no' => 'nullable|string',
                 'street_name' => 'nullable|string',
                 'district' => 'nullable|string',
+                // The form has always posted this and no rule ever accepted it, so
+                // every save dropped it: 387 of 388 records carry a null LGA. A blank
+                // one is not harmless — the edit form fills it by asking which LGA is
+                // commonest for the district, and the Full Location box is rebuilt from
+                // whatever that guess returns, so the officer's answer appeared to
+                // revert on every reopen.
+                'lga' => 'nullable|string',
                 'state' => 'nullable|string',
                 'layout_plan_no' => 'nullable|string',
                 'development_value' => 'nullable|numeric',
@@ -2016,6 +2023,8 @@ class LandRecommendationController extends Controller
             'layout_plan_no'     => 'nullable|string',
             'state'              => 'nullable|string',
             'street_name'        => 'nullable|string',
+            'district'           => 'nullable|string',
+            'lga'                => 'nullable|string',
             'improvement'        => 'nullable|string',
             'revision_period'    => 'nullable|string',
             'time_of_erection'   => 'nullable|string',
@@ -2797,6 +2806,8 @@ class LandRecommendationController extends Controller
             'house_no' => 'nullable|string',
             'street_name' => 'nullable|string',
             'district' => 'nullable|string',
+            // See store(): posted by the form, accepted by no rule until now.
+            'lga' => 'nullable|string',
             'state' => 'nullable|string',
             'layout_plan_no' => 'nullable|string',
             'development_value' => 'nullable|numeric',

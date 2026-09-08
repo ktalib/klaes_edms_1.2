@@ -386,7 +386,7 @@
          * is trying to show.
          */
         function loadAssociatedOps() {
-            if (!target || !target.prop_id || target.prop_id_proposed) {
+            if (!target) {
                 resultsAreAssociated = false;
                 results = [];
                 renderResults();
@@ -398,7 +398,26 @@
             el.opResults.innerHTML = '<div class="rounded-lg border border-slate-200 px-4 py-8 text-center text-sm text-slate-400">Loading the permits on this file…</div>';
             el.opCount.textContent = '';
 
-            get(urls.ops, { prop_id: target.prop_id }).then(function (payload) {
+            // Both ways a permit can belong to this file, in one request. The file
+            // number matters as much as the parcel id — a permit captured against the
+            // file but never matched carries the number and its OWN parcel id, and it is
+            // the one most in need of attention. Aliases go too, so a KANGIS-numbered
+            // permit on the same file is found.
+            // EVERY number this file is known by, not just the one picked. The link to a
+            // file's permits is often an alias — a KANGIS number in related_fileno — and
+            // sending only the picked number leaves those permits unfound.
+            var numbers = [target.file_number];
+            if (target.also_known_as) numbers.push(target.also_known_as);
+            (target.related || []).forEach(function (item) {
+                if (item && item.file_number) numbers.push(item.file_number);
+            });
+
+            get(urls.ops, {
+                associated: 1,
+                file_no: numbers.join(','),
+                // A previewed id belongs to nothing yet, so it would only match noise.
+                prop_id: target.prop_id_proposed ? '' : (target.prop_id || '')
+            }).then(function (payload) {
                 results = payload.data || [];
                 renderResults();
             }).catch(function () {
@@ -476,7 +495,8 @@
                 '<div class="rounded-lg border border-slate-200 overflow-hidden">' +
                   (resultsAreAssociated
                     ? '<div class="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs font-semibold text-amber-800">' +
-                        'Associated with ' + esc(target.file_number) + ' — already on Property ID ' + esc(target.prop_id) +
+                        'Associated with ' + esc(target.file_number) +
+                        ' — on its Property ID, or carrying its file number' +
                       '</div>'
                     : '') +
                   '<div class="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-3">' +

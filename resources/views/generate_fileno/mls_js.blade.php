@@ -65,6 +65,11 @@
 
 <script>
     console.log('DEBUG: mls_js.blade.php script tag reached');
+
+    // The TP lookup's "Other" row (InstrumentController::searchTpLookups appends it to
+    // every response). It is a UI sentinel only — it must never be stored as a TP number,
+    // which is why picking it clears tpNo until the specify box is filled in.
+    const TP_OTHER = '__other__';
     
     function openGeneratorModalMain() {
         console.log('openGeneratorModalMain() called');
@@ -4132,7 +4137,7 @@
                 document.getElementById('editMlsfNo').value = data.mlsfNo || data.kangisFileNo || '';
                 document.getElementById('editFileName').value = data.FileName || '';
                 document.getElementById('editPlotNo').value = data.plot_no || '';
-                document.getElementById('editTpNo').value = data.tp_no || '';
+                setEditTpField(data.tp_no || '');
                 // A stored location is hand-authored data by definition — protect it from
                 // the auto-composer until the user clears the field themselves.
                 const editLocationEl = document.getElementById('editLocation');
@@ -4472,6 +4477,122 @@
         } catch (e) {
             console.error('Error in initDaDistrictSelect2():', e);
         }
+    }
+
+    // ── Edit modal TP Number: searchable lookup + "Other (specify)" ─────────────
+    // The generator form's picker is Alpine; this modal is plain JS, so the same
+    // behaviour is repeated here rather than shared. #editTpNo holds the search term and
+    // is never posted; #editTpNoValue is. See TP_OTHER for why the sentinel is kept out
+    // of the stored value.
+    let editTpSearchTimer = null;
+
+    // Both boxes write through here, so the posted value, the clear button and the
+    // specify box can never disagree about what the TP number is.
+    function setEditTpValue(value) {
+        const hidden = document.getElementById('editTpNoValue');
+        if (hidden) hidden.value = value || '';
+        const clear = document.getElementById('editTpClear');
+        if (clear) clear.style.display = (value || document.getElementById('editTpNo')?.value) ? '' : 'none';
+    }
+
+    // Fills the control from a loaded record. A stored number is shown in the search box;
+    // there is no way to tell whether it once came from the lookup or from "Other", and it
+    // does not matter — editing it re-runs the same search.
+    function setEditTpField(value) {
+        const search = document.getElementById('editTpNo');
+        const other = document.getElementById('editTpNoOther');
+        if (search) search.value = value || '';
+        if (other) { other.style.display = 'none'; other.value = ''; }
+        closeEditTpSearch();
+        setEditTpValue(value || '');
+    }
+
+    function closeEditTpSearch() {
+        const box = document.getElementById('editTpResults');
+        if (box) box.style.display = 'none';
+    }
+
+    function renderEditTpResults(results) {
+        const box = document.getElementById('editTpResults');
+        if (!box) return;
+
+        // The lookup already appends its own "Other" row; re-adding it here keeps the
+        // escape reachable when the search returned nothing at all.
+        const rows = (results || []).filter(r => r.id !== TP_OTHER);
+        rows.push({ id: TP_OTHER, text: 'Other (specify)' });
+
+        box.innerHTML = rows.map(r => {
+            const isOther = r.id === TP_OTHER;
+            const cls = isOther
+                ? 'px-3 py-2 text-sm cursor-pointer italic text-blue-700 border-t border-gray-200 hover:bg-gray-50'
+                : 'px-3 py-2 text-sm cursor-pointer hover:bg-gray-50';
+            const id = String(r.id).replace(/"/g, '&quot;');
+            const text = String(r.text).replace(/</g, '&lt;');
+            return `<div class="${cls}" data-tp-id="${id}">${text}</div>`;
+        }).join('');
+
+        box.querySelectorAll('[data-tp-id]').forEach(el => {
+            // mousedown, not click: the search box's blur would close the list first.
+            el.addEventListener('mousedown', e => {
+                e.preventDefault();
+                selectEditTpResult(el.getAttribute('data-tp-id'), el.textContent.trim());
+            });
+        });
+
+        box.style.display = '';
+    }
+
+    function onEditTpSearchInput(value) {
+        clearTimeout(editTpSearchTimer);
+
+        const other = document.getElementById('editTpNoOther');
+        if (other) { other.style.display = 'none'; other.value = ''; }
+
+        // Typing over a chosen number makes it the value: the officer may be entering a
+        // TP number the lookup has never seen, and the field must not silently keep the
+        // old one just because nothing was picked from the list.
+        setEditTpValue(String(value || '').trim().toUpperCase());
+
+        const q = String(value || '').trim();
+        if (q.length < 1) {
+            closeEditTpSearch();
+            return;
+        }
+
+        editTpSearchTimer = setTimeout(() => {
+            fetch('{{ route("instruments.tpLookups.search") }}?q=' + encodeURIComponent(q), {
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+            })
+            .then(r => r.json())
+            .then(data => renderEditTpResults(data.results || []))
+            .catch(e => console.error('[Edit TP Search] fetch error:', e));
+        }, 300);
+    }
+
+    function selectEditTpResult(id, text) {
+        const search = document.getElementById('editTpNo');
+        const other = document.getElementById('editTpNoOther');
+        closeEditTpSearch();
+
+        if (id === TP_OTHER) {
+            // Nothing is committed yet — the number is whatever they type next.
+            if (search) search.value = 'Other';
+            if (other) { other.style.display = ''; other.value = ''; other.focus(); }
+            setEditTpValue('');
+            return;
+        }
+
+        if (search) search.value = text;
+        if (other) { other.style.display = 'none'; other.value = ''; }
+        setEditTpValue(id);
+    }
+
+    function onEditTpOtherInput(value) {
+        setEditTpValue(String(value || '').trim().toUpperCase());
+    }
+
+    function clearEditTpNo() {
+        setEditTpField('');
     }
 
     function onEditDistrictChange(val) {
@@ -5564,6 +5685,12 @@
             tpSearchOpen: false,
             tpSearchTimer: null,
             tpFocusIndex: -1,
+            // "Other" is a real option on the TP lookup (the search endpoint appends it to
+            // every response). Picking it opens a free-text box, because the TP number the
+            // officer holds is not always one the lookup table knows about yet. tpNo stays
+            // empty until they type — the sentinel must never be saved as the TP number.
+            tpIsOther: false,
+            tpOtherValue: '',
             location: '',
             lga: '',
             district: '',
@@ -5746,7 +5873,7 @@
                     })
                     .then(r => r.json())
                     .then(data => {
-                        this.tpSearchResults = (data.results || []).filter(r => r.id !== '__other__');
+                        this.tpSearchResults = this.withTpOtherOption(data.results || []);
                         this.tpSearchLoading = false;
                         this.tpSearchOpen = true;
                         this.tpFocusIndex = -1;
@@ -5758,26 +5885,60 @@
                 }, 300);
             },
 
+            // The lookup already appends {id:'__other__'} to every response; this only
+            // guarantees it survives a partial result set. It rides along with real search
+            // results and never opens a list of its own — a dropdown offering nothing but
+            // "Other" the moment the field is touched is noise.
+            withTpOtherOption(results) {
+                const list = (results || []).filter(r => r.id !== TP_OTHER);
+
+                return [...list, { id: TP_OTHER, text: 'Other (specify)' }];
+            },
+
             selectTpResult(result) {
-                this.tpNo = result.id;
-                this.tpSearchQuery = result.text;
+                this.tpFocusIndex = -1;
                 this.tpSearchOpen = false;
                 this.tpSearchResults = [];
-                this.tpFocusIndex = -1;
+
+                if (result.id === TP_OTHER) {
+                    // Nothing is committed yet — the number is whatever they type next.
+                    this.tpIsOther = true;
+                    this.tpSearchQuery = 'Other';
+                    this.setTpNo('');
+                    this.$nextTick(() => document.getElementById('tp_other_input')?.focus());
+                    return;
+                }
+
+                this.tpIsOther = false;
+                this.tpOtherValue = '';
+                this.tpSearchQuery = result.text;
+                this.setTpNo(result.id);
+            },
+
+            // The typed-in TP number, once "Other" is chosen. Stored upper-cased to match
+            // how every other TP number on this form is held.
+            onTpOtherInput(value) {
+                this.tpOtherValue = value;
+                this.setTpNo(String(value || '').trim().toUpperCase());
+            },
+
+            // One writer for the three places a TP number has to land: Alpine state, the
+            // hidden input the form actually posts, and the current batch entry.
+            setTpNo(value) {
+                this.tpNo = value;
                 const hidden = document.getElementById('generator_tp_no_val');
-                if (hidden) hidden.value = result.id;
-                if (this.batchMode) this.updateLocationEntry('tpNo', result.id);
+                if (hidden) hidden.value = value;
+                if (this.batchMode) this.updateLocationEntry('tpNo', value);
             },
 
             clearTpNo() {
-                this.tpNo = '';
                 this.tpSearchQuery = '';
                 this.tpSearchResults = [];
                 this.tpSearchOpen = false;
                 this.tpFocusIndex = -1;
-                const hidden = document.getElementById('generator_tp_no_val');
-                if (hidden) hidden.value = '';
-                if (this.batchMode) this.updateLocationEntry('tpNo', '');
+                this.tpIsOther = false;
+                this.tpOtherValue = '';
+                this.setTpNo('');
             },
 
             tpFocusNext() {
@@ -6220,9 +6381,13 @@
                 if (!entry) return;
                 // Plot Number
                 this.plotNo = entry.plotNo || '';
-                // TP Number (custom search)
+                // TP Number (custom search). A number typed through "Other" is restored
+                // into the specify box, not the search box, or stepping back through the
+                // batch would show it as a lookup hit that was never picked.
                 this.tpNo = entry.tpNo || '';
-                this.tpSearchQuery = entry.tpNo || '';
+                this.tpIsOther = !!entry.tpIsOther;
+                this.tpOtherValue = entry.tpIsOther ? (entry.tpNo || '') : '';
+                this.tpSearchQuery = entry.tpIsOther ? 'Other' : (entry.tpNo || '');
                 this.tpSearchOpen = false;
                 const hidden = document.getElementById('generator_tp_no_val');
                 if (hidden) hidden.value = entry.tpNo || '';
@@ -7696,7 +7861,7 @@
                     // Reset fields that might have been inherited
                     this.fileName = '';
                     this.plotNo = '';
-                    this.tpNo = '';
+                    this.clearTpNo();
                     this.location = '';
                     this.lga = '';
                     this.clearPassport();
@@ -7735,7 +7900,7 @@
                     // Reset fields
                     this.fileName = '';
                     this.plotNo = '';
-                    this.tpNo = '';
+                    this.clearTpNo();
                     this.location = '';
                     this.lga = '';
                 }
@@ -7969,10 +8134,20 @@
                     if (field === 'phone_no') this.phone_no = value;
                     if (field === 'address') this.address = value;
 
+                    // Which way the TP number was entered travels with it, so stepping
+                    // back to an entry reopens the specify box rather than showing the
+                    // number as a lookup hit.
+                    if (field === 'tpNo') {
+                        this.locationEntries[this.currentEntryIndex].tpIsOther = this.tpIsOther;
+                    }
+
                     if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
                         for (let i = 0; i < this.batchQuantity; i++) {
                             if (this.locationEntries[i]) {
                                 this.locationEntries[i][field] = value;
+                                if (field === 'tpNo') {
+                                    this.locationEntries[i].tpIsOther = this.tpIsOther;
+                                }
                             }
                         }
                     }

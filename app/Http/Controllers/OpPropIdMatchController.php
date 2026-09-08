@@ -219,6 +219,22 @@ class OpPropIdMatchController extends Controller
             : 'exact';
         $excludePropId = trim((string) $request->query('exclude_prop_id', ''));
 
+        // "Everything linked to this file", asked when a file is selected rather than
+        // typed as a search. A permit belongs to a file in TWO independent ways and
+        // neither implies the other:
+        //
+        //   it sits on the file's parcel id      — it has been matched
+        //   it carries the file's NUMBER         — it was captured against the file but
+        //                                          never matched, so it still holds its
+        //                                          own parcel id
+        //
+        // The second is the whole reason this page exists, so the two are OR'd. Asking
+        // for them with the ordinary AND filters would return only permits that are both
+        // — which is the already-correct ones, and none of the ones needing work.
+        // (IND-2026-434: one permit carries the file number on parcel 147255 while the
+        // file itself is 99000004. An AND search finds nothing.)
+        $associated = $request->boolean('associated');
+
         // Matched permits are LISTED, not hidden. This page does both halves of the job
         // now: an already-matched permit is what an unmatch acts on, so hiding it would
         // put the fix out of reach. Each row says which it is (is_matched) and the batch
@@ -226,7 +242,7 @@ class OpPropIdMatchController extends Controller
 
         $serials = $this->splitList($serialInput);
 
-        if (empty($serials) && $fileNo === '' && $party === '' && $propId === '' && $plotNo === '') {
+        if (! $associated && empty($serials) && $fileNo === '' && $party === '' && $propId === '' && $plotNo === '') {
             return response()->json([
                 'success' => false,
                 'message' => 'Give at least one of: OP serial number, Temp FileNo, holder name, plot number, or Property ID.',
@@ -234,7 +250,7 @@ class OpPropIdMatchController extends Controller
         }
 
         // A name on its own would sweep 36k permits. It narrows a search; it does not make one.
-        if (empty($serials) && $fileNo === '' && $propId === '' && $plotNo === '' && mb_strlen($party) < 3) {
+        if (! $associated && empty($serials) && $fileNo === '' && $propId === '' && $plotNo === '' && mb_strlen($party) < 3) {
             return response()->json([
                 'success' => false,
                 'message' => 'A holder name on its own must be at least 3 characters — or add a serial, file number or Property ID.',
@@ -244,8 +260,8 @@ class OpPropIdMatchController extends Controller
         $conn = DB::connection(self::CONNECTION);
 
         try {
-            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId);
-            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId);
+            $praRows = $this->searchPra($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $associated);
+            $icRows = $this->searchInstrumentCapture($conn, $serials, $mode, $fileNo, $party, $propId, $plotNo, $excludePropId, $associated);
         } catch (\Throwable $e) {
             Log::channel('op_batch')->error('OP prop_id match: OP search failed', [
                 'serials' => $serials,
@@ -466,11 +482,17 @@ class OpPropIdMatchController extends Controller
 
     // ---------------------------------------------------------------- search internals
 
-    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId)
+    private function searchPra($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $associated = false)
     {
         $query = $conn->table('pra as o')
             ->where('o.instrument_type', 'LIKE', OpPropIdMatchService::PRA_OP_TYPE_LIKE)
             ->where(fn ($q) => $q->whereNull('o.is_deleted')->orWhere('o.is_deleted', 0));
+
+        if ($associated) {
+            $this->applyAssociatedFilter($query, ['o.mlsFNo', 'o.fileno', 'o.temp_fileno'], $fileNo, $propId);
+
+            return $this->mapPraRows($query);
+        }
 
         $this->applySerialFilter($query, 'o.op_serial_number', $serials, $mode);
         $this->applyFileNumberFilter($query, ['o.mlsFNo', 'o.fileno', 'o.temp_fileno'], $fileNo);
@@ -493,6 +515,58 @@ class OpPropIdMatchController extends Controller
             });
         }
 
+        return $this->mapPraRows($query);
+    }
+
+    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId, bool $associated = false)
+    {
+        $query = $conn->table('instrument_capture as o')
+            ->where('o.instrument_type', OpPropIdMatchService::IC_OP_TYPE)
+            ->where(fn ($q) => $q->whereNull('o.is_deleted')->orWhere('o.is_deleted', 0));
+
+        if ($associated) {
+            // prop_id is bigint here; a non-numeric parcel id can only be the file-number
+            // arm's business, so it is dropped rather than handed to the driver.
+            $this->applyAssociatedFilter(
+                $query,
+                ['o.mlsFNo', 'o.temp_fileno'],
+                $fileNo,
+                ctype_digit($propId) ? $propId : ''
+            );
+
+            return $this->mapIcRows($query);
+        }
+
+        $this->applySerialFilter($query, 'o.op_serial_number', $serials, $mode);
+        $this->applyFileNumberFilter($query, ['o.mlsFNo', 'o.temp_fileno'], $fileNo);
+        $this->applyPartyFilter($query, ['o.party_1_name', 'o.party_2_name'], $party);
+
+        // prop_id is bigint here, so a non-numeric filter cannot match anything and must
+        // not be handed to the driver as a comparison.
+        if ($propId !== '') {
+            if (! ctype_digit($propId)) {
+                return collect();
+            }
+            $query->where('o.prop_id', (int) $propId);
+        }
+
+        // instrument_capture spells this column plot_number, not plot_no.
+        if ($plotNo !== '') {
+            $query->where('o.plot_number', 'LIKE', '%' . $plotNo . '%');
+        }
+
+        if ($excludePropId !== '' && ctype_digit($excludePropId)) {
+            $query->where(function ($q) use ($excludePropId) {
+                $q->whereNull('o.prop_id')->orWhere('o.prop_id', '<>', (int) $excludePropId);
+            });
+        }
+
+        return $this->mapIcRows($query);
+    }
+
+    /** Shape `pra` OP rows for the page. Shared by the search and the associated lookup. */
+    private function mapPraRows($query)
+    {
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.fileno', 'o.temp_fileno',
                 'o.party_1', 'o.party_2', 'o.transaction_date', 'o.regNo', 'o.serialNo', 'o.pageNo', 'o.volumeNo',
@@ -527,36 +601,9 @@ class OpPropIdMatchController extends Controller
             ]);
     }
 
-    private function searchInstrumentCapture($conn, array $serials, string $mode, string $fileNo, string $party, string $propId, string $plotNo, string $excludePropId)
+    /** Shape `instrument_capture` OP rows for the page. */
+    private function mapIcRows($query)
     {
-        $query = $conn->table('instrument_capture as o')
-            ->where('o.instrument_type', OpPropIdMatchService::IC_OP_TYPE)
-            ->where(fn ($q) => $q->whereNull('o.is_deleted')->orWhere('o.is_deleted', 0));
-
-        $this->applySerialFilter($query, 'o.op_serial_number', $serials, $mode);
-        $this->applyFileNumberFilter($query, ['o.mlsFNo', 'o.temp_fileno'], $fileNo);
-        $this->applyPartyFilter($query, ['o.party_1_name', 'o.party_2_name'], $party);
-
-        // prop_id is bigint here, so a non-numeric filter cannot match anything and must
-        // not be handed to the driver as a comparison.
-        if ($propId !== '') {
-            if (! ctype_digit($propId)) {
-                return collect();
-            }
-            $query->where('o.prop_id', (int) $propId);
-        }
-
-        // instrument_capture spells this column plot_number, not plot_no.
-        if ($plotNo !== '') {
-            $query->where('o.plot_number', 'LIKE', '%' . $plotNo . '%');
-        }
-
-        if ($excludePropId !== '' && ctype_digit($excludePropId)) {
-            $query->where(function ($q) use ($excludePropId) {
-                $q->whereNull('o.prop_id')->orWhere('o.prop_id', '<>', (int) $excludePropId);
-            });
-        }
-
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.temp_fileno',
                 'o.party_1_name', 'o.party_2_name', 'o.instrument_date', 'o.registration_number',
@@ -586,6 +633,51 @@ class OpPropIdMatchController extends Controller
                 'op_batch' => '',
                 'created_at' => $r->created_at,
             ]);
+    }
+
+    /**
+     * Everything linked to one file: on its parcel, OR carrying its number.
+     *
+     * The two are OR'd because they are independent facts and the interesting permits
+     * satisfy only ONE of them:
+     *
+     *   on the parcel, carrying the number   already matched — correct, shown for context
+     *   carrying the number, other parcel    captured against the file, never matched —
+     *                                        the work this page exists to do
+     *   on the parcel, some other number     matched from a temp number that was never
+     *                                        written back
+     *
+     * The file number is matched EXACTLY, not by LIKE. A prefix match would pull
+     * RES-2023-31890 in on a search for RES-2023-3189 and offer an unrelated parcel for
+     * unmatching. Several numbers may be given (the file's own plus its KANGIS aliases),
+     * comma-separated.
+     *
+     * Serial is deliberately not part of this: the officer picked a FILE, and a permit
+     * belongs to it by parcel or by number — never by a serial, which is reused across
+     * thousands of unrelated permits.
+     */
+    private function applyAssociatedFilter($query, array $fileColumns, string $fileNumbers, string $propId): void
+    {
+        $numbers = $this->splitList($fileNumbers);
+
+        // Nothing to key on: refuse rather than return the whole table.
+        if (empty($numbers) && $propId === '') {
+            $query->whereRaw('1 = 0');
+
+            return;
+        }
+
+        $query->where(function ($outer) use ($fileColumns, $numbers, $propId) {
+            if ($propId !== '') {
+                $outer->orWhere('o.prop_id', $propId);
+            }
+
+            foreach ($fileColumns as $column) {
+                foreach ($numbers as $number) {
+                    $outer->orWhereRaw("LTRIM(RTRIM($column)) = ?", [$number]);
+                }
+            }
+        });
     }
 
     /**
@@ -730,11 +822,20 @@ class OpPropIdMatchController extends Controller
 
             $row['companions'] = $ids->count();
 
-            // "Matched" is the same condition the companion search answers — a pointer
-            // row, or a Transfer of Title sharing the parcel id — so it is read off the
-            // same set rather than asked again. A permit with a companion has been
-            // matched; one with none has not.
-            $row['is_matched'] = $ids->count() > 0;
+            // MATCHED means the permit has been given its file, and there are two
+            // independent proofs of that. Either is enough:
+            //
+            //   1. it carries a REAL file number — not a TEMP-xxxxx. A temporary number
+            //      is what a permit holds until its file is confirmed, so a permit
+            //      showing a confirmed number has already been placed. This is the
+            //      common case by far: 4,569 permits, against 492 with a transfer.
+            //   2. a Transfer of Title has been written against it, by pointer or by
+            //      shared parcel id — the companion set just counted.
+            //
+            // Rule 1 alone matters most here: the KN81 permits carry a real file number
+            // and no transfer, and calling them unmatched offered to match them to a file
+            // they were already on.
+            $row['is_matched'] = $this->hasRealFileNumber($row['file_no']) || $ids->count() > 0;
 
             return $row;
         });
@@ -872,6 +973,16 @@ class OpPropIdMatchController extends Controller
         $numbers[] = trim((string) ($mls->full_file_number ?? ''));
         $numbers[] = trim((string) ($mls->old_fileno ?? ''));
 
+        // The KANGIS link, which is NOT one of the flat columns above. A land file's
+        // KANGIS number lives in related_fileno as a JSON array, and for many files it is
+        // the ONLY thing tying it to its permits: RES-2016-2818 has every alias column
+        // empty and related_fileno ["KN81"], while all 27 of its Occupancy Permits carry
+        // KN81. Reading only the flat columns showed the officer an empty list on a file
+        // with thirty permits on it.
+        foreach ($this->parseRelatedFileno($indexing->related_fileno ?? null) as $related) {
+            $numbers[] = $related;
+        }
+
         $seen = [];
         $out = [];
 
@@ -980,6 +1091,63 @@ class OpPropIdMatchController extends Controller
                 ? 'Property ID ' . $requested . ' had been taken since you opened the file, so this file was given ' . $allocated . ' instead.'
                 : null,
         ];
+    }
+
+    /**
+     * related_fileno holds a JSON array on newer rows and a comma list on older ones.
+     * Same rule as KangisLandPairService::parseRelatedFileno, which is where this shape
+     * is documented.
+     *
+     * Split on comma only — never whitespace. KANGIS numbers contain spaces ("KNML 1"),
+     * and splitting on those tears one number into two that match nothing.
+     *
+     * @return array<int,string>
+     */
+    private function parseRelatedFileno($raw): array
+    {
+        $raw = trim((string) $raw);
+
+        if ($raw === '') {
+            return [];
+        }
+
+        if ($raw[0] === '[') {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                return array_values(array_filter(
+                    array_map(fn ($v) => trim((string) $v), $decoded),
+                    fn ($v) => $v !== '' && $v !== '-'
+                ));
+            }
+        }
+
+        return array_values(array_filter(
+            array_map('trim', explode(',', $raw)),
+            fn ($v) => $v !== '' && $v !== '-'
+        ));
+    }
+
+    /**
+     * Is this a confirmed file number, rather than a placeholder?
+     *
+     * A permit captured before its file existed carries TEMP-xxxxx. Anything else — an
+     * MLS number, a KANGIS number, an old KN number — is a real file, and a permit
+     * holding one has been placed on it.
+     *
+     * The prefix is matched loosely (TEMP-, TEMP_, "TEMP ") because the capture screens
+     * that write it are not consistent, and a placeholder read as a real number is the
+     * expensive direction of the mistake: it would mark an unmatched permit as matched
+     * and offer to unlink a file it was never on.
+     */
+    private function hasRealFileNumber($fileNo): bool
+    {
+        $value = trim((string) $fileNo);
+
+        if ($value === '' || $value === '-') {
+            return false;
+        }
+
+        return ! preg_match('/^TEMP[-_ ]?/i', $value);
     }
 
     private function masterExists(): bool

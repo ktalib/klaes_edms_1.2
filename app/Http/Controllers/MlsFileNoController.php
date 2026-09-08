@@ -1491,6 +1491,25 @@ class MlsFileNoController extends Controller
     }
 
     /**
+     * A TP number as it should be stored, or null when what arrived was the picker's
+     * "Other" placeholder rather than a number.
+     *
+     * The sentinel and the word it renders as are both rejected: the lookup sends
+     * '__other__', and older screens rendered a bare "Other" that officers have typed by
+     * hand since.
+     */
+    private function sanitizeTpNumber($value): ?string
+    {
+        $tpNo = trim((string) ($value ?? ''));
+
+        if ($tpNo === '' || in_array(strtolower($tpNo), ['__other__', 'other', 'others'], true)) {
+            return null;
+        }
+
+        return $tpNo;
+    }
+
+    /**
      * Resolve the source field value based on allocation configuration
      * 
      * Mapping:
@@ -2079,6 +2098,12 @@ class MlsFileNoController extends Controller
 
                 throw $e;
             }
+
+            // The TP picker's "Other (specify)" row is a UI sentinel, not a TP number. The
+            // form replaces it with what the officer types, but a stale or scripted post can
+            // still carry it through — and land_recommendations already holds rows where the
+            // literal placeholder was saved as the TP number. Dropped rather than stored.
+            $validated['tp_no'] = $this->sanitizeTpNumber($validated['tp_no'] ?? null);
 
             $landUse = $validated['land_use'] ?? null;
             $fileOption = $validated['file_option'] ?? 'normal';
@@ -4300,6 +4325,12 @@ class MlsFileNoController extends Controller
                 // JSON array of {file_no, title, type, indexing_id}; see parseRelatedFiles().
                 'related_files' => 'nullable|string',
             ]);
+
+            // Same guard as the single path: the TP picker's "Other" placeholder is a UI
+            // sentinel and must never be stored as a TP number, on any entry in the batch.
+            foreach ($validated['location_entries'] as $i => $entry) {
+                $validated['location_entries'][$i]['tpNo'] = $this->sanitizeTpNumber($entry['tpNo'] ?? null);
+            }
 
             $landUse = $validated['land_use'];
             $year = $validated['year'];
