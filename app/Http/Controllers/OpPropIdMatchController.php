@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\OpPropIdMatchService;
+use App\Services\OpUnlinkService;
 use App\Services\PropertyIdAllocationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -218,6 +219,11 @@ class OpPropIdMatchController extends Controller
             : 'exact';
         $excludePropId = trim((string) $request->query('exclude_prop_id', ''));
 
+        // Matched permits are LISTED, not hidden. This page does both halves of the job
+        // now: an already-matched permit is what an unmatch acts on, so hiding it would
+        // put the fix out of reach. Each row says which it is (is_matched) and the batch
+        // offers the action that fits.
+
         $serials = $this->splitList($serialInput);
 
         if (empty($serials) && $fileNo === '' && $party === '' && $propId === '' && $plotNo === '') {
@@ -362,6 +368,58 @@ class OpPropIdMatchController extends Controller
         ]);
     }
 
+    /**
+     * Unmatch: take the selected permits back off whatever parcel they are on.
+     *
+     * The other half of this page. A permit put on the wrong file is corrected here
+     * rather than on a screen of its own — it is the same officer, the same permits and
+     * the same parcel ids, and the batch they are looking at is the one to act on.
+     *
+     * Two ways to separate, and the choice is the officer's:
+     *   individual  each permit becomes its own parcel, with its own Property ID
+     *   group       all of them share ONE new Property ID — a Group OP
+     *
+     * Group is meaningless for a single permit and is refused there, so the page never
+     * offers it. Reassigning afterwards is optional: an unmatched permit simply sits in
+     * the batch, and the officer may match it to a file or stop.
+     */
+    public function batchUnmatch(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'mode' => 'required|string|in:' . implode(',', array_keys(OpUnlinkService::MODES)),
+            'ops' => 'required|array|min:1',
+            'ops.*.source_table' => 'required|string|in:pra,instrument_capture',
+            'ops.*.op_id' => 'required|integer|min:1',
+            'move_companions' => 'nullable|boolean',
+        ], [
+            'ops.required' => 'Select at least one OP to unmatch.',
+            'mode.required' => 'Choose how the permits should be separated.',
+        ]);
+
+        $result = app(OpUnlinkService::class)->unlink(
+            $validated['ops'],
+            $validated['mode'],
+            $request->boolean('move_companions', true)
+        );
+
+        if (! $result['ok']) {
+            return response()->json(['success' => false, 'message' => $result['message']], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'batch_ref' => $result['batch_ref'],
+            'unlinked' => $result['unlinked'],
+            'companions' => $result['companions'],
+            'group_prop_id' => $result['group_prop_id'],
+            'errors' => $result['errors'],
+            // Where each permit landed, so the batch on screen can redraw without a
+            // second round trip and without guessing.
+            'assignments' => $result['assignments'],
+        ]);
+    }
+
     /** The last few batches this page performed, newest first, for the Undo strip. */
     public function recentBatches(): JsonResponse
     {
@@ -370,6 +428,10 @@ class OpPropIdMatchController extends Controller
         }
 
         $batches = DB::connection(self::CONNECTION)->table('op_propid_matches')
+            // Matches only. The Unlink page writes OPU- batches to this same ledger and
+            // lists them on its own strip; showing them here would offer "undo" on a
+            // record this page never touched.
+            ->where('batch_ref', 'LIKE', 'OPM-%')
             ->selectRaw('batch_ref, MAX(target_file_number) AS target_file_number, MAX(target_prop_id) AS target_prop_id,'
                 . ' COUNT(*) AS records, SUM(CASE WHEN reverted_at IS NULL THEN 0 ELSE 1 END) AS reverted,'
                 . ' MAX(created_at) AS created_at')
@@ -430,11 +492,6 @@ class OpPropIdMatchController extends Controller
                 $q->whereNull('o.prop_id')->orWhere('o.prop_id', '<>', $excludePropId);
             });
         }
-
-        // Always. A permit that already carries a Transfer of Title has been matched, and
-        // there is nothing left for this page to do with it — offering it again invites
-        // an officer to move a settled parcel onto a second file.
-        $this->applyUnlinkedFilter($query, 'pra', 'o.id', 'o.prop_id');
 
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.fileno', 'o.temp_fileno',
@@ -499,9 +556,6 @@ class OpPropIdMatchController extends Controller
                 $q->whereNull('o.prop_id')->orWhere('o.prop_id', '<>', (int) $excludePropId);
             });
         }
-
-        // Always — same rule as the pra arm above.
-        $this->applyUnlinkedFilter($query, 'instrument_capture', 'o.id', 'o.prop_id');
 
         return $query->select([
                 'o.id', 'o.prop_id', 'o.op_type', 'o.op_serial_number', 'o.mlsFNo', 'o.temp_fileno',
@@ -598,25 +652,6 @@ class OpPropIdMatchController extends Controller
     }
 
     /**
-     * Only permits that no Transfer of Title has claimed.
-     *
-     * Same two representations as OpResettlementApplicationController checks, for the
-     * same reason: they disagree in the data, so either one counts as claimed.
-     */
-    private function applyUnlinkedFilter($query, string $table, string $idColumn, string $propColumn): void
-    {
-        $query->whereNotExists(function ($q) use ($table, $idColumn) {
-            $q->select(DB::raw(1))->from('pra as lnk')
-                ->whereRaw("lnk.source_op_id = $idColumn")
-                ->where('lnk.source_op_table', $table);
-        })->whereNotExists(function ($q) use ($propColumn) {
-            $q->select(DB::raw(1))->from('pra as lnk2')
-                ->whereRaw("lnk2.prop_id = CAST($propColumn AS nvarchar(100))")
-                ->where('lnk2.instrument_type', 'LIKE', '%Transfer of Title%');
-        });
-    }
-
-    /**
      * How many rows would travel with each permit if Batch Match is pressed.
      *
      * Shown per row so the officer sees the true size of the change before making it —
@@ -658,8 +693,11 @@ class OpPropIdMatchController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
+            // Unknown, not false: claiming a matched permit is unmatched would offer the
+            // wrong action on it. The page treats null as "cannot tell" and asks.
             return $rows->map(function ($row) {
                 $row['companions'] = null;
+                $row['is_matched'] = null;
 
                 return $row;
             });
@@ -691,6 +729,12 @@ class OpPropIdMatchController extends Controller
             })->pluck('id')->unique();
 
             $row['companions'] = $ids->count();
+
+            // "Matched" is the same condition the companion search answers — a pointer
+            // row, or a Transfer of Title sharing the parcel id — so it is read off the
+            // same set rather than asked again. A permit with a companion has been
+            // matched; one with none has not.
+            $row['is_matched'] = $ids->count() > 0;
 
             return $row;
         });

@@ -42,17 +42,32 @@ class PhoneVerificationController extends Controller
      */
     public function send(Request $request): JsonResponse
     {
+        // Spaces, dashes and brackets are how people write a number down, not part
+        // of it. Stripping them BEFORE the rule runs means "0703 958 6723" is
+        // accepted and "234..." is still refused, which is the point of the rule.
+        if ($request->has('phone')) {
+            $request->merge(['phone' => preg_replace('/\D+/', '', (string) $request->input('phone'))]);
+        }
+
         $validated = $request->validate(
             [
                 'channel' => ['nullable', 'string', Rule::in([PhoneOtpService::CHANNEL_EMAIL, PhoneOtpService::CHANNEL_SMS, PhoneOtpService::CHANNEL_BOTH])],
                 'target' => ['nullable', 'string', 'max:191'],
-                'email' => ['required_if:channel,both', 'nullable', 'string', 'max:191'],
-                'phone' => ['required_if:channel,both', 'nullable', 'string', 'max:20'],
+                // The card's own two fields. A local mobile number is eleven digits
+                // beginning with a zero and nothing else: the ten-digit and 234-
+                // prefixed shapes the SMS normaliser also accepts are not what a
+                // member of staff reads off their handset, and letting them through
+                // here only produces numbers nobody can check by eye.
+                'email' => ['required_if:channel,both', 'nullable', 'string', 'max:191', 'email:filter'],
+                'phone' => ['required_if:channel,both', 'nullable', 'string', 'regex:/^0\d{10}$/'],
             ],
             [
                 'channel.in' => __('That is not a way of sending a code.'),
-                'phone.max' => __('That does not look like a phone number.'),
+                'phone.required_if' => __('Enter your mobile number.'),
+                'phone.regex' => __('Enter an 11-digit mobile number starting with 0, such as 08012345678.'),
                 'target.max' => __('That is too long to be an email address or a phone number.'),
+                'email.required_if' => __('Enter your email address.'),
+                'email.email' => __('Enter a complete email address, such as musa@gmail.com.'),
                 'email.max' => __('That is too long to be an email address.'),
             ]
         );

@@ -69,6 +69,19 @@
         });
       });
 
+      // A phone box that only ever holds digits. Pasting a number copied out of
+      // a contact card ("+234 703 958 6723", "0703-958-6723") is the normal way
+      // this field gets filled, so the punctuation is dropped as it arrives
+      // rather than refused afterwards.
+      if (this.phoneInput) {
+        this.phoneInput.addEventListener('input', function () {
+          var cleaned = self.phoneInput.value.replace(/\D+/g, '').slice(0, 11);
+          if (cleaned !== self.phoneInput.value) {
+            self.phoneInput.value = cleaned;
+          }
+        });
+      }
+
       this.codeInput.addEventListener('keydown', function (event) {
         if (event.key === 'Enter') {
           event.preventDefault();
@@ -97,6 +110,7 @@
       var self = this;
       if (this.sending) { return; }
       if (!this.phoneInput.reportValidity() || !this.emailInput.reportValidity()) { return; }
+      if (!this.checkTargets()) { return; }
       this.sending = true;
 
       this.clearMessage(this.targetMessage);
@@ -215,6 +229,38 @@
         }
       }
       return fallback;
+    },
+
+    /**
+     * The same two rules the server applies, applied here first.
+     *
+     * Not a substitute for the server's — the endpoint refuses the same input on
+     * its own — but a typo caught here costs nothing, while one caught there
+     * costs a round trip and, on the SMS side, a cooldown the user then has to
+     * sit out before they can correct it.
+     */
+    checkTargets: function () {
+      var phone = (this.phoneInput.value || '').replace(/\D+/g, '');
+      var email = (this.emailInput.value || '').trim();
+
+      if (!/^0\d{10}$/.test(phone)) {
+        this.showMessage(this.targetMessage, 'Enter an 11-digit mobile number starting with 0, such as 08012345678.', false);
+        this.phoneInput.focus();
+        return false;
+      }
+
+      // Something before the @, a domain, and a real suffix after the last dot.
+      // Wider than any list of providers on purpose: staff use gmail, yahoo,
+      // hotmail and their own domains, and a list would refuse the next one.
+      if (!/^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(email)) {
+        this.showMessage(this.targetMessage, 'Enter a complete email address, such as musa@gmail.com.', false);
+        this.emailInput.focus();
+        return false;
+      }
+
+      this.phoneInput.value = phone;
+      this.emailInput.value = email;
+      return true;
     },
 
     targetInput: function () {

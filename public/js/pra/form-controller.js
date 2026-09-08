@@ -296,6 +296,9 @@
             this.formActionInput = this.form ? this.form.querySelector('#form_action') : null;
             this.csrfToken = this.resolveCsrfToken();
             this.isSubmitting = false;
+            // Raised while this controller re-fires an element's own input/change
+            // event, so its model binding does not treat the echo as a fresh edit.
+            this.suppressElementEvents = false;
             this.pendingUpdatePrompt = false;
             this.instrumentTypeOptions = [];
             this.transactionTypeSelects = Array.from(container.querySelectorAll('select[data-role="transaction-type"]'));
@@ -541,6 +544,7 @@
 
                 const eventName = element.tagName === 'SELECT' ? 'change' : 'input';
                 element.addEventListener(eventName, () => {
+                    if (this.suppressElementEvents) return;
                     const nextValue = this.extractElementValue(element, modelKey);
                     this.setState(modelKey, nextValue, { source: 'element' });
                 });
@@ -625,8 +629,10 @@
             }
             if (this.partyInputFirst) {
                 this.partyInputFirst.classList.toggle('hidden', isLgaIssued);
-                // A hidden input must not hold the form back on its own `required`.
-                this.partyInputFirst.required = !isLgaIssued;
+                // Whether Party 1 blocks the form is decided in one place — a hidden
+                // input must not hold the form back, but neither must a Deed of
+                // Purchase, and this pass is not the only one with a say.
+                this.applyFirstPartyRequirement();
             }
 
             // Party 1 is the council on EVERY LGA-issued instrument, so this runs on the
@@ -1445,9 +1451,7 @@
          * and the note under it says why. Every other instrument is untouched.
          */
         applyPurchasePartyRules(isPurchase) {
-            if (this.partyInputFirst) {
-                this.partyInputFirst.required = !isPurchase;
-            }
+            this.applyFirstPartyRequirement();
 
             if (this.partyRequiredFirst) {
                 this.partyRequiredFirst.classList.toggle('hidden', Boolean(isPurchase));
@@ -1459,6 +1463,60 @@
 
             // The picker in the existing-records table belongs to this mode too.
             this.updateExistingRecordsPartyPicker();
+        }
+
+        /**
+         * Whether Party 1 blocks the form — decided here and nowhere else.
+         *
+         * Two independent rules switch it off and they used to fight over the
+         * attribute. The LGA pass hides the text input behind a council picker and
+         * clears `required` so a hidden field cannot hold the form back; a Deed of
+         * Purchase leaves Party 1 optional whether or not it is shown. Both run on
+         * every instrument-type change, so whichever ran last won — and the LGA
+         * pass runs second, which is why it kept putting the requirement back on
+         * every Deed of Purchase and left Submit disabled until Party 1 was typed.
+         *
+         * Both callers now ask this instead, so the answer is the same whichever
+         * order they run in.
+         */
+        applyFirstPartyRequirement() {
+            if (!this.partyInputFirst) return;
+
+            const required = !this.isLgaType() && !this.isDeedOfPurchaseCapture();
+            if (this.partyInputFirst.required === required) return;
+
+            this.partyInputFirst.required = required;
+
+            // The page's submit-button validator reads that attribute but only ever
+            // runs off a field event, so it has to be told the answer changed.
+            this.refreshSubmitButtonState();
+        }
+
+        /**
+         * Re-run the page's submit-button validator after a change made from here.
+         *
+         * validatePropertyForm() in propertycard/js/javascript.blade.php enables or
+         * disables Submit by scanning `input[required]`, and it only ever runs from
+         * an input/change listener on a field. Nothing this controller does
+         * programmatically — clearing Party 1's `required` for a Deed of Purchase,
+         * filling Party 1 from the timeline, prefilling a record — fires those
+         * events, so the button would sit on a stale verdict: disabled because
+         * Party 1 was empty and required, long after it stopped being either.
+         *
+         * That validator lives inside its page's DOMContentLoaded closure and
+         * cannot be called from here, so the field re-announces itself instead.
+         */
+        refreshSubmitButtonState() {
+            const element = this.partyInputFirst;
+            if (!element) return;
+
+            this.suppressElementEvents = true;
+            try {
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+                element.dispatchEvent(new Event('change', { bubbles: true }));
+            } finally {
+                this.suppressElementEvents = false;
+            }
         }
 
         /**
@@ -1502,6 +1560,10 @@
             // Mark which row the name came from. Carried on the button rather
             // than the row's background, which evaluateDuplicate() repaints.
             this.markPickedPartyOneRow(rowIndex);
+
+            // The field was filled without a keystroke, so nothing has told the
+            // page validator that Party 1 is no longer empty.
+            this.refreshSubmitButtonState();
 
             if (this.partyInputFirst) {
                 this.partyInputFirst.scrollIntoView({ block: 'center', behavior: 'smooth' });

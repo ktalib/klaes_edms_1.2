@@ -30,6 +30,7 @@
        data-file-url="{{ route('op-propid-match.file') }}"
        data-ops-url="{{ route('op-propid-match.ops') }}"
        data-batch-url="{{ route('op-propid-match.batch') }}"
+       data-unmatch-url="{{ route('op-propid-match.unmatch') }}"
        data-batches-url="{{ route('op-propid-match.batches') }}"
        data-undo-url="{{ route('op-propid-match.undo') }}"
        data-csrf="{{ csrf_token() }}">

@@ -73,6 +73,20 @@
               <span>Match OP (FC)</span>
             </a>
 
+            {{-- Unlink / Reassign OP — HIDDEN. Unmatching turned out not to need a page
+                 of its own: it is the same officer, the same permits and the same parcel
+                 ids, so it lives on Match OP (FC) above, where the batch already is. The
+                 standalone page and its routes still exist and still work; only this
+                 entry is commented out, so nothing has to be rebuilt if it is wanted
+                 back.
+
+            <a href="{{ route('op-unlink.index') }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('op-unlink.*') ? 'active' : '' }}">
+              <i data-lucide="unlink" class="h-3.5 w-3.5 text-emerald-400"></i>
+              <span>Unlink / Reassign OP</span>
+            </a>
+            --}}
+
 
             <a href="{{route('missing-files.index')}}"
               class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ request()->routeIs('missing-files.*') ? 'active' : '' }}">

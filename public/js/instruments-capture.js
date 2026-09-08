@@ -431,17 +431,53 @@ document.addEventListener('DOMContentLoaded', function () {
             });
     }
 
+    // The banners that carry a volume. Only one is ever on screen, but a backfill
+    // has to be able to repaint whichever it is without knowing which.
+    const REGISTRATION_PREVIEW_TARGETS = [
+        'op-type-reg-particulars',
+        'cofo-reg-particulars',
+        'instrument-choice-reg-particulars',
+    ];
+
+    // What the vault last reported for each banner. Kept so the line can be put
+    // back when a chosen missing number is cleared, without asking again.
+    const vaultPreviewByTarget = {};
+
+    /**
+     * Paint one banner's volume: the number the vault would issue, unless a
+     * missing number has been chosen - in which case it is THAT number's volume,
+     * because the older book is where the instrument is actually going.
+     */
+    function paintRegistrationPreview(targetId) {
+        const el = document.getElementById(targetId);
+        if (!el) return;
+        el.textContent = pendingBackfill
+            ? String(pendingBackfill.volume)
+            : (vaultPreviewByTarget[targetId] ?? '\u2014');
+    }
+
+    function repaintRegistrationPreviews() {
+        REGISTRATION_PREVIEW_TARGETS.forEach(paintRegistrationPreview);
+    }
+
     // `field` picks which part of the peek to show: the whole "serial/page/volume"
     // string ('formatted', the default) or a single component such as 'volume'.
     function refreshRegistrationPreview(instrumentType, opType, targetId, field) {
         const el = document.getElementById(targetId);
         if (!el) return;
-        if (!instrumentType) { el.textContent = '\u2014'; return; }
+        if (!instrumentType) {
+            vaultPreviewByTarget[targetId] = '\u2014';
+            paintRegistrationPreview(targetId);
+            return;
+        }
 
         el.textContent = 'checking\u2026';
         fetchRegistrationPreview(instrumentType, opType).then(data => {
             const value = data ? data[field || 'formatted'] : null;
-            el.textContent = (value === 0 || value) ? String(value) : '\u2014';
+            vaultPreviewByTarget[targetId] = (value === 0 || value) ? String(value) : '\u2014';
+            // Painted rather than assigned: this answer can land AFTER a missing
+            // number was chosen, and must not overwrite it with the vault's.
+            paintRegistrationPreview(targetId);
         });
     }
 
@@ -564,6 +600,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 : '';
         }
 
+        // The banner's "Volume:" line names the book this instrument is going
+        // into, so a chosen missing number moves it back to that number's volume.
+        repaintRegistrationPreviews();
+
         // Where the popup carries the picker, the panel is left as the reminder
         // alone - it appears only once there is a number to be reminded of. A
         // second live copy of the same question is how the two disagree.
@@ -681,23 +721,45 @@ document.addEventListener('DOMContentLoaded', function () {
             + '</div>';
     }
 
-    /** Wire the popup's picker. Returns a reader for whatever is selected. */
-    function wireNoticeBackfill(report) {
+    /**
+     * Wire the popup's picker. Returns a reader for whatever is selected.
+     *
+     * `vaultVolume` is the volume the card was drawn with - the one the vault
+     * would issue. The card's "Volume:" line follows the picker instead as soon
+     * as a missing number is chosen, and goes back to this when it is cleared:
+     * the officer is told the book the instrument will land in, not the book it
+     * would have landed in.
+     */
+    function wireNoticeBackfill(report, vaultVolume) {
         const toggle = document.getElementById('notice-backfill-toggle');
         const fields = document.getElementById('notice-backfill-fields');
         const volumeEl = document.getElementById('notice-backfill-volume');
         const serialEl = document.getElementById('notice-backfill-serial');
         if (!toggle || !fields || !volumeEl || !serialEl) return () => null;
 
+        const readPick = () => (toggle.checked ? readBackfillPick(volumeEl, serialEl) : null);
+
+        function paintNoticeVolume() {
+            const el = document.getElementById('notice-volume-value');
+            if (!el) return;
+            const pick = readPick();
+            el.textContent = pick ? String(pick.volume) : vaultVolume;
+        }
+
         fillBackfillVolumes(volumeEl, report);
         fillBackfillSerials(volumeEl, serialEl, report);
 
         toggle.addEventListener('change', () => {
             fields.classList.toggle('hidden', !toggle.checked);
+            paintNoticeVolume();
         });
-        volumeEl.addEventListener('change', () => fillBackfillSerials(volumeEl, serialEl, report));
+        volumeEl.addEventListener('change', () => {
+            fillBackfillSerials(volumeEl, serialEl, report);
+            paintNoticeVolume();
+        });
+        serialEl.addEventListener('change', paintNoticeVolume);
 
-        return () => (toggle.checked ? readBackfillPick(volumeEl, serialEl) : null);
+        return readPick;
     }
 
     /**
@@ -737,7 +799,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     + '<p style="margin:0;font-size:14px;color:#374151;">' + opts.lineLabel + ': '
                     + '<strong style="color:' + opts.accent + ';">' + opts.lineValue + '</strong></p>'
                     + '<p style="margin:8px 0 0;font-size:18px;font-weight:700;color:#374151;">Volume: '
-                    + '<strong style="font-family:ui-monospace,monospace;font-size:22px;color:' + opts.accent + ';">'
+                    + '<strong id="notice-volume-value" style="font-family:ui-monospace,monospace;'
+                    + 'font-size:22px;color:' + opts.accent + ';">'
                     + volume + '</strong></p>'
                     + '</div>'
                     + (report ? backfillNoticeMarkup() : ''),
@@ -748,7 +811,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 confirmButtonColor: opts.accent,
                 reverseButtons: true,
                 didOpen: () => {
-                    if (report) readPick = wireNoticeBackfill(report);
+                    if (report) readPick = wireNoticeBackfill(report, volume);
                 },
                 preConfirm: () => {
                     if (!report) return { backfill: null };

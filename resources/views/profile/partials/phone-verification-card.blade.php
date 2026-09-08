@@ -65,15 +65,20 @@
                 </p>
                 <div class="pvc-field">
                     <label class="pvc-label" for="pvcPhoneInput">{{ __('Mobile number') }}</label>
-                    <input type="tel" id="pvcPhoneInput" class="pvc-input" inputmode="tel"
-                        autocomplete="tel" value="{{ $pvcPhone }}" placeholder="08012345678" required>
+                    {{-- No `pattern` attribute on purpose: reportValidity() runs before
+                         our own check and would replace a sentence the user can act on
+                         with the browser's "Please match the requested format." --}}
+                    <input type="tel" id="pvcPhoneInput" class="pvc-input" inputmode="numeric"
+                        autocomplete="tel" value="{{ $pvcPhone }}" placeholder="08012345678"
+                        maxlength="11" required>
+                    <p class="pvc-hint">{{ __('11 digits, starting with 0.') }}</p>
                 </div>
                 <div class="pvc-field">
                     <label class="pvc-label" for="pvcEmailInput">{{ __('Email address') }}</label>
                     <input type="email" id="pvcEmailInput" class="pvc-input" inputmode="email"
                         autocomplete="email" autocapitalize="off" spellcheck="false"
                         value="{{ $pvcEmail }}" placeholder="musa@gmail.com" required>
-                    <p class="pvc-hint">{{ __('Check both contacts and correct them before sending the code.') }}</p>
+                    <p class="pvc-hint">{{ __('Your own mailbox — gmail, yahoo, or your work address. Check both contacts and correct them before sending the code.') }}</p>
                 </div>
                 <p id="pvcTargetMessage" class="pvc-error pvc-hidden" role="alert"></p>
                 <button type="button" id="pvcSendBtn" class="pvc-submit">{{ __('Send Verification Code') }}</button>

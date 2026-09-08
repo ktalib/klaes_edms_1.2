@@ -1269,8 +1269,26 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/file', [\App\Http\Controllers\OpPropIdMatchController::class, 'fileTarget'])->name('file');
         Route::get('/ops', [\App\Http\Controllers\OpPropIdMatchController::class, 'searchOps'])->name('ops');
         Route::post('/batch', [\App\Http\Controllers\OpPropIdMatchController::class, 'batchMatch'])->name('batch');
+        // The other direction, on the same page: take permits back off the parcel they
+        // are on, individually or as one Group OP. Reassigning afterwards is optional.
+        Route::post('/unmatch', [\App\Http\Controllers\OpPropIdMatchController::class, 'batchUnmatch'])->name('unmatch');
         Route::get('/batches', [\App\Http\Controllers\OpPropIdMatchController::class, 'recentBatches'])->name('batches');
         Route::post('/undo', [\App\Http\Controllers\OpPropIdMatchController::class, 'undoBatch'])->name('undo');
+    });
+
+    // OP Unlink / Reassignment — the other direction. Takes permits OFF a file's
+    // Property ID and gives them their own (one each, or one shared "Group OP"), then
+    // OPTIONALLY reassigns them to another file. Optional is the rule: unlinking is a
+    // complete act on its own, and the page never demands a destination.
+    //
+    // Only two endpoints are new. The file picker, the OP search and the final Match
+    // are the ones above — a second copy would drift from the first, and both write the
+    // same prop_id. Undo is shared too: unlink batches are OPU-, matches OPM-.
+    Route::prefix('op-unlink')->name('op-unlink.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\OpUnlinkController::class, 'index'])->name('index');
+        Route::get('/associated', [\App\Http\Controllers\OpUnlinkController::class, 'associated'])->name('associated');
+        Route::post('/unlink', [\App\Http\Controllers\OpUnlinkController::class, 'unlink'])->name('unlink');
+        Route::get('/batches', [\App\Http\Controllers\OpUnlinkController::class, 'recentBatches'])->name('batches');
     });
 
     // OP-holder Match. A file whose Occupancy Permit names one holder while File

@@ -37,6 +37,7 @@
             file: root.dataset.fileUrl,
             ops: root.dataset.opsUrl,
             batch: root.dataset.batchUrl,
+            unmatch: root.dataset.unmatchUrl,
             batches: root.dataset.batchesUrl,
             undo: root.dataset.undoUrl
         };
@@ -47,6 +48,7 @@
         var results = [];           // the OP rows currently on screen
         var selected = new Map();   // ticks on the CURRENT search only
         var staged = new Map();     // the batch itself — added across many searches
+        var resultsAreAssociated = false;  // card 2 is showing the file's own permits, not a search
         var busy = false;
         var confirming = false;    // a confirmation dialog is open; ignore repeat clicks
 
@@ -234,8 +236,10 @@
 
                 renderTarget();
                 renderExisting(target.existing || []);
-                renderResults();
                 updateSummary();
+
+                // What is already on this parcel, listed without being asked for.
+                loadAssociatedOps();
 
                 // No banner for an unregistered file. The target card already shows the
                 // id it will be given and marks it as new; a warning on top of that turns
@@ -368,7 +372,48 @@
         }
 
         // ------------------------------------------------------------------ right: OPs
+        /**
+         * Show the permits already sitting on the chosen file, without being asked.
+         *
+         * Selecting a file answers "what is on this parcel already?", and making the
+         * officer search for permits that the page could simply list is how a permit
+         * already on the wrong file goes unnoticed. Runs on every file selection.
+         *
+         * Uses the ordinary OP search with nothing but prop_id, so these rows come back
+         * fully shaped — is_matched and companion counts included — and the batch treats
+         * them exactly like searched ones. exclude_prop_id is deliberately NOT sent: it
+         * is the target's own parcel id, and sending it would filter out every row this
+         * is trying to show.
+         */
+        function loadAssociatedOps() {
+            if (!target || !target.prop_id || target.prop_id_proposed) {
+                resultsAreAssociated = false;
+                results = [];
+                renderResults();
+                return;
+            }
+
+            resultsAreAssociated = true;
+            el.opResults.classList.remove('hidden');
+            el.opResults.innerHTML = '<div class="rounded-lg border border-slate-200 px-4 py-8 text-center text-sm text-slate-400">Loading the permits on this file…</div>';
+            el.opCount.textContent = '';
+
+            get(urls.ops, { prop_id: target.prop_id }).then(function (payload) {
+                results = payload.data || [];
+                renderResults();
+            }).catch(function () {
+                // A convenience, not the job. A failure here leaves the officer to search,
+                // which is what they would have done anyway.
+                resultsAreAssociated = false;
+                results = [];
+                el.opResults.classList.add('hidden');
+                el.opCount.textContent = '';
+            });
+        }
+
         function searchOps() {
+            resultsAreAssociated = false;
+
             var params = {
                 serial: el.serial.value.trim(),
                 serial_mode: el.serialMode.value,
@@ -407,7 +452,10 @@
                 el.opResults.classList.remove('hidden');
                 el.opResults.innerHTML =
                     '<div class="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400">' +
-                    'No Occupancy Permit matches that search.</div>';
+                    (resultsAreAssociated
+                        ? 'No Occupancy Permits are on this file yet. Search by serial to find the ones that belong to it.'
+                        : 'No Occupancy Permit matches that search.') +
+                    '</div>';
                 el.opCount.textContent = '';
                 updateSummary();
                 return;
@@ -419,11 +467,18 @@
             // still be ticked — otherwise the box could never show as checked.
             var tickable = results.length - onPageStaged;
 
-            el.opCount.textContent = results.length + ' found · ' + onPageSelected + ' ticked here' +
+            el.opCount.textContent =
+                (resultsAreAssociated ? results.length + ' on this file' : results.length + ' found') +
+                ' · ' + onPageSelected + ' ticked here' +
                 (onPageStaged ? ' · ' + onPageStaged + ' already in batch' : '');
             el.opResults.classList.remove('hidden');
             el.opResults.innerHTML = '' +
                 '<div class="rounded-lg border border-slate-200 overflow-hidden">' +
+                  (resultsAreAssociated
+                    ? '<div class="px-4 py-2 bg-amber-50 border-b border-amber-200 text-xs font-semibold text-amber-800">' +
+                        'Associated with ' + esc(target.file_number) + ' — already on Property ID ' + esc(target.prop_id) +
+                      '</div>'
+                    : '') +
                   '<div class="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-3">' +
                     '<label class="inline-flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer">' +
                       '<input type="checkbox" id="opm-select-all" ' + (tickable > 0 && onPageSelected === tickable ? 'checked' : '') + ' ' +
@@ -447,7 +502,13 @@
             var isStaged = staged.has(rowKey);
             var alreadyOnTarget = target && target.prop_id && String(row.prop_id) === String(target.prop_id);
             var companions = row.companions;
-            var locked = alreadyOnTarget || isStaged;
+
+            // A permit already on this file is SELECTABLE, not locked. It used to be
+            // barred on the reasoning that there was nothing to do with it — but this
+            // page unmatches too now, and the permits on the wrong file are exactly the
+            // ones an officer opens a file to take off it. Only a row already in the
+            // batch is locked, and that is to stop it being added twice.
+            var locked = isStaged;
 
             return '' +
                 '<label class="flex items-start gap-3 px-4 py-3 transition ' +
@@ -478,10 +539,16 @@
                   '</div>' +
                   '<div class="flex-shrink-0 text-right">' +
                     (alreadyOnTarget
-                      ? '<span class="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-semibold">already matched</span>'
+                      ? '<span class="px-2 py-1 rounded-md bg-emerald-100 text-emerald-700 text-[11px] font-semibold">on this file</span>'
                       : isStaged
                         ? '<span class="px-2 py-1 rounded-md bg-violet-600 text-white text-[11px] font-semibold">in batch</span>'
                         : '<span class="px-2 py-1 rounded-md bg-slate-100 text-slate-600 text-[11px] font-semibold tabular-nums">PROP_ID ' + dash(row.prop_id) + '</span>') +
+                    // Matched permits are listed now, so the row has to say so — the batch
+                    // below offers Unmatch on them, and an officer must know which they
+                    // picked before they get there.
+                    (row.is_matched
+                      ? '<div class="text-[10px] font-semibold text-amber-600 mt-1">already matched</div>'
+                      : '') +
                     (companions
                       ? '<div class="text-[10px] text-amber-600 mt-1">+' + companions + ' linked row(s)</div>'
                       : '') +
@@ -530,6 +597,31 @@
             updateSummary();
         }
 
+        /**
+         * What kind of batch is this?
+         *
+         *   'match'    nothing in it is matched yet — one Batch Match moves them all
+         *   'unmatch'  everything in it is already matched — one Batch Unmatch frees them
+         *   'mixed'    both kinds together. There is no single right action for the batch,
+         *              so none is offered: each row gets its own button instead.
+         *
+         * A permit whose state could not be read (is_matched null) makes the batch mixed
+         * rather than joining either side, so a batch action is never taken on a guess.
+         */
+        function batchKind() {
+            var matched = 0;
+            var unmatched = 0;
+
+            staged.forEach(function (row) {
+                if (row.is_matched === true) matched++;
+                else if (row.is_matched === false) unmatched++;
+            });
+
+            if (matched > 0 && unmatched === 0 && matched === staged.size) return 'unmatch';
+            if (unmatched > 0 && matched === 0 && unmatched === staged.size) return 'match';
+            return 'mixed';
+        }
+
         function renderStaged() {
             el.stagedClear.classList.toggle('hidden', staged.size === 0);
 
@@ -538,6 +630,11 @@
                 el.stagedList.innerHTML = '';
                 return;
             }
+
+            // Per-row buttons appear only when the batch is mixed. With a batch that is
+            // all one kind the single button below says the same thing once, and a button
+            // on every row would just be the same action repeated.
+            var mixed = batchKind() === 'mixed';
 
             var rows = [];
             staged.forEach(function (row, rowKey) {
@@ -556,22 +653,46 @@
                       (row.companions
                         ? '<span class="flex-shrink-0 text-[10px] text-amber-600">+' + row.companions + ' linked</span>'
                         : '') +
+                      (mixed ? rowAction(row, rowKey) : '') +
                       '<button type="button" class="opm-staged-remove flex-shrink-0 p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" ' +
                         'title="Remove from batch" data-key="' + esc(rowKey) + '">' +
                         '<i data-lucide="x" class="h-4 w-4"></i></button>' +
                     '</div>');
             });
 
+            var kind = batchKind();
+            var heading = kind === 'unmatch'
+                ? 'In this batch — ' + staged.size + ' matched OP record(s)'
+                : kind === 'match'
+                  ? 'In this batch — ' + staged.size + ' OP record(s)'
+                  : 'In this batch — ' + staged.size + ' OP record(s), matched and unmatched together';
+
             el.stagedList.classList.remove('hidden');
             el.stagedList.innerHTML = '' +
                 '<div class="rounded-lg border border-violet-200 bg-violet-50/40 overflow-hidden">' +
                   '<div class="px-4 py-2 bg-violet-100/60 border-b border-violet-200 text-xs font-semibold text-violet-800">' +
-                    'In this batch — ' + staged.size + ' OP record(s)' +
+                    esc(heading) +
                   '</div>' +
                   '<div class="max-h-64 overflow-auto divide-y divide-violet-100 bg-white">' + rows.join('') + '</div>' +
                 '</div>';
 
             icons();
+        }
+
+        /** The per-row Match / Unmatch button, shown only on a mixed batch. */
+        function rowAction(row, rowKey) {
+            if (row.is_matched === true) {
+                return '<button type="button" class="opm-row-unmatch flex-shrink-0 px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-semibold transition" ' +
+                    'data-key="' + esc(rowKey) + '">Unmatch</button>';
+            }
+
+            if (row.is_matched === false) {
+                return '<button type="button" class="opm-row-match flex-shrink-0 px-2.5 py-1 rounded-md bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-semibold transition" ' +
+                    'data-key="' + esc(rowKey) + '">Match</button>';
+            }
+
+            // State unknown — offer nothing rather than the wrong thing.
+            return '<span class="flex-shrink-0 text-[10px] text-slate-400">state unknown</span>';
         }
 
         // ------------------------------------------------------------------ batch
@@ -586,6 +707,43 @@
             el.addBtn.disabled = ticked === 0 || busy;
             el.addLabel.textContent = ticked > 0 ? 'Add ' + ticked + ' to Batch' : 'Add to Batch';
 
+            var kind = count > 0 ? batchKind() : 'match';
+
+            // ---- Unmatch: the batch is entirely already-matched permits. A target file
+            // is irrelevant here — unmatching takes them off whatever they are on.
+            if (kind === 'unmatch') {
+                el.summary.innerHTML =
+                    '<span class="font-semibold text-slate-800">' + count + ' already-matched OP record(s)</span>' +
+                    ' will be taken off the parcel they are on and given new Property IDs.' +
+                    (count > 1 ? ' You will choose whether individually or as one Group OP.' : '') +
+                    '<div class="text-xs text-slate-500 mt-1">Reassigning them to a file afterwards is optional — ' +
+                    'they stay in this batch, and you can pick a file and match, or stop here.</div>';
+
+                el.batchBtn.disabled = busy;
+                el.batchLabel.textContent = 'Batch Unmatch ' + count + ' OP(s)';
+                setBatchTone('unmatch');
+                return;
+            }
+
+            // ---- Mixed: no single action is right for the batch, so none is offered.
+            if (kind === 'mixed') {
+                el.summary.innerHTML =
+                    '<span class="text-amber-600 font-medium">This batch mixes matched and unmatched permits.</span> ' +
+                    'There is no one action for both, so use the <strong>Match</strong> and <strong>Unmatch</strong> ' +
+                    'buttons on each row above.' +
+                    (!target || !target.prop_id
+                        ? '<div class="text-xs text-slate-500 mt-1">Matching a row needs a confirmed file selected on the left.</div>'
+                        : '');
+
+                el.batchBtn.disabled = true;
+                el.batchLabel.textContent = 'Use the per-row buttons';
+                setBatchTone('mixed');
+                return;
+            }
+
+            // ---- Match: the ordinary path, unchanged.
+            setBatchTone('match');
+
             if (!target && count === 0) {
                 el.summary.innerHTML = 'Select a confirmed file on the left, then search OPs and add them to this batch.';
             } else if (!target) {
@@ -595,8 +753,8 @@
                 // A target with no parcel id is not a target. There is nothing to move the
                 // permits ONTO, so the button stays shut until the officer resolves it.
                 el.summary.innerHTML = '<span class="text-amber-600 font-medium">' +
-                    esc(target.file_number) + ' has no Property ID yet.</span> ' +
-                    'Use one of the file\'s other numbers, or allocate a new Property ID, before matching.';
+                    esc(target.file_number) + ' has no Property ID and none could be worked out.</span> ' +
+                    "Try again, or pick one of the file's other numbers.";
             } else if (count === 0) {
                 el.summary.innerHTML = 'Target is <span class="font-semibold text-slate-800">' + esc(target.file_number) +
                     '</span> (Property ID <span class="font-semibold text-violet-700">' + esc(target.prop_id) +
@@ -624,13 +782,206 @@
             el.batchLabel.textContent = count > 0 ? 'Batch Match ' + count + ' OP(s)' : 'Batch Match';
         }
 
+        /** The button carries the colour of what it does: violet moves on, rose takes off. */
+        function setBatchTone(kind) {
+            var base = 'inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white ' +
+                'disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition shadow-sm ';
+            el.batchBtn.className = base + (kind === 'unmatch'
+                ? 'bg-rose-600 hover:bg-rose-700'
+                : 'bg-slate-900 hover:bg-slate-800');
+        }
+
+        /**
+         * Match ONE permit from a mixed batch, leaving the rest of the batch alone.
+         *
+         * The same endpoint and the same rules as a full Batch Match — it is one row
+         * rather than all of them, and the row leaves the batch once it is on the file.
+         */
+        function runSingleMatch(row) {
+            if (busy || confirming) return;
+
+            confirming = true;
+            confirmAction({
+                title: 'Match this permit to ' + target.file_number + '?',
+                icon: 'question',
+                confirmText: 'Yes, match it',
+                confirmColor: '#7c3aed',
+                html: 'Serial <strong>' + esc(row.op_serial_number || '—') + '</strong> moves onto ' +
+                      '<strong>Property ID ' + esc(String(target.prop_id)) + '</strong>.' +
+                      '<br><br><span style="font-size:13px;color:#64748b;">This can be undone from Recent matches.</span>'
+            }).then(function (ok) {
+                confirming = false;
+                if (!ok) return;
+
+                busy = true;
+                updateSummary();
+
+                post(urls.batch, {
+                    file_no: target.file_number,
+                    prop_id: target.prop_id,
+                    prop_id_proposed: !!target.prop_id_proposed,
+                    ops: [{ source_table: row.source_table, op_id: row.op_id }],
+                    move_companions: el.companions.checked
+                }).then(function (payload) {
+                    banner(payload.errors && payload.errors.length ? 'warn' : 'ok', payload.message);
+
+                    // Matched: it belongs to the file now, so it leaves the batch. Anything
+                    // still unresolved stays, which is what makes the batch shrink toward
+                    // one kind and the single button come back.
+                    staged.delete(key(row));
+                    selected.delete(key(row));
+
+                    if (payload.prop_id) {
+                        target.prop_id = payload.prop_id;
+                        target.prop_id_proposed = false;
+                        renderTarget();
+                    }
+
+                    renderStaged();
+                    renderExisting(payload.existing || []);
+                    if (results.length) searchOps();
+                    loadBatches();
+                }).catch(function (error) {
+                    banner('error', error.message);
+                }).finally(function () {
+                    busy = false;
+                    updateSummary();
+                });
+            });
+        }
+
+        /**
+         * Ask how the permits should be separated, then unmatch them.
+         *
+         * Group is offered only for two or more: a group of one is not a group, and
+         * offering it would let an officer believe they had made something shared when
+         * they had not. The server refuses it too.
+         */
+        function runUnmatch(ops) {
+            if (ops.length === 1) {
+                confirming = true;
+                confirmAction({
+                    title: 'Unmatch Associated OP',
+                    icon: 'warning',
+                    confirmText: 'Unmatch and issue its own ID',
+                    confirmColor: '#e11d48',
+                    html: 'It comes off the parcel it is on and is given a Property ID of its own.' +
+                          '<br><br><span style="font-size:13px;color:#64748b;">Reassigning it to a file afterwards is optional. ' +
+                          'This can be undone from Recent matches.</span>'
+                }).then(function (ok) {
+                    confirming = false;
+                    if (ok) sendUnmatch(ops, 'individual');
+                });
+                return;
+            }
+
+            chooseUnmatchMode(ops.length).then(function (mode) {
+                if (mode) sendUnmatch(ops, mode);
+            });
+        }
+
+        /** The two-way choice, for two or more permits. */
+        function chooseUnmatchMode(count) {
+            var individual = 'Issue Individual IDs';
+            var group = 'Create as Group OPs';
+
+            if (window.Swal && typeof window.Swal.fire === 'function') {
+                confirming = true;
+                return window.Swal.fire({
+                    title: 'How should these ' + count + ' permits be separated?',
+                    html:
+                        '<div style="text-align:left;font-size:13px;color:#475569;line-height:1.6">' +
+                          '<p style="margin:0 0 10px"><strong>Unmatch and Issue Individual IDs</strong> — each permit becomes ' +
+                          'its own parcel with its own Property ID. Use this when the permits have nothing to do with each other.</p>' +
+                          '<p style="margin:0"><strong>Unmatch / Create as Group OPs</strong> — all ' + count + ' permits share ' +
+                          'one new Property ID. Use this when they belong together, but not to the file they are on.</p>' +
+                        '</div>',
+                    icon: 'question',
+                    showDenyButton: true,
+                    showCancelButton: true,
+                    confirmButtonText: individual,
+                    denyButtonText: group,
+                    cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#0284c7',
+                    denyButtonColor: '#7c3aed',
+                    reverseButtons: true
+                }).then(function (r) {
+                    confirming = false;
+                    if (r.isConfirmed) return 'individual';
+                    if (r.isDenied) return 'group';
+                    return null;
+                });
+            }
+
+            var wantsGroup = window.confirm(
+                'How should these ' + count + ' permits be separated?' +
+                '\n\nOK = ' + group + ' (they share one new Property ID)' +
+                '\nCancel = ' + individual + ' (each gets its own)'
+            );
+            return Promise.resolve(wantsGroup ? 'group' : 'individual');
+        }
+
+        function sendUnmatch(ops, mode) {
+            busy = true;
+            el.batchBtn.disabled = true;
+            el.batchLabel.textContent = 'Unmatching…';
+
+            post(urls.unmatch, {
+                ops: ops,
+                mode: mode,
+                move_companions: el.companions.checked
+            }).then(function (payload) {
+                banner(payload.errors && payload.errors.length ? 'warn' : 'ok', payload.message);
+
+                // The permits STAY in the batch. Unmatching does not end the job — the
+                // officer may now pick a file and match them, or stop. Their new parcel
+                // ids and cleared matched-state are written straight in, so the batch
+                // redraws as a plain Match batch without a round trip.
+                (payload.assignments || []).forEach(function (a) {
+                    var rowKey = a.source_table + ':' + a.op_id;
+                    var row = staged.get(rowKey);
+                    if (!row) return;
+                    row.prop_id = String(a.prop_id);
+                    row.is_matched = false;
+                    row.companions = 0;
+                    staged.set(rowKey, row);
+                });
+
+                renderStaged();
+                updateSummary();
+
+                // The search list still shows their old state; re-run it so it agrees.
+                if (results.length) searchOps();
+                loadBatches();
+            }).catch(function (error) {
+                banner('error', error.message);
+            }).finally(function () {
+                busy = false;
+                updateSummary();
+            });
+        }
+
         function runBatch() {
-            if (!target || !target.prop_id || staged.size === 0 || busy || confirming) return;
+            if (staged.size === 0 || busy || confirming) return;
 
             var ops = [];
             staged.forEach(function (row) {
                 ops.push({ source_table: row.source_table, op_id: row.op_id });
             });
+
+            var kind = batchKind();
+
+            // An all-matched batch unmatches. No target file is needed or used: the
+            // permits come off whatever they are on.
+            if (kind === 'unmatch') {
+                runUnmatch(ops);
+                return;
+            }
+
+            // Mixed batches have no single action; the per-row buttons handle them.
+            if (kind === 'mixed') return;
+
+            if (!target || !target.prop_id) return;
 
             var pending = confirmAction({
                 title: 'Match ' + ops.length + ' Occupancy Permit record(s)?',
@@ -828,7 +1179,6 @@
             if (event.target.id === 'opm-select-all') {
                 var on = event.target.checked;
                 results.forEach(function (row) {
-                    if (target && target.prop_id && String(row.prop_id) === String(target.prop_id)) return;
                     // A row already in the batch is locked; select-all must not re-tick it.
                     if (staged.has(key(row))) return;
                     if (on) selected.set(key(row), row);
@@ -855,7 +1205,26 @@
 
         el.stagedList.addEventListener('click', function (event) {
             var remove = event.target.closest('.opm-staged-remove');
-            if (remove) removeFromBatch(remove.dataset.key);
+            if (remove) { removeFromBatch(remove.dataset.key); return; }
+
+            // Per-row actions, on a mixed batch only.
+            var unmatchOne = event.target.closest('.opm-row-unmatch');
+            if (unmatchOne) {
+                var u = staged.get(unmatchOne.dataset.key);
+                if (u) runUnmatch([{ source_table: u.source_table, op_id: u.op_id }]);
+                return;
+            }
+
+            var matchOne = event.target.closest('.opm-row-match');
+            if (matchOne) {
+                var m = staged.get(matchOne.dataset.key);
+                if (!m) return;
+                if (!target || !target.prop_id) {
+                    banner('warn', 'Select the confirmed file on the left before matching a permit to it.');
+                    return;
+                }
+                runSingleMatch(m);
+            }
         });
 
         el.stagedClear.addEventListener('click', function () {

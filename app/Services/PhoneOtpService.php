@@ -280,6 +280,7 @@ class PhoneOtpService
     {
         $channel = self::CHANNEL_BOTH;
         $email = $this->normaliseEmail($email);
+        $rawPhone = $phone;
         $phone = BulkSmsNgService::normalizeNumber($phone);
         if (!$this->columnsReady()) {
             return $this->result(false, __('Account verification is not available yet. Contact ICT.'), $channel);
@@ -289,6 +290,9 @@ class PhoneOtpService
         }
         if (!$phone) {
             return $this->result(false, __('Enter a usable Nigerian mobile number, such as 08012345678.'), $channel);
+        }
+        if (!$this->isLocalMobileFormat($rawPhone)) {
+            return $this->result(false, __('Enter an 11-digit mobile number starting with 0, such as 08012345678.'), $channel);
         }
         if ($this->emailBelongsToAnotherAccount($user, $email)) {
             return $this->result(false, __('That email address is already on another KLAES account.'), $channel);
@@ -851,6 +855,24 @@ class PhoneOtpService
     /**
      * Lower-cased and trimmed, or null when it is not an address at all.
      */
+    /**
+     * Is this the shape a member of staff actually reads off their handset?
+     *
+     * Eleven digits beginning with a zero, once the spaces and dashes people
+     * write numbers with are taken out. Deliberately stricter than
+     * BulkSmsNgService::normalizeNumber(), which also takes a bare ten digits and
+     * the 234-prefixed form: that normaliser serves every outbound message in the
+     * system and must keep swallowing the shapes already sitting in the tables,
+     * whereas this card is where a number is TYPED, and the one place a typo can
+     * still be sent back to the person who made it.
+     */
+    public function isLocalMobileFormat(?string $phone): bool
+    {
+        $digits = preg_replace('/\D+/', '', (string) $phone) ?? '';
+
+        return (bool) preg_match('/^0\d{10}$/', $digits);
+    }
+
     public function normaliseEmail(?string $email): ?string
     {
         $value = mb_strtolower(trim((string) $email));
