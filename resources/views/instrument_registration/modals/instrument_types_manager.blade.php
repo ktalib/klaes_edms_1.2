@@ -200,6 +200,71 @@
                             </div>
                         </div>
 
+                        {{--
+                            Where this register began in KLAES.
+
+                            Not a starting point for issuing — nothing is ever numbered from
+                            these two boxes, and the vault above is untouched by them. They are
+                            the FLOOR of the "Fill a missing registration number" list on the
+                            capture screen, which runs from the first number this office issued
+                            in the book up to the number the vault stands on now.
+
+                            Left blank, that floor is guessed from the lowest registration still
+                            in the system — and a guess cannot tell "never issued" from "issued
+                            and then deleted", so a hole at the very start of a register stays
+                            invisible. Deed of Mortgage is that shape today: four registrations
+                            running 89/89/22 to 92/92/22 with nothing between them, so nothing
+                            is offered.
+
+                            Fill these from the paper book: the first entry KLAES itself wrote,
+                            not the first entry in the book.
+                        --}}
+                        <div class="border-t pt-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <label class="block text-sm font-medium text-gray-700">Register Begins At</label>
+                                <span class="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full">Optional</span>
+                            </div>
+
+                            <div class="bg-gray-50 p-3 mb-4 rounded-md border border-gray-200">
+                                <p class="text-xs text-gray-600">
+                                    The first number this office issued in this register — the point the
+                                    manual workflow handed over. It is used only to work out which numbers
+                                    are <strong>missing</strong> from the register; it never issues a number
+                                    and never moves the vault above.
+                                    <span class="block mt-1">
+                                        Leave blank and the system infers it from the earliest registration it
+                                        still holds, which cannot reveal a number deleted from the very start
+                                        of the book.
+                                    </span>
+                                </p>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div>
+                                    <label for="startSerial"
+                                        class="block text-xs font-medium text-gray-500 uppercase tracking-wide">First
+                                        Serial</label>
+                                    <input type="number" min="1" id="startSerial" x-model="formData.start_serial"
+                                        placeholder="e.g. 89"
+                                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                                </div>
+                                <div>
+                                    <label for="startVolume"
+                                        class="block text-xs font-medium text-gray-500 uppercase tracking-wide">First
+                                        Volume</label>
+                                    <input type="number" min="1" id="startVolume" x-model="formData.start_volume"
+                                        placeholder="e.g. 22"
+                                        class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 text-sm focus:ring-indigo-500 focus:border-indigo-500" />
+                                </div>
+                                <div class="flex items-end">
+                                    <p class="text-xs text-gray-500 pb-2"
+                                        x-text="formData.start_serial && formData.start_volume
+                                            ? `Missing numbers will be listed from ${formData.start_serial}/${formData.start_serial}/${formData.start_volume} onwards.`
+                                            : 'Not recorded — the starting point will be inferred.'"></p>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Form Actions -->
                         <div class="border-t pt-4 flex justify-end gap-3">
                             <button @click="cancelForm()"

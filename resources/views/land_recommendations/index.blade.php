@@ -8,7 +8,10 @@
             <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
                 <div>
                     <h1 class="text-3xl font-extrabold text-slate-900 tracking-tight">Recommendation For Grant of RoFO</h1>
-                    @if(!empty($isOssView))
+                    {{-- The page you are on, not the list under the tabs: the OSS tab
+                         of the Land page shows OSS records without becoming the OSS
+                         page, so the heading stays with $pageType. --}}
+                    @if(($pageType ?? (!empty($isOssView) ? 'OSS' : 'ROFO')) === 'OSS')
                         <p class="oss-label" style="color:#ea1b1b">LAND ONE STOP SHOP</p>
                     @else
                         <p class="text-slate-500 text-sm mt-1">Manage applications, approvals, and controlled printing.</p>
@@ -38,7 +41,7 @@
                         <i data-lucide="download" class="h-5 w-5"></i>
                         <span>Export Records</span>
                     </button>
-                    @if(empty($isOssView))
+                    @if(($pageType ?? (!empty($isOssView) ? 'OSS' : 'ROFO')) !== 'OSS')
                         <a href="{{ route('land-recommendations.create') }}" class="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 whitespace-nowrap">
                             <i data-lucide="plus-circle" class="h-5 w-5"></i>
                             <span>New Recommendation</span>
@@ -48,9 +51,9 @@
             </div>
 
             <!-- Statistics Cards -->
-            {{-- The cards count the list under them. On the OSS tab that is the OSS
-                 register, while the tab badges keep counting the Land one. --}}
-            @php $cardStats = $cardStats ?? $stats; @endphp
+            {{-- The cards and the tab badges both count the page you are on. The OSS
+                 tab swaps the TABLE for the OSS register and nothing else: switching
+                 these to OSS totals made the Land page read as the OSS page. --}}
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                 <!-- Total Records -->
                 <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm hover:shadow-md transition-all group overflow-hidden relative">
@@ -63,7 +66,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Records</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($cardStats['total']) }}</h3>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['total']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -83,7 +86,7 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pending Approval</p>
-                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($cardStats['pending']) }}</h3>
+                            <h3 class="text-2xl font-black text-slate-800 tracking-tight">{{ number_format($stats['pending']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -103,12 +106,12 @@
                         </div>
                         <div>
                             <p class="text-[10px] font-black text-blue-100 uppercase tracking-widest">Approved Applications</p>
-                            <h3 class="text-2xl font-black tracking-tight text-white">{{ number_format($cardStats['approved']) }}</h3>
+                            <h3 class="text-2xl font-black tracking-tight text-white">{{ number_format($stats['approved']) }}</h3>
                         </div>
                     </div>
                     <div class="mt-4 pt-4 border-t border-white/10 flex items-center justify-between text-[10px] font-bold text-blue-100 uppercase tracking-widest">
                         <span>Total Rent Value</span>
-                        <span class="px-2 py-0.5 bg-white/20 text-white rounded-lg border border-white/20">₦{{ number_format($cardStats['total_ground_rent']) }}</span>
+                        <span class="px-2 py-0.5 bg-white/20 text-white rounded-lg border border-white/20">₦{{ number_format($stats['total_ground_rent']) }}</span>
                     </div>
                 </div>
             </div>

@@ -209,13 +209,12 @@ class LandRecommendationController extends Controller
 
         $printedExists = $printedExistsFor($isOssView);
 
-        // Counters: the cards describe the list under them, the tab badges describe
-        // the page's own tabs. On the OSS tab those are two different scopes.
+        // Counters: cards and tab badges alike describe the PAGE, never the list.
+        // The OSS tab swaps the table for the OSS register and stops there — when
+        // the cards followed the table instead, ?type=ROFO&tab=oss showed the OSS
+        // totals under the Land heading and the page read as the OSS page.
         $stats = $this->indexStats($request, $pageType === 'OSS', $applyOssChangeOfNameOriginFilter, $printedExistsFor($pageType === 'OSS'));
         $stats['oss'] = $this->ossRecommendationCount($applyOssChangeOfNameOriginFilter, $printedExistsFor(true));
-        $cardStats = $ossTab
-            ? $this->indexStats($request, true, $applyOssChangeOfNameOriginFilter, $printedExistsFor(true))
-            : $stats;
 
         // The Batches tab pages over batches, not over recommendations. On the main
         // list a 100-child batch is one collapsed row whose children are spread
@@ -287,7 +286,6 @@ class LandRecommendationController extends Controller
                 'batchDocuments'  => $batchDocuments,
                 'PageTitle'       => $PageTitle,
                 'stats'           => $stats,
-                'cardStats'       => $cardStats,
                 'isOssView'       => $isOssView,
                 'pageType'        => $pageType,
                 'ossTab'          => $ossTab,
@@ -419,7 +417,7 @@ class LandRecommendationController extends Controller
             ->get()
             ->keyBy('land_recommendation_id');
 
-        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'cardStats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'whiteCopyDone', 'recSerials', 'batchSizes', 'batchActions', 'approvedLetters'));
+        return view('land_recommendations.index', compact('recommendations', 'PageTitle', 'stats', 'isOssView', 'pageType', 'ossTab', 'tab', 'printDates', 'whiteCopyDone', 'recSerials', 'batchSizes', 'batchActions', 'approvedLetters'));
     }
 
     /**

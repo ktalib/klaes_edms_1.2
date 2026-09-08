@@ -255,6 +255,34 @@
         color: #92400e;
     }
 
+    /* What the survey found. Sits under the checkbox where there is one, and
+       alone in the box where there is nothing to fill. */
+    .backfill-panel__note {
+        margin-top: 0.5rem;
+        padding-left: 1.625rem;
+        font-size: 0.6875rem;
+        line-height: 1.5;
+        color: #a16207;
+    }
+
+    .backfill-panel__note:empty {
+        display: none;
+    }
+
+    /* A register with nothing missing. Same box, no question in it: amber and a
+       checkbox would ask the officer to choose from an empty list. */
+    .backfill-panel--quiet {
+        background: #f9fafb;
+        border-color: #e5e7eb;
+        border-left-color: #9ca3af;
+    }
+
+    .backfill-panel--quiet .backfill-panel__note {
+        margin-top: 0;
+        padding-left: 0;
+        color: #4b5563;
+    }
+
     /* The panel reduced to its reminder line, for the instruments whose picker
        lives in the "You are about to register" popup: there is no checkbox above
        it any more, so the indent that lined it up under one has to go. */

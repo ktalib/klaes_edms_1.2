@@ -12,7 +12,12 @@ function instrumentTypesManager() {
             description: '',
             last_volume: '',
             last_page: '',
-            last_serial: ''
+            last_serial: '',
+            // Where the register began. Blank means "not recorded" — the
+            // missing-number survey then infers the floor from the earliest
+            // registration still held, which cannot see a hole beneath itself.
+            start_volume: '',
+            start_serial: ''
         },
 
         init() {
@@ -38,7 +43,9 @@ function instrumentTypesManager() {
                 description: '',
                 last_volume: '',
                 last_page: '',
-                last_serial: ''
+                last_serial: '',
+                start_volume: '',
+                start_serial: ''
             };
             this.formMode = 'add';
         },
@@ -81,7 +88,12 @@ function instrumentTypesManager() {
                 description: type.description || '',
                 last_volume: type.last_volume,
                 last_page: type.last_page,
-                last_serial: type.last_serial
+                last_serial: type.last_serial,
+                // Null (never recorded, or the columns not deployed yet) has to
+                // reach the box as '' — bound to a number input, null renders as
+                // the string "null" and posts back as a floor nobody set.
+                start_volume: type.start_volume ?? '',
+                start_serial: type.start_serial ?? ''
             };
             this.formMode = 'edit';
             this.viewMode = 'form';

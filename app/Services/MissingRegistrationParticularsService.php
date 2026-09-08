@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Exception;
 
 /**
@@ -20,6 +21,16 @@ use Exception;
  * paper book has a serial the database no longer accounts for. Capturing the
  * instrument again through the normal path would burn the NEXT number and leave
  * the hole permanently, so the capture screen offers the hole instead.
+ *
+ * WHERE A REGISTER BEGINS. Preferably from the vault itself: start_volume /
+ * start_serial, set under Manage Instrument Types, are the office's own record
+ * of the first number KLAES issued in that book. Where they are not set the
+ * floor is INFERRED from the lowest surviving registration, which is only ever
+ * a guess - it cannot tell "never issued" from "issued and deleted", so a hole
+ * at the very start of a register is invisible until the true floor is
+ * recorded. That is why Deed of Mortgage, whose four KLAES-era rows run
+ * 89..92 unbroken, honestly reports nothing missing: below 89 the survey has
+ * nothing to measure from.
  *
  * Nothing here advances a vault. A backfill consumes a number the vault already
  * issued and passed over, so the vault's own position must not move.
@@ -40,6 +51,15 @@ class MissingRegistrationParticularsService
      */
     private const MAX_LISTED_PER_VOLUME = 400;
 
+    /**
+     * Ceiling on the stranded numbers named in the report. The count is exact;
+     * the list is only there to show the officer WHERE the strays sit.
+     */
+    private const MAX_LISTED_BEYOND = 20;
+
+    /** Whether this deployment's vault table carries the recorded-origin columns. */
+    private ?bool $vaultHasOrigin = null;
+
     public function __construct(
         protected InstrumentRegistrationService $vaults
     ) {
@@ -53,7 +73,8 @@ class MissingRegistrationParticularsService
      *
      * @return array{
      *   vault:string, configured:bool, supported:bool, reason?:string,
-     *   origin?:array, current?:array, total?:int, volumes?:array
+     *   origin?:array, origin_recorded?:bool, current?:array, total?:int,
+     *   volumes?:array, beyond?:array
      * }
      */
     public function report(string $instrumentType, ?string $opType = null): array
@@ -90,7 +111,7 @@ class MissingRegistrationParticularsService
                 'supported' => true,
                 'total' => 0,
                 'volumes' => [],
-                'reason' => 'No registration has been recorded in volume ' . max(1, (int) $vault->current_volume)
+                'reason' => 'No registration recorded in volume ' . max(1, (int) $vault->current_volume)
                     . ' yet, so there is nothing to backfill.',
             ];
         }
@@ -100,9 +121,15 @@ class MissingRegistrationParticularsService
             'configured' => true,
             'supported' => true,
             'origin' => $survey['origin'],
+            // Whether that floor is the office's own record or a guess drawn
+            // from the lowest surviving row - the capture screen says which,
+            // because only one of the two can be trusted to expose a hole at
+            // the very start of a register.
+            'origin_recorded' => $survey['origin_recorded'],
             'current' => $survey['current'],
             'total' => $survey['total'],
             'volumes' => $survey['volumes'],
+            'beyond' => $survey['beyond'],
         ];
     }
 
@@ -178,38 +205,51 @@ class MissingRegistrationParticularsService
     /**
      * Walk one register: where it started, where it stands, and what it skipped.
      *
-     * Returns null when the vault's current volume holds no registration at all
-     * - there is then no book to walk, only a vault pointing at an empty page.
+     * Returns null when the register has no floor to measure from: no recorded
+     * origin AND no registration in the vault's current volume - there is then
+     * no book to walk, only a vault pointing at an empty page.
      *
-     * @return null|array{origin:array, current:array, total:int, volumes:array, missing:array<int,int[]>}
+     * @return null|array{origin:array, origin_recorded:bool, current:array, total:int, volumes:array, beyond:array, missing:array<int,int[]>}
      */
     private function survey(string $vaultName, ?string $opType, object $vault): ?array
     {
         $currentVolume = max(1, (int) $vault->current_volume);
         $currentSerial = (int) $vault->current_serial;
 
-        $used = $this->usedNumbers($vaultName, $opType, $currentVolume);
+        $used = $this->usedNumbers($vaultName, $opType);
+        $recordedOrigin = $this->recordedOrigin($vault, $currentVolume, $currentSerial);
 
-        if (empty($used[$currentVolume])) {
+        if ($recordedOrigin === null && empty($used[$currentVolume])) {
             return null;
         }
 
-        // The volumes this register owns: the unbroken run of books ending at
-        // the one the vault sits in. Anything below a break belongs to a
-        // different run - which is what tells the two Occupancy Permit
-        // registers apart, since deed_registrations records both as
-        // "Occupancy Permit (OP)" and only their volume ranges separate them.
-        $block = [];
-        for ($volume = $currentVolume; $volume >= 1; $volume--) {
-            if (empty($used[$volume])) {
-                break;
+        if ($recordedOrigin !== null) {
+            // The office has said where this book begins, so the survey runs
+            // from there to the vault - through volumes that hold nothing,
+            // which is the whole point: a book nobody has captured yet is
+            // missing every number in it, and a run of empty volumes must not
+            // be read as the register ending.
+            $block = range($recordedOrigin['volume'], $currentVolume);
+        } else {
+            // Nothing recorded: fall back to the unbroken run of books ending
+            // at the one the vault sits in. Anything below a break belongs to a
+            // different run - which is what tells the two Occupancy Permit
+            // registers apart, since deed_registrations records both as
+            // "Occupancy Permit (OP)" and only their volume ranges separate them.
+            $block = [];
+            for ($volume = $currentVolume; $volume >= 1; $volume--) {
+                if (empty($used[$volume])) {
+                    break;
+                }
+                $block[] = $volume;
             }
-            $block[] = $volume;
+            sort($block);
         }
-        sort($block);
 
         $lowestVolume = $block[0];
-        $originSerial = min(array_keys($used[$lowestVolume]));
+        // A recorded floor is the office's own record; the fallback is the
+        // lowest surviving row, which cannot see a hole beneath itself.
+        $originSerial = $recordedOrigin['serial'] ?? min(array_keys($used[$lowestVolume]));
 
         $missing = [];
         $volumes = [];
@@ -244,8 +284,10 @@ class MissingRegistrationParticularsService
                 // How much of the book IS accounted for. A volume reading
                 // "1 missing, 299 registered" is a deletion; one reading
                 // "226 missing, 2 registered" was never captured in the first
-                // place, and the officer can see which is which at a glance.
-                'registered' => count($used[$volume]),
+                // place, and the officer can see which is which at a glance. A
+                // recorded floor can reach back into a volume holding nothing
+                // at all, which is a book of 300 missing numbers and 0 rows.
+                'registered' => count($used[$volume] ?? []),
                 'from' => $from,
                 'to' => $to,
                 'truncated' => count($gaps) > count($listed),
@@ -264,6 +306,7 @@ class MissingRegistrationParticularsService
                 'serial' => $originSerial,
                 'formatted' => "{$originSerial}/{$originSerial}/{$lowestVolume}",
             ],
+            'origin_recorded' => $recordedOrigin !== null,
             'current' => [
                 'volume' => $currentVolume,
                 'serial' => $currentSerial,
@@ -271,7 +314,99 @@ class MissingRegistrationParticularsService
             ],
             'total' => $total,
             'volumes' => $volumes,
+            'beyond' => $this->beyondCurrentPosition($used, $opType, $currentVolume, $currentSerial),
             'missing' => $missing,
+        ];
+    }
+
+    /**
+     * The number this register was recorded as starting at, or null.
+     *
+     * Set by the office under Manage Instrument Types (start_volume /
+     * start_serial on the vault). Ignored when it describes no register at all -
+     * a floor above the vault's own position - so a mistyped value degrades to
+     * the inferred floor rather than emptying the picker or filling it with
+     * nonsense.
+     *
+     * @return null|array{volume:int, serial:int}
+     */
+    private function recordedOrigin(object $vault, int $currentVolume, int $currentSerial): ?array
+    {
+        if (!$this->vaultHasRecordedOrigin()) {
+            return null;
+        }
+
+        $volume = (int) ($vault->start_volume ?? 0);
+        $serial = (int) ($vault->start_serial ?? 0);
+
+        if ($volume < 1 || $serial < 1) {
+            return null;
+        }
+
+        if ($volume > $currentVolume || ($volume === $currentVolume && $serial > $currentSerial)) {
+            return null;
+        }
+
+        return ['volume' => $volume, 'serial' => $serial];
+    }
+
+    /**
+     * Whether this deployment's vault table carries start_volume / start_serial.
+     *
+     * The columns arrived after the table did, so a site that has not run the
+     * script yet still surveys - on the inferred floor, exactly as before.
+     */
+    private function vaultHasRecordedOrigin(): bool
+    {
+        if ($this->vaultHasOrigin === null) {
+            $this->vaultHasOrigin = Schema::connection('sqlsrv')
+                    ->hasColumn('instrument_number_vaults', 'start_volume')
+                && Schema::connection('sqlsrv')
+                    ->hasColumn('instrument_number_vaults', 'start_serial');
+        }
+
+        return $this->vaultHasOrigin;
+    }
+
+    /**
+     * Registrations recorded PAST the number the vault stands on.
+     *
+     * Not gaps, and never offered - but the strongest sign that a register has
+     * been re-based and left rows stranded on their old numbering, which is
+     * exactly what the survey cannot see and the officer needs told. Deed of
+     * Mortgage carries four such rows (1/1/35 .. 4/4/35, captured before the
+     * vault was corrected down to volume 22).
+     *
+     * Not reported for the Occupancy Permit registers: they share one stored
+     * instrument type and are separated ONLY by volume range, so everything
+     * above one register's position is simply the other register.
+     *
+     * @return array{count:int, entries:array<int,array{volume:int,serial:int,formatted:string}>}
+     */
+    private function beyondCurrentPosition(array $used, ?string $opType, int $currentVolume, int $currentSerial): array
+    {
+        if ($opType !== null && $opType !== '') {
+            return ['count' => 0, 'entries' => []];
+        }
+
+        $entries = [];
+        foreach ($used as $volume => $serials) {
+            foreach (array_keys($serials) as $serial) {
+                if ($volume > $currentVolume || ($volume === $currentVolume && $serial > $currentSerial)) {
+                    $entries[] = [
+                        'volume' => $volume,
+                        'serial' => $serial,
+                        'formatted' => "{$serial}/{$serial}/{$volume}",
+                    ];
+                }
+            }
+        }
+
+        usort($entries, fn ($a, $b) => [$a['volume'], $a['serial']] <=> [$b['volume'], $b['serial']]);
+
+        return [
+            'count' => count($entries),
+            'entries' => array_slice($entries, 0, self::MAX_LISTED_BEYOND),
         ];
     }
 
@@ -282,8 +417,11 @@ class MissingRegistrationParticularsService
      * still carries the number, and a number this register has issued is never
      * handed out twice. Only a registration deleted outright leaves a hole, and
      * that hole is precisely what this class exists to find.
+     *
+     * Volumes above the vault's position are read too - not to survey them, but
+     * so a number recorded up there can never be offered as missing.
      */
-    private function usedNumbers(string $vaultName, ?string $opType, int $currentVolume): array
+    private function usedNumbers(string $vaultName, ?string $opType): array
     {
         $types = $this->instrumentTypesFor($vaultName, $opType);
 
@@ -291,9 +429,14 @@ class MissingRegistrationParticularsService
             return [];
         }
 
+        // Every volume, not just the ones at or below the vault. This used to
+        // stop at the vault's own volume, which meant a register that had been
+        // re-based - Deed of Mortgage, corrected down from volume 35 to volume
+        // 22 - could not see the rows left stranded above it: invisible to the
+        // survey, and offerable again the day the vault rolled past them.
         $rows = DB::connection('sqlsrv')->table('deed_registrations')
             ->whereIn('instrument_type', $types)
-            ->whereRaw('TRY_CONVERT(int, volume_no) BETWEEN 1 AND ?', [$currentVolume])
+            ->whereRaw('TRY_CONVERT(int, volume_no) >= 1')
             ->selectRaw('TRY_CONVERT(int, volume_no) AS v, TRY_CONVERT(int, serial_no) AS s')
             ->get();
 

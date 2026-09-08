@@ -557,6 +557,7 @@ document.addEventListener('DOMContentLoaded', function () {
             fields: document.getElementById('backfill-fields'),
             volume: document.getElementById('backfill_volume_select'),
             serial: document.getElementById('backfill_serial_select'),
+            note: document.getElementById('backfill-note'),
             chosen: document.getElementById('backfill-chosen'),
             flag: document.getElementById('backfill_registration'),
             volumeValue: document.getElementById('backfill_volume_no'),
@@ -609,6 +610,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // second live copy of the same question is how the two disagree.
         if (els.panel && registerOwnsNotice()) {
             if (els.controls) els.controls.classList.add('hidden');
+            if (els.note) els.note.textContent = '';
+            els.panel.classList.remove('backfill-panel--quiet');
             if (els.chosen) els.chosen.classList.add('backfill-panel__chosen--solo');
             els.panel.classList.toggle('hidden', !pendingBackfill);
         }
@@ -630,9 +633,15 @@ document.addEventListener('DOMContentLoaded', function () {
     window.clearBackfillChoice = clearBackfillChoice;
 
     /**
-     * The skipped numbers for one register, or null when there are none to offer
-     * (no vault, not supported, nothing missing, or the request failed - an
-     * optional picker must never stand between the officer and a capture).
+     * What one register looks like, or null when there is nothing to say about
+     * it (no vault, not supported, or the request failed - an optional picker
+     * must never stand between the officer and a capture).
+     *
+     * A report with NO gaps is still a report. It used to be discarded here,
+     * which meant a register with nothing missing and a register whose survey
+     * never ran looked identical on screen: no checkbox, no line, nothing. The
+     * officer is now told which of the two it is - "no missing numbers between
+     * 89/89/22 and 92/92/22" is an answer.
      */
     function fetchMissingRegistrationReport(instrumentType, opType) {
         if (!instrumentType) return Promise.resolve(null);
@@ -646,11 +655,38 @@ document.addEventListener('DOMContentLoaded', function () {
         })
             .then(res => res.json())
             .then(data => (data && data.success && data.configured && data.supported
-                && data.total && (data.volumes || []).length) ? data : null)
+                && (data.origin || data.reason)) ? data : null)
             .catch(err => {
                 console.warn('Could not list the missing registration numbers', err);
                 return null;
             });
+    }
+
+    /** Whether this report has anything the officer can actually pick. */
+    function reportHasGaps(report) {
+        return !!(report && report.total > 0 && (report.volumes || []).length);
+    }
+
+    /**
+     * The register in one line: what is missing, and between which two numbers.
+     *
+     * One line is the whole brief - it sits inside a popup the officer reads on
+     * the way to a capture, not a report. The report carries more than this
+     * (origin_recorded says whether the starting point is the office's own
+     * record or a guess drawn from the earliest surviving registration; beyond
+     * lists registrations recorded past where the register stands) and both are
+     * left in the response for a screen that has room for them. Neither belongs
+     * in front of somebody registering an instrument.
+     */
+    function backfillSummaryText(report) {
+        if (!report) return '';
+        if (!report.origin || !report.current) return report.reason || '';
+
+        return report.total > 0
+            ? report.total + (report.total === 1 ? ' number' : ' numbers')
+                + ' unaccounted for in this register.'
+            : 'No missing numbers between ' + report.origin.formatted
+                + ' and ' + report.current.formatted + '.';
     }
 
     /* The two selects are filled the same way wherever they are drawn - inside
@@ -706,12 +742,24 @@ document.addEventListener('DOMContentLoaded', function () {
 
     const NOTICE_SELECT_CLASS = 'w-full px-3 py-2 bg-white border border-gray-300 rounded-lg text-sm outline-none';
 
-    function backfillNoticeMarkup() {
+    function backfillNoticeMarkup(report) {
+        const summary = backfillSummaryText(report);
+        const note = summary ? '<p class="backfill-panel__note">' + summary + '</p>' : '';
+
+        // Nothing to pick: the same box, in grey, carrying the answer alone.
+        // Amber and a checkbox would ask a question that has no options.
+        if (!reportHasGaps(report)) {
+            return note
+                ? '<div class="backfill-panel backfill-panel--notice backfill-panel--quiet">' + note + '</div>'
+                : '';
+        }
+
         return '<div class="backfill-panel backfill-panel--notice">'
             + '<label class="backfill-panel__toggle" for="notice-backfill-toggle">'
             + '<input type="checkbox" id="notice-backfill-toggle" style="margin-top:3px;">'
             + '<span><span class="backfill-panel__title">Fill a missing registration number</span></span>'
             + '</label>'
+            + note
             + '<div id="notice-backfill-fields" class="backfill-panel__fields hidden">'
             + '<div><label class="backfill-panel__label" for="notice-backfill-volume">Volume</label>'
             + '<select id="notice-backfill-volume" class="' + NOTICE_SELECT_CLASS + '"></select></div>'
@@ -803,7 +851,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     + 'font-size:22px;color:' + opts.accent + ';">'
                     + volume + '</strong></p>'
                     + '</div>'
-                    + (report ? backfillNoticeMarkup() : ''),
+                    + (report ? backfillNoticeMarkup(report) : ''),
                 width: report ? 500 : 440,
                 showCancelButton: true,
                 confirmButtonText: 'Continue',
@@ -811,7 +859,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 confirmButtonColor: opts.accent,
                 reverseButtons: true,
                 didOpen: () => {
-                    if (report) readPick = wireNoticeBackfill(report, volume);
+                    // Only a report with gaps draws a picker; the rest is a line
+                    // of text, and wireNoticeBackfill finds nothing to wire.
+                    if (reportHasGaps(report)) readPick = wireNoticeBackfill(report, volume);
                 },
                 preConfirm: () => {
                     if (!report) return { backfill: null };
@@ -912,16 +962,28 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (token !== backfillRequestToken || !report) return;
                 backfillReport = report;
                 els.panel.classList.remove('hidden');
+
+                const hasGaps = reportHasGaps(report);
+
+                // A register with nothing to fill keeps the box and loses the
+                // question: grey, no checkbox, just what the survey found.
+                els.panel.classList.toggle('backfill-panel--quiet', !hasGaps);
+                if (els.controls) els.controls.classList.toggle('hidden', !hasGaps);
+                if (els.note) els.note.textContent = backfillSummaryText(report);
+
                 if (els.hint) {
                     els.hint.textContent = report.total === 1
                         ? '1 number is unaccounted for in this register.'
                         : report.total + ' numbers are unaccounted for in this register.';
                 }
-                if (els.range) {
+                if (els.range && report.origin && report.current) {
                     els.range.classList.remove('hidden');
                     els.range.textContent = 'This register runs from ' + report.origin.formatted
                         + ' (where the manual workflow handed over) to ' + report.current.formatted + '.';
                 }
+
+                if (!hasGaps) return;
+
                 fillBackfillVolumes(els.volume, report);
                 renderBackfillSerials();
             });

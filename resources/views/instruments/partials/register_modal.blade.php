@@ -384,6 +384,15 @@
                         </div>
                     </div>
 
+                    {{-- What the survey found, in words, whether or not there is anything to
+                         fill. A register with no gaps used to render nothing at all, which
+                         reads as a broken feature rather than as the answer it is: "no
+                         missing numbers between 89/89/22 and 92/92/22" is the answer. It
+                         also says when the register's starting point is only INFERRED —
+                         then a number deleted from the very start of the book cannot be
+                         seen at all, and the officer should not read silence as proof. --}}
+                    <p id="backfill-note" class="backfill-panel__note"></p>
+
                     <p id="backfill-chosen" class="backfill-panel__chosen hidden"></p>
                 </div>
                 @endif
