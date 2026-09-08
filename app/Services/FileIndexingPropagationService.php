@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Services\Prs\Support\LandUseNormalizer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -45,6 +46,11 @@ use Throwable;
  *    owners and are historical fact, as is an Occupancy Permit sitting behind a
  *    Transfer of Title — that permit names the original allottee, not today's holder.
  *    Grantor / party_1 is never written on PRA at all — that is the previous owner.
+ *
+ *    The recommendation letters are the third place the title travels to, as
+ *    land_recommendations.applicant_name: that field is readonly on the capture form and
+ *    filled from the selected file number, so it is a mirror of the title rather than a
+ *    party of its own. See syncLandRecommendations().
  *
  *    Still deliberately NOT written: mother_applications first_name / surname /
  *    corporate_name — the identity of who submitted an application, not a property
@@ -132,11 +138,8 @@ class FileIndexingPropagationService
                 $explicitNames['entity_name'] ?? null),
             'oss_applications' => fn () => $this->syncOssApplications($changes, $fileNumbers),
             'oss_applicant_name' => fn () => $this->syncNameMirror('oss_applications', 'applicant_name', 'file_no', $changes, $fileNumbers),
-            // Land recommendations: the applicant name only. Its other columns are the
-            // recommendation's own findings and must not be overwritten from indexing.
-            'land_recommendations' => fn () => $this->apply('land_recommendations',
-                ['file_title' => 'applicant_name'],
-                $changes, $fileNumbers, ['file_number', 'old_file_number']),
+            'land_recommendations' => fn () => $this->syncLandRecommendations($changes, $after, $fileNumbers),
+            'land_recommendations_land_use' => fn () => $this->syncRecommendationLandUse($changes, $after, $fileNumbers),
             'mother_applications' => fn () => $this->syncMotherApplication($changes, $after),
             'subapplications' => fn () => $this->syncSubApplication($changes, $after),
         ] as $label => $sync) {
@@ -721,6 +724,316 @@ class FileIndexingPropagationService
             'plot_number' => 'plot_no',
             'land_use_type' => 'land_use',
         ], $changes, $fileNumbers, ['file_no']);
+    }
+
+    /**
+     * The recommendation / RofO letters already captured against this file.
+     *
+     * Every column written here is one the capture form fills FROM the file when the
+     * number is picked — applicant name, location, street, district, LGA, plot no and
+     * TP no (public/js/land_recommendations.js for a single capture,
+     * LandRecommendationController::hydrateBatchRows() for a batch). A correction keyed
+     * in indexing has to reach them, or the next reprint still carries the LGA or the
+     * title that was just corrected.
+     *
+     * Nothing else on the record is touched: term, premium, ground rent, the purpose
+     * clause, the page references and the recommendation text are the grant's own
+     * findings, not a copy of the file.
+     *
+     * Two departures from a plain apply():
+     *
+     *  - The location loses a leading "PLOT <n>," exactly as hydrateBatchRows() strips
+     *    it. file_indexings leads its location with the plot for ~43k rows and the
+     *    letter prints the plot from its own column, so a straight copy would print it
+     *    twice.
+     *
+     *  - A BLANK COLUMN IS FILLED FROM THE FILE even when that field is not part of this
+     *    edit's diff. Rule 1 of this class exists to protect values another system set
+     *    deliberately; an empty column is not one of those, and leaving it empty is not
+     *    harmless here. The capture form guesses at a missing LGA by asking which LGA is
+     *    most common for the district (InstrumentController::districtLookupLga), so a
+     *    blank column does not read as blank on screen — it reads as a plausible wrong
+     *    answer that the next save then stores. RES-2026-2600 is the case this was
+     *    reported for: LGA null, district BUK, and the edit form showing "Kano Municipal"
+     *    (9 BUK files against Ungogo's 2) over the file's own Ungogo.
+     */
+    private function syncLandRecommendations(array $changes, $record, array $fileNumbers): int
+    {
+        if (!Schema::connection('sqlsrv')->hasTable('land_recommendations')) {
+            return 0;
+        }
+
+        $map = [
+            // The name on the letter is the file title — the field is readonly on the
+            // form and captioned "Taken from the selected file number".
+            'file_title'  => 'applicant_name',
+            'location'    => 'location',
+            'street_name' => 'street_name',
+            'district'    => 'district',
+            'lga'         => 'lga',
+            'plot_number' => 'plot_number',
+            'tp_no'       => 'layout_plan_no',
+        ];
+
+        $map = array_filter(
+            $map,
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn('land_recommendations', $column)
+        );
+
+        if (empty($map)) {
+            return 0;
+        }
+
+        $rows = $this->matchedRecommendations(
+            $fileNumbers,
+            array_merge(['id', 'file_number'], array_values($map))
+        );
+
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $hasUpdatedAt = Schema::connection('sqlsrv')->hasColumn('land_recommendations', 'updated_at');
+        $corrected = [];
+        $filled = 0;
+        $updated = 0;
+
+        foreach ($rows as $row) {
+            $payload = [];
+
+            foreach ($map as $field => $column) {
+                if (array_key_exists($field, $changes)) {
+                    // A correction. It overwrites whatever is there — that is the point.
+                    $payload[$column] = $changes[$field];
+                    $corrected[$field] = true;
+                    continue;
+                }
+
+                if (trim((string) ($row->$column ?? '')) !== '') {
+                    continue;
+                }
+
+                $value = $this->scalarize($record->$field ?? null);
+                if (trim((string) $value) === '') {
+                    continue;
+                }
+
+                $payload[$column] = $value;
+                $filled++;
+            }
+
+            if (isset($payload['location'])) {
+                $payload['location'] = $this->stripLeadingPlot((string) $payload['location']);
+            }
+
+            if (empty($payload)) {
+                continue;
+            }
+
+            if ($hasUpdatedAt) {
+                $payload['updated_at'] = now();
+            }
+
+            $updated += DB::connection('sqlsrv')->table('land_recommendations')
+                ->where('id', $row->id)
+                ->update($payload);
+        }
+
+        if ($updated > 0 && !empty($corrected)) {
+            // A letter that is already approved, generated or on paper still gets the
+            // correction — that is the point of correcting it — but the paper copy in
+            // the file now disagrees with the record, so say which ones loudly enough
+            // to find. Blank-fills are not reported: nothing that was printed changed.
+            $this->warnOnIssuedRecommendations($fileNumbers, array_keys($corrected));
+        }
+
+        if ($filled > 0) {
+            Log::info('FileIndexingPropagation: blank recommendation columns filled from the file', [
+                'columns_filled' => $filled,
+                'records' => $rows->pluck('id')->all(),
+            ]);
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Land use on a recommendation, kept apart from the other columns because it does
+     * not travel alone.
+     *
+     * The letter prints a purpose clause, and a purpose belongs to exactly one land use
+     * (purposes.landuseid). Writing a new land_use_id over a record whose purpose came
+     * from the old one leaves the letter printing a purpose that no longer belongs to
+     * its land use — worse than the stale value, because it reads as correct. Those rows
+     * are left exactly as they are and logged for an officer to re-pick.
+     *
+     * A land use the register does not recognise is not written either: the id is what
+     * the letter prints from, and a name with no id behind it would leave the two
+     * columns disagreeing.
+     *
+     * When the land use is not part of this edit's diff the file's current value is
+     * still used, but only to fill a row that has no land use at all — same reasoning as
+     * the blank-fill in syncLandRecommendations().
+     */
+    private function syncRecommendationLandUse(array $changes, $record, array $fileNumbers): int
+    {
+        if (!Schema::connection('sqlsrv')->hasTable('land_recommendations')
+            || !Schema::connection('sqlsrv')->hasColumn('land_recommendations', 'land_use_id')) {
+            return 0;
+        }
+
+        $isCorrection = array_key_exists('land_use_type', $changes);
+        $landUseText  = $isCorrection
+            ? (string) $changes['land_use_type']
+            : (string) $this->scalarize($record->land_use_type ?? null);
+
+        if (trim($landUseText) === '') {
+            return 0;
+        }
+
+        // land_uses holds full names while indexing carries free text and prefixes, so
+        // the two vocabularies are bridged by the shared normaliser rather than matched
+        // as strings — the same route hydrateBatchRows() takes.
+        $normalizer = new LandUseNormalizer();
+        $canonical  = $normalizer->normalize($landUseText);
+
+        $landUse = DB::connection('sqlsrv')->table('land_uses')->get(['id', 'landuse'])
+            ->first(fn ($row) => $normalizer->normalize((string) $row->landuse) === $canonical);
+
+        if (!$landUse) {
+            Log::info('FileIndexingPropagation: land use not in the register, recommendations left alone', [
+                'land_use' => $landUseText,
+                'canonical' => $canonical,
+            ]);
+
+            return 0;
+        }
+
+        $landUseId = (int) $landUse->id;
+
+        $validPurposes = DB::connection('sqlsrv')->table('purposes')
+            ->where('landuseid', $landUseId)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
+
+        $ids = [];
+        $orphaned = [];
+
+        foreach ($this->matchedRecommendations($fileNumbers, ['id', 'file_number', 'land_use_id', 'purpose_id']) as $row) {
+            if ((int) ($row->land_use_id ?? 0) === $landUseId) {
+                continue;
+            }
+
+            // Not a correction, so the file is only allowed to fill a gap — a land use
+            // the officer picked on the letter stands until indexing actually changes.
+            if (!$isCorrection && (int) ($row->land_use_id ?? 0) > 0) {
+                continue;
+            }
+
+            $purposeId = trim((string) ($row->purpose_id ?? ''));
+            if ($purposeId !== '' && !in_array($purposeId, $validPurposes, true)) {
+                $orphaned[] = ['id' => $row->id, 'file_number' => $row->file_number, 'purpose_id' => $purposeId];
+                continue;
+            }
+
+            $ids[] = $row->id;
+        }
+
+        if (!empty($orphaned)) {
+            Log::warning('FileIndexingPropagation: land use not applied — purpose clause belongs to the old land use', [
+                'land_use' => $landUse->landuse,
+                'land_use_id' => $landUseId,
+                'records' => $orphaned,
+            ]);
+        }
+
+        if (empty($ids)) {
+            return 0;
+        }
+
+        $payload = ['land_use_id' => $landUseId];
+
+        if (Schema::connection('sqlsrv')->hasColumn('land_recommendations', 'land_use')) {
+            // The register's own spelling, not the indexing text — that is what the
+            // dropdown would have stored had the file been picked today.
+            $payload['land_use'] = (string) $landUse->landuse;
+        }
+
+        if (Schema::connection('sqlsrv')->hasColumn('land_recommendations', 'updated_at')) {
+            $payload['updated_at'] = now();
+        }
+
+        return DB::connection('sqlsrv')->table('land_recommendations')
+            ->whereIn('id', $ids)
+            ->update($payload);
+    }
+
+    /**
+     * The recommendation rows this file's number reaches, on either the file number the
+     * letter was captured against or the old file number a derived application carries.
+     *
+     * @param  array<int,string>  $columns
+     */
+    private function matchedRecommendations(array $fileNumbers, array $columns)
+    {
+        $hasOldFileNumber = Schema::connection('sqlsrv')->hasColumn('land_recommendations', 'old_file_number');
+
+        return DB::connection('sqlsrv')->table('land_recommendations')
+            ->where(function ($query) use ($fileNumbers, $hasOldFileNumber) {
+                $query->whereIn('file_number', $fileNumbers);
+                if ($hasOldFileNumber) {
+                    $query->orWhereIn('old_file_number', $fileNumbers);
+                }
+            })
+            ->get($columns);
+    }
+
+    /**
+     * Record which already-issued letters an indexing edit has just rewritten, so the
+     * mismatch between the record and the paper in the file is traceable.
+     *
+     * @param  array<int,string>  $fields  the indexing fields that were corrected
+     */
+    private function warnOnIssuedRecommendations(array $fileNumbers, array $fields): void
+    {
+        $columns = array_values(array_filter(
+            ['id', 'file_number', 'status', 'rofo_status', 'print_count', 'rofo_print_count'],
+            fn ($column) => Schema::connection('sqlsrv')->hasColumn('land_recommendations', $column)
+        ));
+
+        $issued = $this->matchedRecommendations($fileNumbers, $columns)
+            ->filter(fn ($row) => ($row->status ?? '') === 'approved'
+                || ($row->rofo_status ?? '') === 'generated'
+                || (int) ($row->print_count ?? 0) > 0
+                || (int) ($row->rofo_print_count ?? 0) > 0)
+            ->values();
+
+        if ($issued->isEmpty()) {
+            return;
+        }
+
+        Log::warning('FileIndexingPropagation: issued recommendation updated from an indexing edit', [
+            'changed' => array_values($fields),
+            'records' => $issued->map(fn ($row) => [
+                'id' => $row->id,
+                'file_number' => $row->file_number ?? null,
+                'status' => $row->status ?? null,
+                'rofo_status' => $row->rofo_status ?? null,
+            ])->all(),
+        ]);
+    }
+
+    /**
+     * "PLOT 61, 14, 31" -> "14, 31". Only a leading "PLOT <token>," is taken, and only
+     * when something is left after it, so a location that is nothing but a plot survives
+     * intact. Mirrors the strip in LandRecommendationController::hydrateBatchRows().
+     */
+    private function stripLeadingPlot(string $location): string
+    {
+        $stripped = trim((string) preg_replace('/^\s*PLOT\s+[^,]+,\s*/i', '', $location));
+
+        return $stripped !== '' ? $stripped : $location;
     }
 
     /**

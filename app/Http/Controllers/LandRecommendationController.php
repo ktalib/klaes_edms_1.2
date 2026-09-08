@@ -2629,6 +2629,16 @@ class LandRecommendationController extends Controller
     {
         $recommendation = LandRecommendation::findOrFail($id);
 
+        // District / LGA from the file itself, before the form falls back to guessing.
+        // With a blank LGA the blade asks InstrumentController::districtLookupLga(),
+        // which answers with whichever LGA is most common for that district across
+        // every indexed file — a popularity vote, not this file's answer. On
+        // RES-2026-2600 it filled in "Kano Municipal" (9 BUK files say so, 2 say
+        // Ungogo, and this file is one of the 2), and the Full Location builder then
+        // rewrote the box to "BUK Kano Municipal Kano State" over the stored
+        // "BUK, UNGOGO, KANO STATE". Filling the field here stops the guess firing.
+        $this->fillBlankLocationFromFile($recommendation);
+
         // Legacy records stored the district name inside the freeform `location`
         // field (e.g. "PLOT 47, FARI, DAWAKIN KUDU") before the structured
         // District/LGA builder existed, so `location` is almost never equal to
@@ -2661,6 +2671,96 @@ class LandRecommendationController extends Controller
             $purposes = Purpose::where('landuseid', $recommendation->land_use_id)->orderBy('name')->get();
         }
         return view('land_recommendations.form', compact('recommendation', 'PageTitle', 'landUses', 'purposes'));
+    }
+
+    /**
+     * Fill a blank district / LGA on the record being edited from the file's own
+     * registry rows, in place and unsaved.
+     *
+     * Only blanks are touched — a value keyed on the letter is the officer's and stands.
+     * The registries are consulted in the order they are trusted for this: the indexing
+     * record is what the capture form reads when a file number is picked, mls_file_no
+     * and fileNumber are the fallbacks it uses when the file was never indexed.
+     *
+     * A missing LGA is not a cosmetic gap: see edit() for what the form does with one.
+     */
+    private function fillBlankLocationFromFile(LandRecommendation $recommendation): void
+    {
+        $isBlank = fn ($value) => trim((string) ($value ?? '')) === '';
+
+        $wanted = array_filter([
+            'district' => $isBlank($recommendation->district),
+            'lga'      => $isBlank($recommendation->lga),
+        ]);
+
+        if (empty($wanted)) {
+            return;
+        }
+
+        // "X(T)" and "X" are the same file held in different columns, so both spellings
+        // are asked for.
+        $numbers = collect([$recommendation->file_number, $recommendation->old_file_number])
+            ->map(fn ($number) => trim((string) $number))
+            ->filter()
+            ->flatMap(fn ($number) => [$number, trim((string) preg_replace('/\(\s*T\s*\)$/i', '', $number))])
+            ->map(fn ($number) => trim($number))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($numbers)) {
+            return;
+        }
+
+        $sources = [
+            ['file_indexings', ['file_number', 'mls_file_no', 'new_kangis_file_no', 'temp_file_no'], ['district' => 'district', 'lga' => 'lga']],
+            ['mls_file_no', ['full_file_number', 'old_fileno'], ['district' => 'district', 'lga' => 'lga']],
+            ['fileNumber', ['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo'], ['district' => 'district', 'lga' => 'lga']],
+        ];
+
+        foreach ($sources as [$table, $keyColumns, $columns]) {
+            if (empty($wanted) || !Schema::connection('sqlsrv')->hasTable($table)) {
+                continue;
+            }
+
+            $keyColumns = array_values(array_filter(
+                $keyColumns,
+                fn ($column) => Schema::connection('sqlsrv')->hasColumn($table, $column)
+            ));
+
+            $columns = array_filter(
+                $columns,
+                fn ($column) => Schema::connection('sqlsrv')->hasColumn($table, $column)
+            );
+
+            if (empty($keyColumns) || empty($columns)) {
+                continue;
+            }
+
+            $row = DB::connection('sqlsrv')->table($table)
+                ->where(function ($query) use ($keyColumns, $numbers) {
+                    foreach ($keyColumns as $index => $column) {
+                        $index === 0
+                            ? $query->whereIn($column, $numbers)
+                            : $query->orWhereIn($column, $numbers);
+                    }
+                })
+                ->first(array_values($columns));
+
+            if (!$row) {
+                continue;
+            }
+
+            foreach ($columns as $field => $column) {
+                if (!isset($wanted[$field]) || $isBlank($row->$column ?? null)) {
+                    continue;
+                }
+
+                $recommendation->$field = trim((string) $row->$column);
+                unset($wanted[$field]);
+            }
+        }
     }
 
     public function update(Request $request, $id)

@@ -322,6 +322,10 @@
                                 $("#modal-page-count-section").removeClass("hidden");
                                 $('#modal-update-status-btn').data('database-id', data.id);
                                 $('#modal-update-status-btn').data('table', data.table || 'file_tracker');
+                                // A commissioned file still on DIIT has no tracker row,
+                                // so the log-back is addressed by file number instead of
+                                // by id (table === 'diit'). Harmless for real trackers.
+                                $('#modal-update-status-btn').data('file-number', data.file_number || '');
 
                                 // Reason for Delay: required only when the file is Amber (due soon)
                                 // or Red (overdue) at the moment it's being logged back to Registry.
@@ -381,11 +385,21 @@
                                 $('#modal-delay-reason-section, #modal-delay-reason-notice').addClass('hidden');
                                 $('#modal-delay-reason').prop('disabled', true).removeAttr('required').val('');
                                 $('#modal-registry-office').val('');
+                                // Drop the previous file's target so a stale id / file
+                                // number can never be submitted against this lookup.
+                                $('#modal-update-status-btn').removeData('database-id').removeData('table').removeData('file-number');
                             }
                             checkStatusUpdateModalForm();
                         },
-                        error: function () {
-                            $('#preview-file-name').text('Error loading file information');
+                        error: function (xhr) {
+                            // A 404 is "no such file", not a failure — say so rather than
+                            // reporting a fault the officer cannot act on.
+                            $('#preview-file-name').text(
+                                xhr && xhr.status === 404
+                                    ? ((xhr.responseJSON && xhr.responseJSON.message) || 'File not found')
+                                    : 'Error loading file information'
+                            );
+                            $('#modal-update-status-btn').removeData('database-id').removeData('table').removeData('file-number');
                             $('#preview-file-number, #preview-location, #preview-handler').text('N/A');
                                 $("#modal-status-update, #modal-status-notes, #modal-num-pages, #modal-registry-office").prop("disabled", true);
                                 $("#modal-page-count-section").addClass("hidden");
@@ -441,6 +455,7 @@
                     const registryOfficeName = $('#modal-registry-office option:selected').data('name') || $('#modal-registry-office option:selected').text();
                     const databaseId = btn.data('database-id');
                     const table = btn.data('table') || 'file_tracker';
+                    const fileNumber = btn.data('file-number') || '';
 
                     const numPagesRaw = ($('#modal-num-pages').val() || '').trim();
                     const numPagesInt = parseInt(numPagesRaw, 10);
@@ -485,6 +500,7 @@
                             num_pages: numPagesInt,
                             delay_reason: delayReasonRequired ? delayReason : null,
                             table: table,
+                            file_number: fileNumber,
                             _token: $('meta[name="csrf-token"]').attr('content')
                         },
                         success: function (response) {

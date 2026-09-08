@@ -948,14 +948,40 @@ class FileTrackerController extends Controller
                 'notes' => 'nullable|string|max:500',
                 'num_pages' => 'nullable|integer|min:1|max:99999', // Pages returned to registry
                 'delay_reason' => 'nullable|string|max:500', // Required client-side when Amber/Red at return time
-                'table' => 'nullable|string|in:file_tracker,file_trackings' // Added to identify source table
+                'table' => 'nullable|string|in:file_tracker,file_trackings,diit', // Added to identify source table
+                'file_number' => 'nullable|string|max:255' // Addresses a DIIT file, which has no id yet
             ]);
 
             $table = $request->input('table', 'file_tracker'); // Default to file_tracker
 
             // Handle file_tracker table (the main system)
-            if ($table === 'file_tracker') {
-                $fileTracker = FileTracker::find($id);
+            if ($table === 'file_tracker' || $table === 'diit') {
+                $fileTracker = null;
+
+                // A DIIT file is commissioned but has never been logged out, so it
+                // has no row to update — open real tracking for it first. That is
+                // exactly what the log-back records: the file arriving at its
+                // registry from the File Commissioning Office. materialize() hands
+                // back an existing tracker if the file was logged out in the
+                // meantime, so the two paths cannot double up.
+                if ($table === 'diit') {
+                    $commissioning = app(\App\Services\FileCommissioningTrackingService::class);
+                    $identifier = trim((string) ($validatedData['file_number'] ?? '')) ?: $id;
+                    $info = $commissioning->resolveIdentifier($identifier);
+
+                    if (!$info) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'No commissioned file found with identifier: ' . $identifier
+                        ], 404);
+                    }
+
+                    $fileTracker = $commissioning->materialize($info);
+                }
+
+                if (!$fileTracker) {
+                    $fileTracker = FileTracker::find($id);
+                }
 
                 if (!$fileTracker) {
                     // Try by tracking_id
@@ -1323,6 +1349,57 @@ class FileTrackerController extends Controller
             $tracking = $this->findTrackingByIdentifier($normalizedIdentifier);
 
             if (!$tracking) {
+                // Fallback: a file still on Default In-process In-transit Tracking.
+                //
+                // A KLAES-commissioned file has no tracker row until it is first
+                // logged out, so neither table above can answer for it — yet it is
+                // a real file in transit that does come back to a registry. Answer
+                // from the commissioning register instead, and let updateStatus()
+                // open the tracker when the officer logs it back.
+                $commissioning = app(\App\Services\FileCommissioningTrackingService::class);
+
+                if ($info = $commissioning->resolveIdentifier($normalizedIdentifier)) {
+                    /** @var \Carbon\Carbon $commissionedAt */
+                    $commissionedAt = $info['commissioned_at'];
+
+                    $fileInfo = [
+                        // No database row exists yet: the log-back is addressed by
+                        // file number (posted in the body), not by id.
+                        'id' => 'diit',
+                        'is_diit' => true,
+                        'tracking_id' => $info['tracking_id'] ?: ('DIIT-' . $info['file_number']),
+                        'file_name' => $info['file_title'] ?: 'N/A',
+                        'file_number' => $info['file_number'],
+                        'current_location' => \App\Services\FileCommissioningTrackingService::OFFICE_NAME,
+                        'current_handler' => $info['commissioned_by'] ?: \App\Services\FileCommissioningTrackingService::OFFICE_NAME,
+                        'current_status' => \App\Services\FileCommissioningTrackingService::LABEL,
+                        'date_received' => $commissionedAt->format('Y-m-d H:i:s'),
+                        'due_date' => 'N/A',
+                        // A commissioned file carries no requested deadline, so the
+                        // Reason for Delay field stays hidden.
+                        'timeline_status' => null,
+                        'origin_registry' => \App\Services\FileCommissioningTrackingService::OFFICE_NAME,
+                        'origin_office_name' => \App\Services\FileCommissioningTrackingService::OFFICE_NAME,
+                        'origin_office_code' => \App\Services\FileCommissioningTrackingService::OFFICE_CODE,
+                        'assigned_office' => \App\Services\FileCommissioningTrackingService::OFFICE_NAME,
+                        // Nothing was counted at log-out — there was no log-out.
+                        'num_pages' => null,
+                        'table' => 'diit',
+                    ];
+
+                    Log::info('File info retrieved from commissioning register (DIIT)', [
+                        'lookup_value' => $normalizedIdentifier,
+                        'lookup_type' => $lookupType,
+                        'file_number' => $info['file_number'],
+                        'user_id' => auth()->id()
+                    ]);
+
+                    return response()->json([
+                        'success' => true,
+                        'data' => $fileInfo
+                    ]);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'No file found with tracking ID: ' . $trackingId

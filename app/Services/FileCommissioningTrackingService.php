@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 /**
  * Default In-process In-transit Tracking (DIIT).
@@ -172,6 +173,65 @@ class FileCommissioningTrackingService
     }
 
     /**
+     * Resolve whatever identifier a tracking screen carries for a commissioned
+     * file back to its commissioning info.
+     *
+     * A file still in the DIIT state has no file_tracker row, so the value an
+     * officer scans or types is never a real tracking id. It is one of:
+     *
+     *   1. "DIIT-<file number>" — the synthetic id syntheticTracker() mints when
+     *      the commissioning register carries no tracking id of its own;
+     *   2. the file number itself;
+     *   3. mls_file_no.tracking_id — the register's own tracking id.
+     *
+     * Returns null when the identifier is not a KLAES-commissioned file, which
+     * lets callers fall through to their normal "not found" answer.
+     *
+     * @return array<string,mixed>|null
+     */
+    public function resolveIdentifier(?string $identifier): ?array
+    {
+        $value = trim((string) $identifier);
+
+        if ($value === '') {
+            return null;
+        }
+
+        if (Str::startsWith(Str::upper($value), 'DIIT-')) {
+            if ($info = $this->infoFor(substr($value, 5))) {
+                return $info;
+            }
+        }
+
+        if ($info = $this->infoFor($value)) {
+            return $info;
+        }
+
+        try {
+            $row = $this->baseQuery()
+                ->where('tracking_id', $value)
+                ->orderBy('id')
+                ->first(['full_file_number', 'commissioning_date', 'commissioning_time', 'created_by', 'created_at', 'tracking_id', 'source', 'file_name']);
+        } catch (\Throwable $e) {
+            Log::warning('Unable to resolve commissioning (DIIT) identifier', [
+                'identifier' => $value,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
+        if (!$row) {
+            return null;
+        }
+
+        $info = $this->hydrate($row);
+        $this->cache[$this->key($info['file_number'])] = $info;
+
+        return $info;
+    }
+
+    /**
      * Turn a commissioning-register row into the info array used everywhere else.
      *
      * @param object $row
@@ -326,6 +386,83 @@ class FileCommissioningTrackingService
         // payload/front end tell it apart from a real tracker.
         $tracker->exists = false;
         $tracker->setAttribute('is_diit', true);
+
+        return $tracker;
+    }
+
+    /**
+     * Open REAL tracking for a file that is still in the DIIT state, without an
+     * onward destination.
+     *
+     * syntheticTracker() is only a rendering shim — it is never saved — so any
+     * tracking action taken on a commissioned-but-never-logged-out file has
+     * nothing to act on. "Log File Back to Registry" is the first such action:
+     * a commissioned file does come back to its registry, and until it has a
+     * tracker there is no record to log that against.
+     *
+     * This writes the tracker the action needs, carrying the commissioning line
+     * closed at $closedAt as the opening entry of its movement history — the
+     * same shape startTracking() leaves behind, minus the onward movement. From
+     * here the file is tracked normally and the DIIT state is over.
+     *
+     * A tracker created in the meantime (the file was logged out between the
+     * lookup and the action) wins: it is returned untouched rather than
+     * duplicated.
+     *
+     * @param array<string,mixed> $info Commissioning info (see hydrate()).
+     * @param Carbon|null $closedAt When the file left the commissioning office.
+     */
+    public function materialize(array $info, ?Carbon $closedAt = null): FileTracker
+    {
+        $existing = FileTracker::where('file_number', $info['file_number'])
+            ->orderByDesc('id')
+            ->first();
+
+        if ($existing) {
+            return $existing;
+        }
+
+        /** @var Carbon $commissionedAt */
+        $commissionedAt = $info['commissioned_at'];
+
+        $closedAt = $closedAt ?: Carbon::now();
+        if ($closedAt->lessThan($commissionedAt)) {
+            $closedAt = $commissionedAt->copy();
+        }
+
+        $tracker = new FileTracker();
+        $tracker->fill([
+            'tracking_id'           => FileTracker::generateTrackingId(),
+            'file_number'           => $info['file_number'],
+            'file_title'            => $info['file_title'],
+            'file_type'             => 'File',
+            'priority'              => FileTracker::PRIORITY_MEDIUM,
+            'status'                => FileTracker::STATUS_ACTIVE,
+            'department'            => self::OFFICE_DEPARTMENT,
+            'created_by'            => auth()->id(),
+            'created_by_name'       => auth()->user()->name ?? ($info['commissioned_by'] ?: 'System'),
+            'description'           => 'File commissioned in KLAES — tracking opened from the default in-process line.',
+            'file_request_type'     => 'MANUAL',
+            'date_created'          => $commissionedAt,
+            'date_requested'        => $commissionedAt,
+            'movement_log'          => [$this->movementEntry($info, $closedAt)],
+            'current_office_code'   => self::OFFICE_CODE,
+            'current_office_name'   => self::OFFICE_NAME,
+            'origin_office_code'    => self::OFFICE_CODE,
+            'origin_office_name'    => self::OFFICE_NAME,
+            'origin_office_department' => self::OFFICE_DEPARTMENT,
+            'receiving_office_code' => self::OFFICE_CODE,
+            'receiving_office_name' => self::OFFICE_NAME,
+            'receiving_officer_name' => $info['commissioned_by'],
+            'total_offices'         => 1,
+            'completed_offices'     => 1,
+        ]);
+
+        $tracker->save();
+
+        // The file now has a real tracker, so any cached "commissioned, untracked"
+        // answer for it in this request is stale.
+        unset($this->cache[$this->key($info['file_number'])]);
 
         return $tracker;
     }
