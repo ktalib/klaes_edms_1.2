@@ -1650,6 +1650,16 @@ document.addEventListener('DOMContentLoaded', function () {
                             }
                             return `<span class="file-number">${app.fileno || '-'}</span>`;
                         })()}
+                        ${(app.prop_id || app.fileno) ? `
+                            <div class="mt-1">
+                                <button type="button" data-timeline-badge
+                                    data-prop-id="${app.prop_id || ''}" data-file-no="${app.fileno || ''}"
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                                    onclick="openPropertyTimeline('${app.prop_id || ''}', '${app.fileno || ''}')"
+                                    title="View the full property timeline">
+                                    <i class="fas fa-history"></i> Timeline<span data-timeline-count></span>
+                                </button>
+                            </div>` : ''}
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">
                         <span class="status-badge badge-${app.status}">${app.status.charAt(0).toUpperCase() + app.status.slice(1)}</span>
@@ -1693,14 +1703,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         <div class="flex flex-col items-start gap-1">
                             <span class="font-mono text-xs">${app.prop_id || '-'}</span>
-                            ${(app.prop_id || app.fileno) ? `
-                                <button type="button" data-timeline-badge
-                                    data-prop-id="${app.prop_id || ''}" data-file-no="${app.fileno || ''}"
-                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                                    onclick="openPropertyTimeline('${app.prop_id || ''}', '${app.fileno || ''}')"
-                                    title="View the full property timeline">
-                                    <i class="fas fa-history"></i> Timeline<span data-timeline-count></span>
-                                </button>` : ''}
                         </div>
                     </td>
 
