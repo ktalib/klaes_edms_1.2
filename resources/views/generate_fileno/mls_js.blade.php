@@ -3583,6 +3583,221 @@
 
         deptSelect.onchange = fillOffices;
         fillOffices();
+
+        await loadSummaryReceivingOfficers();
+    }
+
+    // The officers to choose from. Same directory the File Tracking screen uses
+    // (MLPP staff plus the other_receiving_officers list), so a name picked here is
+    // the same name that screen would show. The list is not scoped by office —
+    // nothing maps officers to offices — so every officer is offered.
+    //
+    // 832 names is far too many for a plain <select>, so it is a searchable Select2
+    // with an "+ Add Other Officer..." escape hatch, exactly as /create-file-tracker
+    // does it — same sentinel option, same matcher, same create endpoint.
+    let summaryOfficerCache = null;
+    const SUMMARY_ADD_OTHER_OFFICER = '__add_other_officer__';
+
+    async function loadSummaryReceivingOfficers() {
+        const select = document.getElementById('summaryReceivingOfficer');
+        if (!select) return;
+
+        if (!summaryOfficerCache) {
+            try {
+                const res = await fetch('/api/file-trackings/assignment/options', { headers: { 'Accept': 'application/json' } });
+                const json = await res.json();
+                summaryOfficerCache = (json && json.success && json.data && Array.isArray(json.data.users))
+                    ? json.data.users
+                    : [];
+            } catch (e) {
+                console.warn('[Commissioning] Could not load receiving officers', e);
+                summaryOfficerCache = [];
+            }
+        }
+
+        renderSummaryOfficerOptions(select.value);
+    }
+
+    function renderSummaryOfficerOptions(selectedValue = '') {
+        const select = document.getElementById('summaryReceivingOfficer');
+        if (!select) return;
+
+        const officers = (summaryOfficerCache || []).filter(u => u && u.name);
+        const esc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+        const options = ['<option value=""></option>'];
+        officers.forEach(u => {
+            const name = String(u.name);
+            options.push(
+                `<option value="${esc(u.id)}" data-name="${esc(name)}" data-search-term="${esc(name.toLowerCase())}">${esc(name)}</option>`
+            );
+        });
+        // Always offered, even when the directory failed to load — typing the name by
+        // hand is exactly what this is for.
+        options.push(`<option value="${SUMMARY_ADD_OTHER_OFFICER}" data-search-term="other add new">+ Add Other Officer...</option>`);
+
+        select.innerHTML = options.join('');
+        select.value = selectedValue || '';
+
+        if (!(window.jQuery && $.fn.select2)) return;
+
+        const $select = $(select);
+        if ($select.data('select2')) {
+            $select.select2('destroy');
+        }
+
+        // The card sits inside the Generation Summary modal; without a dropdownParent
+        // inside it, the Select2 panel is clipped by the modal's own scroll box.
+        const parent = $select.closest('.bg-white.border, [id$="Modal"]');
+
+        $select.select2({
+            placeholder: officers.length ? 'Search and select receiving officer' : 'Directory unavailable — add the officer',
+            allowClear: true,
+            width: '100%',
+            dropdownParent: parent && parent.length ? parent : undefined,
+            matcher: function (params, data) {
+                if (!params.term || !String(params.term).trim()) return data;
+                if (!data.element) return null;
+                const term = String(params.term).toLowerCase();
+                const tokens = (data.element.getAttribute('data-search-term') || '').toLowerCase();
+                return tokens.includes(term) ? data : null;
+            }
+        });
+
+        $select.off('change.summaryOfficer').on('change.summaryOfficer', function () {
+            if ($(this).val() === SUMMARY_ADD_OTHER_OFFICER) {
+                // Never leave the sentinel selected: it is an action, not a person.
+                $(this).val('').trigger('change.select2');
+                openSummaryAddOfficerDialog();
+            }
+        });
+    }
+
+    // ── "+ Add Other Officer..." ─────────────────────────────────────────────────
+    // Built on demand and parented to <body>: the summary card is itself inside a
+    // modal, and nesting one dialog in another inherits its stacking and its scroll
+    // box. Built once, then reused.
+    function summaryAddOfficerDialog() {
+        let el = document.getElementById('summaryAddOfficerDialog');
+        if (el) return el;
+
+        el = document.createElement('div');
+        el.id = 'summaryAddOfficerDialog';
+        el.className = 'fixed inset-0 hidden';
+        el.style.zIndex = '100020';
+        el.innerHTML = `
+            <div class="absolute inset-0 bg-black/50" data-close="1"></div>
+            <div class="relative mx-auto my-24 w-[92%] max-w-xl rounded-lg bg-white shadow-xl">
+                <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">
+                    <div>
+                        <h3 class="text-sm font-bold text-gray-900">Add Receiving Officer</h3>
+                        <p class="text-xs text-gray-500">Create the officer record without leaving this page.</p>
+                    </div>
+                    <button type="button" data-close="1" class="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700">&times;</button>
+                </div>
+                <div class="grid grid-cols-1 gap-4 px-5 py-4 md:grid-cols-2">
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">First Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="summaryNewOfficerFirstName" maxlength="255"
+                               class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                               placeholder="e.g. Aisha">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Last Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="summaryNewOfficerLastName" maxlength="255"
+                               class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+                               placeholder="e.g. Musa">
+                    </div>
+                    <p id="summaryNewOfficerError" class="md:col-span-2 hidden text-xs font-medium text-red-600"></p>
+                </div>
+                <div class="flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3">
+                    <button type="button" data-close="1" class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">Cancel</button>
+                    <button type="button" id="summaryCreateOfficerBtn"
+                            class="rounded-md bg-indigo-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60">
+                        Create Officer
+                    </button>
+                </div>
+            </div>`;
+
+        document.body.appendChild(el);
+
+        el.addEventListener('click', (e) => {
+            if (e.target.closest('[data-close]')) closeSummaryAddOfficerDialog();
+        });
+        el.querySelector('#summaryCreateOfficerBtn').addEventListener('click', createSummaryReceivingOfficer);
+
+        return el;
+    }
+
+    function openSummaryAddOfficerDialog() {
+        const el = summaryAddOfficerDialog();
+        el.querySelector('#summaryNewOfficerFirstName').value = '';
+        el.querySelector('#summaryNewOfficerLastName').value = '';
+        const err = el.querySelector('#summaryNewOfficerError');
+        err.textContent = '';
+        err.classList.add('hidden');
+        el.classList.remove('hidden');
+        setTimeout(() => el.querySelector('#summaryNewOfficerFirstName').focus(), 50);
+    }
+
+    function closeSummaryAddOfficerDialog() {
+        document.getElementById('summaryAddOfficerDialog')?.classList.add('hidden');
+    }
+
+    async function createSummaryReceivingOfficer() {
+        const el = summaryAddOfficerDialog();
+        const first = el.querySelector('#summaryNewOfficerFirstName').value.trim();
+        const last = el.querySelector('#summaryNewOfficerLastName').value.trim();
+        const err = el.querySelector('#summaryNewOfficerError');
+        const btn = el.querySelector('#summaryCreateOfficerBtn');
+
+        const fail = (message) => {
+            err.textContent = message;
+            err.classList.remove('hidden');
+        };
+
+        if (!first || !last) {
+            return fail('Please provide both first name and last name.');
+        }
+
+        err.classList.add('hidden');
+        btn.disabled = true;
+
+        try {
+            const res = await fetch("{{ route('create-file-tracker.other-receiving-officers.store', [], false) }}", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                },
+                credentials: 'same-origin',
+                body: JSON.stringify({ first_name: first, last_name: last })
+            });
+
+            const json = await res.json();
+            if (!json || !json.success || !json.data) {
+                return fail(json?.message || 'Could not create the officer. Please try again.');
+            }
+
+            // Into the same cache the dropdown is built from, then selected — so the
+            // officer the operator just typed is the one the sheet will print.
+            const created = { id: json.data.id, name: json.data.name || `${first} ${last}`.trim() };
+            summaryOfficerCache = (summaryOfficerCache || []).concat([created])
+                .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+
+            renderSummaryOfficerOptions(created.id);
+            if (window.jQuery && $.fn.select2) {
+                $('#summaryReceivingOfficer').trigger('change.select2');
+            }
+
+            closeSummaryAddOfficerDialog();
+        } catch (e) {
+            console.error('[Commissioning] Could not create receiving officer', e);
+            fail('Could not reach the server. Please try again.');
+        } finally {
+            btn.disabled = false;
+        }
     }
 
     /**
@@ -3597,24 +3812,49 @@
         if (!officeCode) return null;
 
         const selected = officeSelect.options[officeSelect.selectedIndex];
+        const officerSelect = document.getElementById('summaryReceivingOfficer');
+        const officerOption = officerSelect ? officerSelect.options[officerSelect.selectedIndex] : null;
+
         return {
             destination_department: deptSelect ? deptSelect.value : '',
             destination_office_code: officeCode,
-            destination_office_name: selected ? (selected.dataset.name || selected.textContent.trim()) : ''
+            destination_office_name: selected ? (selected.dataset.name || selected.textContent.trim()) : '',
+            // Optional. Blank leaves the movement row's Receiving Officer as N/A,
+            // which is what every commissioned file recorded before this field existed.
+            destination_receiving_officer_id: officerSelect ? officerSelect.value : '',
+            destination_receiving_officer_name: officerOption ? (officerOption.dataset.name || '') : ''
         };
     }
 
     /** True when a destination is selected; warns and returns false when not. */
     function summaryDestinationSelected() {
-        if (summaryDestinationPayload()) return true;
+        const destination = summaryDestinationPayload();
 
-        Swal.fire({
-            icon: 'warning',
-            title: 'Next Destination Required',
-            text: 'Select the department and unit/office this file goes to after commissioning.',
-            confirmButtonColor: '#f59e0b'
-        });
-        return false;
+        if (!destination) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Next Destination Required',
+                text: 'Select the department and unit/office this file goes to after commissioning.',
+                confirmButtonColor: '#f59e0b'
+            });
+            return false;
+        }
+
+        // The officer is part of the destination, not an extra: the Movement History row
+        // on the File Tracking Sheet names who took the file, and that row reading "N/A"
+        // is what this field was added to fix. "+ Add Other Officer..." means a name
+        // missing from the directory is never a reason to be stuck here.
+        if (!String(destination.destination_receiving_officer_name || '').trim()) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Receiving Officer Required',
+                text: 'Select who receives the file at that office. Choose "+ Add Other Officer..." if the name is not in the list.',
+                confirmButtonColor: '#f59e0b'
+            });
+            return false;
+        }
+
+        return true;
     }
 
     function summaryLocationRow(fileNo, index, details) {
@@ -9649,11 +9889,21 @@
             oldFileNoVal = oldFileNoVal || links.old_file_number;
             relatedFileNoVal = relatedFileNoVal || links.related_file_number;
             const districtVal = String(formData.get('district') || '').trim() || links.district;
+            // The Related/Old FileNo line is part of the sheet's shape, not an optional
+            // extra: a file with neither number prints the label over a blank rule, the
+            // same as TP No or Plot No do. A file carrying both keeps a line for each.
+            const relatedOrOldRows = [
+                ...(oldFileNoVal ? [['Related FileNo/Old FileNo:', oldFileNoVal]] : []),
+                ...(relatedFileNoVal ? [['Related FileNo/Old FileNo:', relatedFileNoVal]] : []),
+            ];
+            if (!relatedOrOldRows.length) {
+                relatedOrOldRows.push(['Related FileNo/Old FileNo:', '']);
+            }
+
             // The property block reads TP No > Plot No > District > Location.
             const fields = [
                 ['File No/(File Type):', fileNoDisplay],
-                ...(oldFileNoVal ? [['Related FileNo/Old FileNo:', oldFileNoVal]] : []),
-                ...(relatedFileNoVal ? [['Related FileNo/Old FileNo:', relatedFileNoVal]] : []),
+                ...relatedOrOldRows,
                 ['File Name:', formData.get('file_name')],
                 ['TP No:', formData.get('tp_number')],
                 ['Plot No:', formData.get('plot_number')],
@@ -9796,11 +10046,20 @@
                 const hasRowOldFileNo = rowOldFileNo !== '' && rowOldFileNo.toUpperCase() !== String(rowFileNo).trim().toUpperCase();
                 const rowRelatedFileNo = rowLinks.related_file_number;
                 const rowDistrict = String(row.district || '').trim() || rowLinks.district;
+                // Kept even when empty, so every sheet in the batch has the same rows
+                // in the same places -- see the single-sheet builder above.
+                const rowRelatedOrOldRows = [
+                    ...(hasRowOldFileNo ? [['Related FileNo/Old FileNo:', rowOldFileNo]] : []),
+                    ...(rowRelatedFileNo ? [['Related FileNo/Old FileNo:', rowRelatedFileNo]] : []),
+                ];
+                if (!rowRelatedOrOldRows.length) {
+                    rowRelatedOrOldRows.push(['Related FileNo/Old FileNo:', '']);
+                }
+
                 // The property block reads TP No > Plot No > District > Location.
                 const fields = [
                     ['File No/(File Type):', rowFileNoDisplay],
-                    ...(hasRowOldFileNo ? [['Related FileNo/Old FileNo:', rowOldFileNo]] : []),
-                    ...(rowRelatedFileNo ? [['Related FileNo/Old FileNo:', rowRelatedFileNo]] : []),
+                    ...rowRelatedOrOldRows,
                     ['File Name:', row.file_name || ''],
                     ['TP No:', row.tp_no || 'N/A'],
                     ['Plot No:', row.plot_no || 'N/A'],

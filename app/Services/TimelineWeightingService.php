@@ -46,6 +46,137 @@ class TimelineWeightingService
         return $allRecords;
     }
 
+
+    /**
+     * The same raw records as getRawRecords(), for many properties in one pass.
+     *
+     * getRawRecords() runs four queries per property, and each one matches file
+     * numbers with UPPER(col) = ? — non-sargable, so every call scans all four
+     * tables. A listing that asks per row pays that scan once per row: a 20-row
+     * page measured 6.5s. Asking for the whole page at once turns it into four
+     * scans total (~0.07s), because the row-to-property matching moves out of SQL
+     * and into the maps below.
+     *
+     * Membership is deliberately identical to applyFilters(): a row belongs to a
+     * target when its prop_id equals that target's, or any of the table's file
+     * columns equals its file number, case-insensitively. A row matching several
+     * targets is handed to each of them, exactly as separate queries would.
+     *
+     * @param  array<string|int, array{fileNumber?:?string, propId?:?string}>  $targets  keyed by caller's row id
+     * @return array<string|int, array<int, array>>  the same keys, each with its raw records
+     */
+    public function getRawRecordsForMany(array $targets): array
+    {
+        $results = [];
+        $propIndex = [];   // prop_id            => [target keys]
+        $fileIndex = [];   // UPPERCASE file no  => [target keys]
+
+        foreach ($targets as $key => $target) {
+            $results[$key] = [];
+
+            $propId = trim((string) ($target['propId'] ?? ''));
+            if ($propId !== '') {
+                $propIndex[$propId][] = $key;
+            }
+
+            $fileNumber = trim((string) ($target['fileNumber'] ?? ''));
+            if ($fileNumber !== '') {
+                $fileIndex[strtoupper($fileNumber)][] = $key;
+            }
+        }
+
+        if (empty($propIndex) && empty($fileIndex)) {
+            return $results;
+        }
+
+        // Cast back to string: PHP silently turns a numeric-string array key into an
+        // int, and binding prop_id as an int makes SQL Server convert every row's
+        // nvarchar prop_id to compare - which blows up on the first value too wide
+        // for an int ("The conversion of the nvarchar value '6957764400' overflowed
+        // an int column"). getRawRecords() never hit this because it binds one
+        // string at a time.
+        $propIds = array_map('strval', array_keys($propIndex));
+        $fileNos = array_map('strval', array_keys($fileIndex));
+
+        $sources = [
+            'file_history_staging' => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+            'CofO_staging'         => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+            'pra'                  => ['mlsFNo', 'fileno', 'kangisFileNo', 'NewKANGISFileno'],
+            'deed_registrations'   => ['fileno', 'parent_fileno'],
+        ];
+
+        $connection = DB::connection('sqlsrv');
+
+        foreach ($sources as $table => $fileColumns) {
+            $query = $connection->table($table);
+            $query->where(function ($q) use ($propIds, $fileNos, $fileColumns) {
+                if (!empty($propIds)) {
+                    $q->orWhereIn('prop_id', $propIds);
+                }
+                if (!empty($fileNos)) {
+                    // Compared bare, not as UPPER({$col}): every one of these columns
+                    // is SQL_Latin1_General_CP1_CI_AS, so the match is already
+                    // case-insensitive, and wrapping the column kills the index -
+                    // it was the whole cost here (2.5s of scans vs 0.1s of seeks).
+                    // The values are upper-cased, which CI matching accepts, and the
+                    // PHP-side bucketing below upper-cases both sides regardless.
+                    foreach ($fileColumns as $col) {
+                        $q->orWhereIn($col, $fileNos);
+                    }
+                }
+            });
+
+            foreach ($query->get() as $row) {
+                $rowArr = (array) $row;
+
+                // Every target this row answers to, deduped: a row can match one
+                // target on prop_id and another on a file number.
+                $keys = [];
+                $rowPropId = trim((string) ($rowArr['prop_id'] ?? ''));
+                if ($rowPropId !== '' && isset($propIndex[$rowPropId])) {
+                    foreach ($propIndex[$rowPropId] as $key) {
+                        $keys[$key] = true;
+                    }
+                }
+                foreach ($fileColumns as $col) {
+                    $value = strtoupper(trim((string) ($rowArr[$col] ?? '')));
+                    if ($value !== '' && isset($fileIndex[$value])) {
+                        foreach ($fileIndex[$value] as $key) {
+                            $keys[$key] = true;
+                        }
+                    }
+                }
+
+                if (empty($keys)) {
+                    continue;
+                }
+
+                $normalized = $this->normalizeRow($row, $table);
+                foreach (array_keys($keys) as $key) {
+                    $results[$key][] = $normalized;
+                }
+            }
+        }
+
+        return $results;
+    }
+
+    /**
+     * Weighted timeline counts for many properties, in one pass.
+     *
+     * @param  array<string|int, array{fileNumber?:?string, propId?:?string}>  $targets
+     * @return array<string|int, int>
+     */
+    public function getWeightedCountsForMany(array $targets): array
+    {
+        $counts = [];
+        foreach ($this->getRawRecordsForMany($targets) as $key => $records) {
+            $counts[$key] = $this->getWeightedCount($records);
+        }
+
+        return $counts;
+    }
+
     /**
      * Calculate the count of weighted (preferred/unique) records.
      */

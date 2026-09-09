@@ -92,32 +92,7 @@
         checks 'System Settings' (or super admin), because these switches decide
         what the Ministry sends to the public.
       --}}
-      @if($hasRole('System Settings'))
-        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
-          data-section="smsManagement">
-          <div class="flex items-center gap-2">
-            <i data-lucide="message-square" class="h-4 w-4 text-slate-500"></i>
-            <span>SMS Management</span>
-          </div>
-          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="smsManagement"></i>
-        </div>
-        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="smsManagement">
-          @foreach(\App\Models\SmsSetting::senderOptions() as $smsGroup => $smsSenderId)
-            @php
-              // The URL carries the readable name; the group key resolves too,
-              // so an older bookmark still highlights the right row.
-              $smsCurrent = strtolower((string) request()->route('sender'));
-              $smsActive = request()->routeIs('sms-management.index')
-                && in_array($smsCurrent, [strtolower($smsGroup), strtolower((string) $smsSenderId)], true);
-            @endphp
-            <a href="{{ route('sms-management.index', ['sender' => strtolower((string) $smsSenderId)]) }}"
-              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ $smsActive ? 'active' : '' }}">
-              <i data-lucide="send" class="h-4 w-4 text-slate-500"></i>
-              <span>{{ $smsSenderId }}</span>
-            </a>
-          @endforeach
-        </div>
-      @endif
+   
 
       @if($hasRole('System Settings'))
         <a href="{{ route('setting.index') }}"
@@ -142,6 +117,32 @@
           <i data-lucide="server" class="h-4 w-4 text-slate-500"></i>
           <span>Folder Watcher</span>
         </a>
+      @endif
+         @if($hasRole('System Settings'))
+        <div class="sidebar-submodule-header flex items-center justify-between py-1.5 px-3 cursor-pointer rounded-md"
+          data-section="smsManagement">
+          <div class="flex items-center gap-2">
+            <i data-lucide="message-square" class="h-4 w-4 text-slate-500"></i>
+            <span>Bulk SMS Management</span>
+          </div>
+          <i data-lucide="chevron-right" class="h-4 w-4 transition-transform duration-200" data-chevron="smsManagement"></i>
+        </div>
+        <div class="pl-4 mt-1 mb-1 space-y-0.5 hidden" data-content="smsManagement">
+          @foreach(\App\Models\SmsSetting::senderOptions() as $smsGroup => $smsSenderId)
+            @php
+              // The URL carries the readable name; the group key resolves too,
+              // so an older bookmark still highlights the right row.
+              $smsCurrent = strtolower((string) request()->route('sender'));
+              $smsActive = request()->routeIs('sms-management.index')
+                && in_array($smsCurrent, [strtolower($smsGroup), strtolower((string) $smsSenderId)], true);
+            @endphp
+            <a href="{{ route('sms-management.index', ['sender' => strtolower((string) $smsSenderId)]) }}"
+              class="sidebar-item flex items-center gap-2 py-2 px-3 rounded-md transition-all duration-200 {{ $smsActive ? 'active' : '' }}">
+              <i data-lucide="send" class="h-4 w-4 text-slate-500"></i>
+              <span>{{ $smsSenderId }}</span>
+            </a>
+          @endforeach
+        </div>
       @endif
     </div>
   </div>

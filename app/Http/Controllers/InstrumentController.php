@@ -21,7 +21,8 @@ use Illuminate\Support\Arr;
 class InstrumentController extends Controller
 {
     public function __construct(
-        protected InstrumentCaptureService $captureService
+        protected InstrumentCaptureService $captureService,
+        protected \App\Services\TimelineWeightingService $timelineService
     ) {
     }
 
@@ -122,6 +123,18 @@ class InstrumentController extends Controller
         $instrumentTypes = array_unique(array_merge($baseTypes, $opTypes, $stTypes));
         sort($instrumentTypes);
 
+        // Timeline counts for the Timeline column, for this page's rows only.
+        // Asked one row at a time this costs ~0.33s per row (getRawRecords runs four
+        // queries per property); asked for the page at once it is ~0.45s in total.
+        $timelineCounts = $this->timelineService->getWeightedCountsForMany(
+            collect($instruments->items())->mapWithKeys(function ($row) {
+                return [$row->id => [
+                    'fileNumber' => $row->mlsFNo ?: ($row->kangisFileNo ?: ($row->NewKANGISFileno ?: $row->temp_fileno)),
+                    'propId' => (string) ($row->prop_id ?? ''),
+                ]];
+            })->all()
+        );
+
         // Feeds the "Update Solicitors Details" modal, which mirrors the capture
         // card's Solicitor section. Districts are handed to the browser as JSON and
         // the select is built the first time the modal opens - there are ~1,800 of
@@ -129,7 +142,7 @@ class InstrumentController extends Controller
         $states = DB::connection('sqlsrv')->table('States')->orderBy('StateName')->get();
         $solicitorDistricts = $this->getDistrictsForSelect()->pluck('name')->values();
 
-        return view('instruments.index', compact('PageTitle', 'PageDescription', 'instruments', 'totalCount', 'pendingCount', 'verifiedCount', 'todayCount', 'fullDataForJs', 'instrumentTypes', 'states', 'solicitorDistricts'));
+        return view('instruments.index', compact('PageTitle', 'PageDescription', 'instruments', 'totalCount', 'pendingCount', 'verifiedCount', 'todayCount', 'fullDataForJs', 'instrumentTypes', 'states', 'solicitorDistricts', 'timelineCounts'));
     }
 
     public function create()

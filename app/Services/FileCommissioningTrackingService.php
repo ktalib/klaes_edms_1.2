@@ -492,6 +492,11 @@ class FileCommissioningTrackingService
         $officeCode = trim((string) ($destination['office_code'] ?? ''));
         $officeName = trim((string) ($destination['office_name'] ?? ''));
         $department = trim((string) ($destination['department'] ?? ''));
+        // Optional — see destinationFromRequest(). Blank leaves the Movement History's
+        // Receiving Officer reading N/A, as every file commissioned before this field
+        // existed still does.
+        $officerName = trim((string) ($destination['officer_name'] ?? '')) ?: null;
+        $officerId = $destination['officer_id'] ?? null;
 
         if ($officeCode === '' && $officeName === '') {
             return null;
@@ -515,8 +520,9 @@ class FileCommissioningTrackingService
             'log_in_time'            => $handoverAt->format('H:i'),
             'log_out_date'           => $handoverAt->format('Y-m-d'),
             'log_out_time'           => $handoverAt->format('H:i'),
-            // No named receiving officer is chosen at commissioning, so the file is
-            // in transit to the office rather than pending a person's acceptance.
+            // In transit to the office. Naming the receiving officer records who is
+            // expected to take it; it does not make the row pending their acceptance,
+            // which is a separate workflow.
             'status'                 => 'active',
             'notes'                  => 'File dispatched from the File Commissioning Office at commissioning.',
             'timestamp'              => $handoverAt->toIso8601String(),
@@ -524,8 +530,8 @@ class FileCommissioningTrackingService
             'user_name'              => auth()->user()->name ?? ($info['commissioned_by'] ?: 'System'),
             'receiving_office_code'  => $officeCode ?: $officeName,
             'receiving_office_name'  => $officeName ?: $officeCode,
-            'receiving_officer_id'   => null,
-            'receiving_officer_name' => null,
+            'receiving_officer_id'   => $officerId,
+            'receiving_officer_name' => $officerName,
             'origin_office_code'     => self::OFFICE_CODE,
             'origin_office_name'     => self::OFFICE_NAME,
             'origin_office_department' => self::OFFICE_DEPARTMENT,
@@ -555,6 +561,12 @@ class FileCommissioningTrackingService
             'origin_office_department' => self::OFFICE_DEPARTMENT,
             'receiving_office_code' => $officeCode ?: $officeName,
             'receiving_office_name' => $officeName ?: $officeCode,
+            // transformApiTracker() maps receivingOfficerName straight off this column,
+            // which is what both the sheet's "Receiving Officer (Holder)" line and the
+            // Movement History fall back to. current_handler is not fillable, so it is
+            // deliberately not set here — fill() would have dropped it in silence.
+            'receiving_officer_id'  => $officerId,
+            'receiving_officer_name' => $officerName,
             'total_offices'         => 2,
             'completed_offices'     => 2,
         ]);
@@ -598,10 +610,19 @@ class FileCommissioningTrackingService
             }
         }
 
+        // Who receives the file at that office. Optional: the picker leaves it blank
+        // when the directory is unavailable, and a missing name must never stop a file
+        // number being issued. `ro_12` ids come from other_receiving_officers, which is
+        // not the users table — only a plain integer is kept as a user id.
+        $officerName = trim((string) $request->input('destination_receiving_officer_name', ''));
+        $officerId = trim((string) $request->input('destination_receiving_officer_id', ''));
+
         return [
-            'office_code' => $officeCode,
-            'office_name' => $officeName,
-            'department'  => $department,
+            'office_code'   => $officeCode,
+            'office_name'   => $officeName,
+            'department'    => $department,
+            'officer_name'  => $officerName ?: null,
+            'officer_id'    => ctype_digit($officerId) ? (int) $officerId : null,
         ];
     }
 

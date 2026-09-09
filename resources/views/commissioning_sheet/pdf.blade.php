@@ -445,20 +445,24 @@
                     <div class="value-line">{{ $data['st_primary_file_number'] }}</div>
                 </div>
                 @endif
-                {{-- Only a Re-Issuance has one; every other file leaves the line out
-                     rather than printing an empty rule. --}}
-                @if(!empty($data['old_file_number']))
+                {{-- The line is part of the sheet's shape, not an optional extra: a file
+                     with neither an old number (only a Re-Issuance has one) nor a related
+                     one still prints the label over a blank rule, the same as TP No and
+                     Plot No do. A file carrying both keeps a line for each. --}}
+                @php
+                    $oldFileNumberLine = trim((string) ($data['old_file_number'] ?? ''));
+                    $relatedFileNumberLine = $isSt ? '' : trim((string) ($data['related_file_number'] ?? ''));
+                    $relatedOrOldLines = array_values(array_filter([$oldFileNumberLine, $relatedFileNumberLine], fn ($v) => $v !== ''));
+                    if (empty($relatedOrOldLines)) {
+                        $relatedOrOldLines = [''];
+                    }
+                @endphp
+                @foreach($relatedOrOldLines as $relatedOrOldLine)
                 <div class="row">
                     <div class="label label--wide">Related FileNo/Old FileNo:</div>
-                    <div class="value-line">{{ $data['old_file_number'] }}</div>
+                    <div class="value-line">{{ $relatedOrOldLine }}</div>
                 </div>
-                @endif
-                @if(!$isSt && !empty($data['related_file_number']))
-                <div class="row">
-                    <div class="label label--wide">Related FileNo/Old FileNo:</div>
-                    <div class="value-line">{{ $data['related_file_number'] }}</div>
-                </div>
-                @endif
+                @endforeach
                 @if(!empty($allottee))
                 <div class="row">
                     <div class="label">File Title:</div>

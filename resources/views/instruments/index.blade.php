@@ -146,6 +146,9 @@
                             <table id="instrumentsTable" class="w-full">
                                 <thead>
                                     <tr>
+                                        <th class="text-left whitespace-nowrap">S/N</th>
+                                        <th class="text-left whitespace-nowrap">PropID</th>
+                                        <th class="text-left whitespace-nowrap">Timeline</th>
                                         <th class="text-left whitespace-nowrap">File No</th>
                                         <th class="text-left whitespace-nowrap">Reg Particulars</th>
                                         <th class="text-left whitespace-nowrap">Instrument Type</th>
@@ -170,11 +173,41 @@
                                         // registered instrument, so they carry no solicitor of their own.
                                         // Used by the type badge and to withhold the solicitor action below.
                                         $isOP = stripos($instrument->instrument_type ?? '', 'Occupancy Permit') !== false;
+
+                                        // Whichever number this file actually carries; also the
+                                        // timeline's fallback identifier when prop_id is missing.
+                                        $rowFileNo = $instrument->mlsFNo ?: $instrument->kangisFileNo ?: $instrument->NewKANGISFileno ?: $instrument->temp_fileno;
                                     @endphp
                                     <tr class="instrument-row" data-volume="{{ $instrument->volume_no ?? '' }}">
+                                        {{-- Counts through the whole result set, not just this page,
+                                             so row 21 reads 21 on page 2. --}}
+                                        <td class="align-top whitespace-nowrap text-xs text-gray-500">
+                                            {{ $instruments->firstItem() + $loop->index }}
+                                        </td>
+                                        <td class="align-top whitespace-nowrap">
+                                            <span class="font-mono text-xs text-gray-700">{{ $instrument->prop_id ?: '—' }}</span>
+                                        </td>
+                                        <td class="align-top whitespace-nowrap">
+                                            {{-- The same cross-table timeline the PRA and Instrument
+                                                 Registration screens open. Either identifier will do, so
+                                                 a row whose prop_id was never allocated still opens on
+                                                 its file number. The count is the weighted (deduped)
+                                                 record count the sibling screens badge. --}}
+                                            @php $timelineCount = $timelineCounts[$instrument->id] ?? 0; @endphp
+                                            @if(!empty($instrument->prop_id) || !empty($rowFileNo))
+                                                <button type="button"
+                                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition {{ $timelineCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100' }}"
+                                                    onclick="openPropertyTimeline('{{ $instrument->prop_id ?? '' }}', '{{ $rowFileNo }}')"
+                                                    title="View the full property timeline">
+                                                    <i data-lucide="history" class="w-3 h-3"></i> Timeline ({{ $timelineCount }})
+                                                </button>
+                                            @else
+                                                <span class="text-gray-300 text-xs">—</span>
+                                            @endif
+                                        </td>
                                         <td class="align-top">
                                             <span class="badge bg-gray-100 text-gray-800 border border-gray-200 rounded-full px-3 py-1 whitespace-nowrap font-mono text-xs tracking-wide">
-                                                {{ $instrument->mlsFNo ?: $instrument->kangisFileNo ?: $instrument->NewKANGISFileno ?: $instrument->temp_fileno }}
+                                                {{ $rowFileNo }}
                                             </span>
                                         </td>
                                         <td class="align-top whitespace-nowrap text-sm">
@@ -491,7 +524,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="11" class="text-center py-4">No instruments found</td>
+                                        <td colspan="16" class="text-center py-4">No instruments found</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -627,6 +660,7 @@
 
     <!-- Reuse Instrument Registration Logic -->
     <script src="{{ asset('js/instrument_registration_index.js') }}"></script>
+    <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
     
     <script>
         // ─── DataTables Initialisation ───────────────────────────────────────────
@@ -636,9 +670,9 @@
                 paging: false,
                 info: false,
                 lengthChange: false,
-                order: [[8, 'desc']], // sort by Date Captured descending by default
+                order: [[11, 'desc']], // Reg Time/Date descending by default (S/N, PropID, Timeline, File No occupy 0-3)
                 columnDefs: [
-                    { orderable: false, targets: [-1] }  // Actions column not sortable
+                    { orderable: false, targets: [0, 2, -1] }  // S/N, Timeline and Actions are not sortable
                 ],
                 // Move the native DT search & export buttons into our header bar
                 initComplete: function () {
@@ -701,7 +735,7 @@
                     if (settings.nTable.id !== 'instrumentsTable') return true;
                     
                     var row = table.row(dataIndex).node();
-                    var typeContent = $(row).find('td:eq(2)').text().trim(); // Index 2 is now Instrument Type
+                    var typeContent = $(row).find('td:eq(5)').text().trim(); // Instrument Type: index 5 behind S/N, PropID, File No, Timeline
                     var rowVolume = $(row).data('volume') ? String($(row).data('volume')) : '';
                     
                     // Matches if type matches OR if it's an OP sub-type
