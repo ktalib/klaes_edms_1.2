@@ -8420,7 +8420,16 @@
                         .priority-LOW { color: #10b981; font-weight: bold; }
                         .footer { text-align: center; font-size: 0.8rem; color: #999; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid #e5e7eb; }
                         .footer .generated-meta { margin-top: 0.3rem; font-size: 0.75rem; font-style: italic; color: #6b7280; }
-                        .signatories { margin-top: 2rem; display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; }
+                        .signatories { margin-top: 2rem; display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+                        /* Closing line + mark, centred across the full width rather than
+                           parked in a third column that no longer has a signature above it. */
+                        /* The closing line stays centred on the page and the mark stays
+                           at the right edge, where it has always sat. It is positioned
+                           rather than gridded so it cannot be pushed off by the message
+                           wrapping, which is what left it looking misplaced. */
+                        .footer-closing { position: relative; margin-top: 0.5rem; min-height: 32px; text-align: center; }
+                        .footer-closing p { margin: 0; }
+                        .footer-closing .footer-mark { position: absolute; right: 0; top: 0; height: 32px; width: auto; object-fit: contain; }
                         .signatory { text-align: center; }
                         .signatory .line { margin-top: 2.5rem; border-top: 1px solid #999; padding-top: 0.35rem; font-weight: 600; }
                         /* Copy identity - In-Transit (colour) vs File Copy (black & white) */
@@ -8455,6 +8464,8 @@
                             table th, table td { padding: 0.2rem 0.3rem; }
                             .footer { position: relative; margin-top: 0.4rem; padding-top: 0.4rem; }
                             .signatories { margin-top: 0.5rem; gap: 1rem; }
+                            .footer-closing { margin-top: 0.3rem; min-height: 26px; }
+                            .footer-closing .footer-mark { height: 26px; }
                             .signatory .line { margin-top: 1.2rem; }
                             .footer .generated-meta { margin-top: 0.15rem; }
                         }
@@ -8728,17 +8739,11 @@
                             <div class="signatories">
                                 <div class="signatory"><div class="line">${(() => { const m = (window.currentModule || '').toLowerCase(); if (m === 'st') return 'Director Sectional Titling'; if (m === 'cadastral') return 'Director Cadastral'; if (m === 'deeds') return 'Director Deeds'; if (m === 'sltr') return 'Director SLTR'; return 'Director Land'; })()}</div></div>
                                 <div class="signatory"><div class="line">Permanent Secretary</div></div>
-                                <div class="signatory"><div class="line">Honorable Commissioner</div></div>
                             </div>
-                            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 0.25rem; align-items: start;">
-                                <div></div>
-                                <div style="text-align: center;">
-                                    <p style="font-style: italic;">This file is now being tracked!</p>
-                                    <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
-                                </div>
-                                <div style="text-align: center;">
-                                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
-                                </div>
+                            <div class="footer-closing">
+                                <p style="font-style: italic;">This file is now being tracked!</p>
+                                <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
+                                <img class="footer-mark" src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="KLAES" onerror="this.style.visibility='hidden'">
                             </div>
                         </div>
                     </div>

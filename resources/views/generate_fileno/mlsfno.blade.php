@@ -3490,6 +3490,27 @@
         </div>
     </div>
 
+    {{-- Quick actions for an applicant's phone number, opened by clicking the number
+         in the Phone No column. A centred card rather than an anchored popover: the
+         table scrolls in both directions, and a popover pinned to a cell drifts off
+         screen as soon as it does. --}}
+    <div id="mlsfPhoneActionsModal" class="fixed inset-0 z-[200] hidden">
+        <div class="absolute inset-0 bg-black/50" onclick="closeMlsfPhoneActions()"></div>
+        <div class="relative mx-auto my-32 w-[92%] max-w-sm rounded-lg bg-white shadow-xl">
+            <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-gray-900">Contact Applicant</h3>
+                    <p id="mlsfPhoneActionsSubtitle" class="truncate text-xs text-gray-500"></p>
+                </div>
+                <button type="button" onclick="closeMlsfPhoneActions()"
+                        class="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div id="mlsfPhoneActionsBody" class="grid grid-cols-2 gap-3 p-5"></div>
+        </div>
+    </div>
+
     {{-- Every related file number captured for a file at commissioning. The MLS File No
          cell shows the first one inline; a file can carry several (a merger quotes each
          source file, an RC its original, plus anything typed under "Add Another Related

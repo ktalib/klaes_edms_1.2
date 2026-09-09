@@ -1134,6 +1134,79 @@
     window.openMlsfMapModal = openMlsfMapModal;
     window.closeMlsfMapModal = closeMlsfMapModal;
 
+    // ── Phone quick actions ──────────────────────────────────────────────────────
+    // Call / SMS / WhatsApp / Email for the applicant on a row.
+    //
+    // Email is built but stays disabled: no email address is stored for a commissioned
+    // file anywhere (customers_staging holds 0 of 132,952), so opening a mailto: with
+    // nothing in it would only look broken. Give the row an `email` and it lights up.
+    function mlsfWhatsappNumber(raw) {
+        const digits = String(raw || '').replace(/\D/g, '');
+        if (!digits) return '';
+        // Nigerian numbers are keyed locally as 0XXXXXXXXXX; wa.me needs the country
+        // code and no leading zero. Anything already international is left alone.
+        if (digits.startsWith('234')) return digits;
+        if (digits.startsWith('0')) return '234' + digits.slice(1);
+        return digits;
+    }
+
+    function openMlsfPhoneActions(row) {
+        const modal = document.getElementById('mlsfPhoneActionsModal');
+        const body = document.getElementById('mlsfPhoneActionsBody');
+        const subtitle = document.getElementById('mlsfPhoneActionsSubtitle');
+        if (!modal || !body || !row) return;
+
+        const number = String(row.phone_no || '').trim();
+        if (!number) return;
+
+        const dial = number.replace(/[^\d+]/g, '');
+        const wa = mlsfWhatsappNumber(number);
+        const email = String(row.email || '').trim();
+        const fileNo = String(row.mlsfNo || row.primaryFileNo || '').toUpperCase();
+        const name = String(row.FileName || '').trim();
+
+        if (subtitle) {
+            subtitle.textContent = [name && name !== 'N/A' ? name : null, fileNo, number]
+                .filter(Boolean).join(' · ');
+        }
+
+        const action = (href, icon, label, tone, enabled, title) => enabled
+            ? `<a href="${href}" ${href.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}
+                  class="flex flex-col items-center justify-center gap-1.5 rounded-lg border ${tone} px-3 py-4 text-xs font-semibold transition-colors">
+                   <i data-lucide="${icon}" class="h-5 w-5"></i>
+                   <span>${label}</span>
+               </a>`
+            : `<span title="${escapeMlsfHtml(title || '')}"
+                     class="flex cursor-not-allowed flex-col items-center justify-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-4 text-xs font-semibold text-gray-300">
+                   <i data-lucide="${icon}" class="h-5 w-5"></i>
+                   <span>${label}</span>
+               </span>`;
+
+        body.innerHTML = [
+            action(`tel:${dial}`, 'phone', 'Call', 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-600 hover:text-white hover:border-emerald-600', true),
+            action(`sms:${dial}`, 'message-square', 'SMS', 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-600 hover:text-white hover:border-sky-600', true),
+            action(`https://wa.me/${wa}`, 'message-circle', 'WhatsApp', 'border-green-200 bg-green-50 text-green-700 hover:bg-green-600 hover:text-white hover:border-green-600', Boolean(wa)),
+            action(`mailto:${email}`, 'mail', 'Email', 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white hover:border-indigo-600', Boolean(email), 'No email address on record for this file'),
+        ].join('');
+
+        modal.classList.remove('hidden');
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+    }
+
+    function closeMlsfPhoneActions() {
+        document.getElementById('mlsfPhoneActionsModal')?.classList.add('hidden');
+    }
+
+    window.openMlsfPhoneActions = openMlsfPhoneActions;
+    window.closeMlsfPhoneActions = closeMlsfPhoneActions;
+
+    $(document).on('click', '#mlsfTable tbody .mlsf-phone-btn', function () {
+        const rowData = table ? table.row($(this).closest('tr')).data() : null;
+        if (rowData) openMlsfPhoneActions(rowData);
+    });
+
     // ── Related File Numbers card ────────────────────────────────────────────────
     // The full list already travels with the row (FileNumberController reads the
     // related_file_number register once per page), so opening the card costs no
@@ -1226,6 +1299,7 @@
         if (e.key === 'Escape') {
             closeMlsfMapModal();
             closeMlsfRelatedFilesModal();
+            closeMlsfPhoneActions();
         }
     });
 
@@ -1519,6 +1593,22 @@
                         // also recognises a manually indexed Root of Title.
                         if (row.is_root_of_title) {
                             html += '<div class="mt-0.5 text-[11px] font-semibold text-violet-700">-RoT</div>';
+                        }
+
+                        // The applicant's phone sits under their name, the way the
+                        // related/old number sits under the file number — it belongs to
+                        // the person, not to a column of its own. Clicking it opens the
+                        // Call / SMS / WhatsApp / Email card. Most files carry no number
+                        // (it lives on file_indexings for the ones that do), and those
+                        // simply show nothing rather than an empty-looking row.
+                        const phone = String(row.phone_no || '').trim();
+                        if (phone) {
+                            html += `<div class="mt-1">
+                                <button type="button" class="mlsf-phone-btn inline-flex items-center gap-1 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 transition-colors hover:bg-emerald-600 hover:text-white hover:border-emerald-600">
+                                    <i data-lucide="phone" class="h-3 w-3"></i>
+                                    <span>${escapeMlsfHtml(phone)}</span>
+                                </button>
+                            </div>`;
                         }
 
                         return html;

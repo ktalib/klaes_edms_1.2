@@ -496,6 +496,16 @@ class FileNumberController extends Controller
                     CASE WHEN cs.file_number IS NOT NULL THEN 1 ELSE 0 END AS has_commissioning_sheet,
                     geo.latitude                              AS derived_latitude,
                     geo.longitude                             AS derived_longitude,
+                    -- Applicant's phone. Held in three places with very different
+                    -- coverage: fileNumber (122 rows), mls_file_no (5) and
+                    -- file_indexings (17,498), so the indexed number is the fallback
+                    -- that actually answers for most files. rep_phone_no is the
+                    -- representative's, kept separate so the card can label it.
+                    COALESCE(NULLIF(LTRIM(RTRIM(fn.phone_no)), ''),
+                             NULLIF(LTRIM(RTRIM(mls.phone_no)), ''),
+                             NULLIF(LTRIM(RTRIM(ph.phone)), ''))   AS derived_phone_no,
+                    COALESCE(NULLIF(LTRIM(RTRIM(fn.rep_phone_no)), ''),
+                             NULLIF(LTRIM(RTRIM(mls.rep_phone_no)), '')) AS derived_rep_phone_no,
                     dciv_rel.dciv_related,
                     fil_rel.fil_related
                 FROM fileNumber fn
@@ -503,7 +513,7 @@ class FileNumberController extends Controller
                     SELECT TOP 1
                         m.batch_no, m.land_use, m.customer_type, m.commissioning_date, m.created_at,
                         m.source, m.source_instrument_capture_id, m.lga, m.district, m.created_by, m.purpose_id,
-                        m.old_fileno
+                        m.old_fileno, m.phone_no, m.rep_phone_no
                     FROM mls_file_no m
                     WHERE m.full_file_number = fn.mlsfNo
                     ORDER BY m.id DESC
@@ -535,6 +545,13 @@ class FileNumberController extends Controller
                 -- file_indexings, so it has to be read across every number the file may be
                 -- indexed under. Rows that carry no value are skipped rather than winning
                 -- the TOP 1 with a NULL.
+                OUTER APPLY (
+                    SELECT TOP 1 fi.phone
+                    FROM file_indexings fi
+                    WHERE fi.file_number IN (fn.mlsfNo, fn.kangisFileNo, fn.NewKANGISFileNo, fn.st_file_no)
+                      AND fi.phone IS NOT NULL AND LTRIM(RTRIM(fi.phone)) != ''
+                    ORDER BY fi.id DESC
+                ) AS ph
                 OUTER APPLY (
                     SELECT TOP 1 fi.root_of_title
                     FROM file_indexings fi
@@ -659,6 +676,13 @@ class FileNumberController extends Controller
                     ),
                     'root_of_title_ref' => $this->rootOfTitleReference($rowFileNo, $relatedOrOld),
                     'related_old_fileno' => $relatedOrOld,
+                    // Contact for the quick-action card. No email is stored for a
+                    // commissioned file anywhere (customers_staging holds 0), so the
+                    // card shows that action as unavailable rather than opening a
+                    // mailto: with nothing in it.
+                    'phone_no' => trim((string) ($row->derived_phone_no ?? '')),
+                    'rep_phone_no' => trim((string) ($row->derived_rep_phone_no ?? '')),
+                    'email' => '',
                     // Every related number, not just the one the inline badge shows.
                     'related_files' => $relatedFilesMap[$row->id] ?? [],
                     'primaryFileNo' => $primaryFileNo,
@@ -712,7 +736,7 @@ class FileNumberController extends Controller
                     "SELECT m.id, m.full_file_number, m.file_name, m.land_use, m.customer_type,
                             m.plot_no, m.tp_no, m.location, m.lga, m.district, m.tracking_id,
                             m.created_by, m.commissioning_date, m.created_at, m.source,
-                            m.batch_no, m.old_fileno, p.name AS purpose_name,
+                            m.batch_no, m.old_fileno, m.phone_no, m.rep_phone_no, p.name AS purpose_name,
                             rot.root_of_title,
                             geo.latitude, geo.longitude
                      FROM mls_file_no m
@@ -783,6 +807,9 @@ class FileNumberController extends Controller
                         ),
                         'root_of_title_ref'           => '',
                         'related_old_fileno'          => $this->formatRelatedOrOldFileNo(null, $row->old_fileno ?? null),
+                        'phone_no'                    => trim((string) ($row->phone_no ?? '')),
+                        'rep_phone_no'                => trim((string) ($row->rep_phone_no ?? '')),
+                        'email'                       => '',
                         // A temporary number carries no commissioning related-file list.
                         'related_files'               => array_values(array_filter([
                             trim((string) ($row->old_fileno ?? '')) !== ''
@@ -1015,6 +1042,9 @@ class FileNumberController extends Controller
                 'root_of_title_ref'           => '',
                 'related_old_fileno'          => ['value' => 'N/A', 'kind' => 'none'],
                 'related_files'               => [],
+                'phone_no'                    => '',
+                'rep_phone_no'                => '',
+                'email'                       => '',
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
                 'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
                 'created_by'                  => trim($row->created_by ?? '') ?: 'System',
