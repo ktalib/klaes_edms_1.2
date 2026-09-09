@@ -7,6 +7,9 @@ use Carbon\Carbon;
 
 class TimelineWeightingService
 {
+    /** Targets per batched query - see getRawRecordsForMany(). */
+    private const BATCH_CHUNK = 300;
+
     /**
      * Fetch all raw timeline records for a property.
      */
@@ -67,6 +70,19 @@ class TimelineWeightingService
      */
     public function getRawRecordsForMany(array $targets): array
     {
+        // Each query binds one parameter per prop_id plus one per file number for
+        // every file column (five per target on the four-column tables). SQL Server
+        // caps a statement at ~2100 parameters, and the callers that render a whole
+        // unpaginated register would sail past it, so the work is sliced.
+        if (count($targets) > self::BATCH_CHUNK) {
+            $merged = [];
+            foreach (array_chunk($targets, self::BATCH_CHUNK, true) as $chunk) {
+                $merged += $this->getRawRecordsForMany($chunk);
+            }
+
+            return $merged;
+        }
+
         $results = [];
         $propIndex = [];   // prop_id            => [target keys]
         $fileIndex = [];   // UPPERCASE file no  => [target keys]

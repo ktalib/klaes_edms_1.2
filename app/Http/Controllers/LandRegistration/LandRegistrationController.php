@@ -4,6 +4,7 @@ namespace App\Http\Controllers\LandRegistration;
 
 use App\Http\Controllers\Controller;
 use App\Services\InstrumentRegistrationService;
+use App\Services\TimelineWeightingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -191,6 +192,15 @@ class LandRegistrationController extends Controller
             // the series has reached without consuming anything.
             $nextNumber = $this->registrationService->peekRegistrationNumber($this->instrumentType());
 
+            // Timeline counts for the Timeline column, batched: one pass for the
+            // whole register rather than four queries per row.
+            $timelineCounts = app(TimelineWeightingService::class)->getWeightedCountsForMany(
+                collect($instruments)->mapWithKeys(fn ($r) => [$r->id => [
+                    'fileNumber' => $r->fileno,
+                    'propId' => (string) ($r->prop_id ?? ''),
+                ]])->all()
+            );
+
             return view('land_registration.registration.index', compact(
                 'PageTitle',
                 'PageDescription',
@@ -198,7 +208,8 @@ class LandRegistrationController extends Controller
                 'registeredTodayCount',
 
                 'totalCount',
-                'nextNumber'
+                'nextNumber',
+                'timelineCounts'
             ));
         } catch (\Throwable $e) {
             Log::error('Error loading the Land Registration register', [
@@ -209,6 +220,7 @@ class LandRegistrationController extends Controller
             $instruments = collect();
             $totalCount = $registeredTodayCount = 0;
             $nextNumber = ['configured' => false];
+            $timelineCounts = [];
 
             return view('land_registration.registration.index', compact(
                 'PageTitle',
@@ -217,7 +229,8 @@ class LandRegistrationController extends Controller
                 'registeredTodayCount',
 
                 'totalCount',
-                'nextNumber'
+                'nextNumber',
+                'timelineCounts'
             ))->with('error', 'Error loading the register: ' . $e->getMessage());
         }
     }

@@ -1545,6 +1545,15 @@
                     }
                 },
                 {
+                    data: 'street_name',
+                    name: 'street_name',
+                    title: 'Street Name',
+                    defaultContent: 'N/A',
+                    render: function (data, type, row) {
+                        return data ? data.toUpperCase() : 'N/A';
+                    }
+                },
+                {
                     data: 'house_no',
                     name: 'house_no',
                     title: 'House No',
@@ -4072,6 +4081,7 @@
                 for (let i = 0; i < alpineData.batchQuantity; i++) {
                      if (alpineData.locationEntries[i]) {
                          alpineData.locationEntries[i].houseNo = currentEntry.houseNo;
+                         alpineData.locationEntries[i].streetName = currentEntry.streetName;
                          alpineData.locationEntries[i].plotNo = currentEntry.plotNo;
                          alpineData.locationEntries[i].tpNo = currentEntry.tpNo;
                          alpineData.locationEntries[i].location = currentEntry.location;
@@ -6041,6 +6051,7 @@
             year: new Date().getFullYear(),
             serialNo: '',
             houseNo: '',
+            streetName: '',
             plotNo: '',
             tpNo: '',
             tpSearchQuery: '',
@@ -6745,6 +6756,7 @@
                 if (!entry) return;
                 // Plot Number
                 this.houseNo = entry.houseNo || '';
+                this.streetName = entry.streetName || '';
                 this.plotNo = entry.plotNo || '';
                 // TP Number (custom search). A number typed through "Other" is restored
                 // into the specify box, not the search box, or stepping back through the
@@ -7175,7 +7187,7 @@
             get filledEntriesCount() {
                 if (!this.batchMode) return 0;
                 return this.locationEntries.filter(entry =>
-                    entry.houseNo || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district
+                    entry.houseNo || entry.streetName || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district
                 ).length;
             },
 
@@ -7660,6 +7672,7 @@
                                     // Backfill details — use file_title from mother file only, not applicant_name
                                     self.fileName = res.data.file_title || '';
                                     self.houseNo = res.data.house_no || '';
+                                    self.streetName = res.data.street_name || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
                                     self.district = res.data.district || '';
@@ -7747,6 +7760,7 @@
                                         for (let i = 0; i < bQty; i++) {
                                             entries.push({
                                                 houseNo: res.data.house_no || '',
+                                                streetName: res.data.street_name || '',
                                                 plotNo: res.data.plot_no || '',
                                                 tpNo: res.data.tp_no || '',
                                                 location: self.location,
@@ -7841,6 +7855,7 @@
                     // Backfill details
                     self.fileName = data.applicant_name || data.file_title || '';
                     self.houseNo = data.house_no || '';
+                    self.streetName = data.street_name || '';
                     self.plotNo = data.plot_no || '';
                     self.lga = data.lga || '';
                     self.district = data.district || '';
@@ -7942,6 +7957,7 @@
                                     // Backfill details — use file_title from mother file only
                                     self.fileName = res.data.file_title || '';
                                     self.houseNo = res.data.house_no || '';
+                                    self.streetName = res.data.street_name || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
                                     self.district = res.data.district || '';
@@ -8003,6 +8019,7 @@
                                         for (let i = 0; i < bQty; i++) {
                                             entries.push({
                                                 houseNo: res.data.house_no || '',
+                                                streetName: res.data.street_name || '',
                                                 plotNo: res.data.plot_no || '',
                                                 tpNo: res.data.tp_no || '',
                                                 location: self.location,
@@ -8092,6 +8109,7 @@
                     // Backfill details
                     this.fileName = data.applicant_name || '';
                     this.houseNo = data.house_no || '';
+                    this.streetName = data.street_name || '';
                     this.plotNo = data.plot_no || '';
                     this.location = this.stripPlotFromLocation(data.location || '', this.plotNo);
                     // district / lga are only present on newer CoP records; fall back
@@ -8232,6 +8250,7 @@
                     // Reset fields that might have been inherited
                     this.fileName = '';
                     this.houseNo = '';
+                    this.streetName = '';
                     this.plotNo = '';
                     this.clearTpNo();
                     this.location = '';
@@ -8272,6 +8291,7 @@
                     // Reset fields
                     this.fileName = '';
                     this.houseNo = '';
+                    this.streetName = '';
                     this.plotNo = '';
                     this.clearTpNo();
                     this.location = '';
@@ -8483,6 +8503,7 @@
                 for (let i = 0; i < this.batchQuantity; i++) {
                     this.locationEntries.push({
                         houseNo: '',
+                        streetName: '',
                         plotNo: '',
                         tpNo: '',
                         location: '',
@@ -8515,7 +8536,7 @@
                         this.locationEntries[this.currentEntryIndex].tpIsOther = this.tpIsOther;
                     }
 
-                    if (this.applyLocationToAll && ['houseNo', 'plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
+                    if (this.applyLocationToAll && ['houseNo', 'streetName', 'plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
                         for (let i = 0; i < this.batchQuantity; i++) {
                             if (this.locationEntries[i]) {
                                 this.locationEntries[i][field] = value;
@@ -8552,6 +8573,7 @@
                     if (!this.locationEntries[this.currentEntryIndex]) {
                         this.locationEntries[this.currentEntryIndex] = {
                             houseNo: '',
+                            streetName: '',
                             plotNo: '',
                             tpNo: '',
                             location: '',
@@ -8591,7 +8613,7 @@
             isEntryFilled(index) {
                 if (!this.locationEntries[index]) return false;
                 const entry = this.locationEntries[index];
-                return entry.houseNo || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district;
+                return entry.houseNo || entry.streetName || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district;
             },
 
             updateBatchPreview() {
@@ -8605,6 +8627,7 @@
                     for (let i = currentLength; i < this.batchQuantity; i++) {
                         this.locationEntries.push({
                             houseNo: '',
+                            streetName: '',
                             plotNo: '',
                             tpNo: '',
                             location: '',
@@ -8739,6 +8762,7 @@
 
                 const locationData = {
                     houseNo: currentEntry.houseNo || '',
+                    streetName: currentEntry.streetName || '',
                     plotNo: currentEntry.plotNo || '',
                     tpNo: currentEntry.tpNo || '',
                     district: currentEntry.district || '',
@@ -9088,6 +9112,7 @@
                         alpineData.applyBackfilledCoordinates(match.latitude, match.longitude, 'Backfilled from selected file');
                     }
                     if (match.house_no) alpineData.houseNo = match.house_no;
+                    if (match.street_name) alpineData.streetName = match.street_name;
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
                     // The inherited plot must carry the extension marker (see
                     // syncExtensionPlotSuffix); it is a no-op for every other file type.

@@ -73,6 +73,7 @@ class FileIndexingService
             'land_use_type' => isset($data['land_use']) ? $this->extractLandUseType($data['land_use']) : null,
             'plot_number' => $data['plot_number'] ?? null,
             'tp_no' => $data['tp_no'] ?? null,
+            'street_name' => $data['street_name'] ?? null,
             'location' => $data['location'] ?? null,
             'lga' => $data['lga'] ?? null,
             'latitude' => $data['latitude'] ?? null,

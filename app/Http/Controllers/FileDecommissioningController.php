@@ -11,6 +11,15 @@ use Carbon\Carbon;
 class FileDecommissioningController extends Controller
 {
     /**
+     * The file-number columns each listing carries. The two tables select the same
+     * three numbers under different names (the main list aliases the archive columns
+     * to the fileNumber ones so the union lines up), and both the temp-number lookup
+     * and its per-row key are built from them.
+     */
+    private const ARCHIVE_NUMBER_COLUMNS = ['mlsfNo', 'kangisFileNo', 'NewKANGISFileNo'];
+    private const FALSE_NUMBER_COLUMNS = ['mls_file_no', 'kangis_file_no', 'new_kangis_file_no'];
+
+    /**
      * Display the file decommissioning page
      */
     public function index()
@@ -286,8 +295,11 @@ class FileDecommissioningController extends Controller
             // staging table (matched by any of the row's file numbers, or by resolved PropID).
             $relatedFiles = $this->resolveRelatedFiles($data, $propIds);
 
+            // Temporary "(T)" counterpart for the page's rows.
+            $tempFileNos = $this->resolveTempFileNumbers($data, self::ARCHIVE_NUMBER_COLUMNS);
+
             // Format for DataTables
-            $formattedData = $data->map(function ($row) use ($propIds, $relatedFiles) {
+            $formattedData = $data->map(function ($row) use ($propIds, $relatedFiles, $tempFileNos) {
                 $propId = null;
                 foreach ([trim($row->mlsfNo ?? ''), trim($row->kangisFileNo ?? ''), trim($row->NewKANGISFileNo ?? '')] as $n) {
                     if ($n !== '' && isset($propIds[$n])) {
@@ -309,6 +321,7 @@ class FileDecommissioningController extends Controller
                 return [
                     'id' => $row->id,
                     'file_no' => $fileNos ? implode('<br>', array_map('e', $fileNos)) : 'N/A',
+                    'temp_file_no' => $this->renderTempFileNo($tempFileNos[$this->tempFileKey($row, self::ARCHIVE_NUMBER_COLUMNS)] ?? null),
                     'related_file' => $this->renderRelatedFile($relatedFiles[$this->relatedFileKey($row)] ?? []),
                     'prop_id' => $propId !== null && trim((string) $propId) !== '' ? trim((string) $propId) : '-',
                     'file_name' => trim($row->FileName ?? '') ?: 'N/A',
@@ -549,6 +562,103 @@ class FileDecommissioningController extends Controller
     }
 
     /**
+     * Temporary "(T)" file number for each row of a page.
+     *
+     * A temp number and its base are the SAME physical file, filed under different
+     * columns, so a decommissioned file's temp counterpart cannot be read off the row
+     * itself — TemporaryFileNumberResolver knows every column one can be stored in.
+     * Resolved once per page (not per row) so the column costs a fixed handful of
+     * indexed lookups regardless of page length.
+     *
+     * @param  string[] $columns  the row's file-number columns, in priority order
+     * @return array<string, string>  tempFileKey() => "(T)" number
+     */
+    private function resolveTempFileNumbers($rows, array $columns): array
+    {
+        $numbers = [];
+        foreach ($rows as $row) {
+            foreach ($columns as $column) {
+                $number = trim((string) ($row->$column ?? ''));
+                if ($number !== '') {
+                    $numbers[] = $number;
+                }
+            }
+        }
+
+        if (empty($numbers)) {
+            return [];
+        }
+
+        try {
+            $index = app(\App\Services\TemporaryFileNumberResolver::class)
+                ->resolve(array_values(array_unique($numbers)));
+        } catch (\Exception $e) {
+            // The column is informational — never let it break the listing.
+            \Log::warning('Temporary file number lookup failed: ' . $e->getMessage());
+
+            return [];
+        }
+
+        $resolved = [];
+        foreach ($rows as $row) {
+            foreach ($columns as $column) {
+                $number = trim((string) ($row->$column ?? ''));
+                if ($number === '') {
+                    continue;
+                }
+
+                // The row may already BE filed under the temporary number, in which
+                // case there is nothing to look up.
+                if (\App\Services\TemporaryFileNumberResolver::isTemp($number)) {
+                    $resolved[$this->tempFileKey($row, $columns)] = $number;
+                    break;
+                }
+
+                $key = \App\Services\TemporaryFileNumberResolver::baseKey($number);
+                if (isset($index[$key])) {
+                    $resolved[$this->tempFileKey($row, $columns)] = $index[$key]['temp_file_no'];
+                    break;
+                }
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Stable per-row key for the resolved temp number, built from the row's own file
+     * numbers because neither listing has a single id namespace to key on (the main
+     * one unions two tables whose ids collide).
+     *
+     * @param  string[] $columns
+     */
+    private function tempFileKey($row, array $columns): string
+    {
+        $parts = [];
+        foreach ($columns as $column) {
+            $parts[] = trim((string) ($row->$column ?? ''));
+        }
+
+        return implode('|', $parts);
+    }
+
+    /**
+     * Render the Temporary File No cell. Badged rather than plain text so a "(T)"
+     * reads as a marker on the file, not as another file number in its own right.
+     */
+    private function renderTempFileNo(?string $tempFileNo): string
+    {
+        $tempFileNo = trim((string) $tempFileNo);
+
+        if ($tempFileNo === '') {
+            return '<span class="text-gray-400">-</span>';
+        }
+
+        return '<span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700" title="Temporary file number">'
+            . e($tempFileNo) . '</span>';
+    }
+
+    /**
      * Render the Related File cell: show the first number, and when there are more,
      * a "+N" pill that reveals the rest inline on click (handled in the view).
      */
@@ -660,11 +770,14 @@ class FileDecommissioningController extends Controller
                 ->take($length)
                 ->get();
 
-            $formattedData = $data->map(function ($row) {
+            $tempFileNos = $this->resolveTempFileNumbers($data, self::FALSE_NUMBER_COLUMNS);
+
+            $formattedData = $data->map(function ($row) use ($tempFileNos) {
                 return [
                     'id' => $row->id,
                     'mls_file_no' => trim($row->mls_file_no ?? '') ?: 'N/A',
                     'kangis_file_no' => trim($row->kangis_file_no ?? '') ?: 'N/A',
+                    'temp_file_no' => $this->renderTempFileNo($tempFileNos[$this->tempFileKey($row, self::FALSE_NUMBER_COLUMNS)] ?? null),
                     'file_name' => trim($row->file_name ?? '') ?: 'N/A',
                     'decommissioning_date' => $row->decommissioning_date ? Carbon::parse($row->decommissioning_date)->format('d M Y, h:i A') : 'N/A',
                     'decommissioned_by' => trim($row->decommissioned_by ?? '') ?: 'System',

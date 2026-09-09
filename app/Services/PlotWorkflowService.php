@@ -222,10 +222,15 @@ class PlotWorkflowService
      * twice (subdivided, then its fragments merged) should show the latest reason
      * and successor, and decommissioned_files retains the full history either way.
      *
+     * Public because decommissioning is not only driven from this service: the
+     * `decommissioning:temp-files` sweep flags temporary "(T)" records that the
+     * file-number lookup above cannot reach, and must stamp them with exactly the
+     * same column set rather than keeping a second copy of it.
+     *
      * @param  callable $match  receives the query builder to apply the row filter
      * @return int              rows flagged
      */
-    private function flagDecommissioned(
+    public function flagDecommissioned(
         string $table,
         callable $match,
         string $reason,

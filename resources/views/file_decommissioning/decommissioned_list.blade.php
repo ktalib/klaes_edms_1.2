@@ -219,6 +219,7 @@
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S/N</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PropID</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File No</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temporary File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Related File</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Commissioning Date</th>
@@ -248,6 +249,7 @@
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">S/N</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MLS File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kangis File No</th>
+                                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Temporary File No</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File Name</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                         <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">By</th>
@@ -514,6 +516,7 @@
                     } },
                     { data: 'prop_id', name: 'prop_id', orderable: false, searchable: false },
                     { data: 'file_no', name: 'file_no' },
+                    { data: 'temp_file_no', name: 'temp_file_no', orderable: false, searchable: false },
                     { data: 'related_file', name: 'related_file', orderable: false, searchable: false },
                     { data: 'file_name', name: 'file_name' },
                     { data: 'commissioning_date', name: 'commissioning_date' },
@@ -522,7 +525,7 @@
                     { data: 'decommissioning_reason', name: 'decommissioning_reason' },
                     { data: 'action', name: 'action', orderable: false, searchable: false }
                 ],
-                order: [[6, 'desc']], // Order by decommissioning_date desc
+                order: [[7, 'desc']], // Order by decommissioning_date desc (index shifted by the Temporary File No column)
                 pageLength: 25,
                 responsive: true,
                 drawCallback: function() {
@@ -544,13 +547,14 @@
                     } },
                     { data: 'mls_file_no', name: 'mls_file_no' },
                     { data: 'kangis_file_no', name: 'kangis_file_no' },
+                    { data: 'temp_file_no', name: 'temp_file_no', orderable: false, searchable: false },
                     { data: 'file_name', name: 'file_name' },
                     { data: 'decommissioning_date', name: 'decommissioning_date' },
                     { data: 'decommissioned_by', name: 'decommissioned_by' },
                     { data: 'decommissioning_reason', name: 'decommissioning_reason' },
                     { data: 'action', name: 'action', orderable: false, searchable: false }
                 ],
-                order: [[4, 'desc']],
+                order: [[5, 'desc']], // decommissioning_date, shifted by the Temporary File No column
                 pageLength: 10,
                 responsive: true,
                 drawCallback: function() {

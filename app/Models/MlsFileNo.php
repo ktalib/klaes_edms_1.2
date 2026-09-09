@@ -17,6 +17,7 @@ class MlsFileNo extends Model
         'full_file_number',
         'file_name',
         'house_no',
+        'street_name',
         'plot_no',
         'tp_no',
         'location',

@@ -94,9 +94,10 @@
                         <thead class="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
                             <tr>
                                 <th class="text-left font-medium px-4 py-3">S/N</th>
-                                <th class="text-left font-medium px-4 py-3">Reg Particulars</th>
-                                <th class="text-left font-medium px-4 py-3">File No</th>
                                 <th class="text-left font-medium px-4 py-3">PropID</th>
+                                <th class="text-left font-medium px-4 py-3">Timeline</th>
+                                <th class="text-left font-medium px-4 py-3">File No</th>
+                                <th class="text-left font-medium px-4 py-3">Reg Particulars</th>
                                 <th class="text-left font-medium px-4 py-3">{{ config('land_registration.parties.first') }}</th>
                                 <th class="text-left font-medium px-4 py-3">{{ config('land_registration.parties.second') }}</th>
                                 <th class="text-right font-medium px-4 py-3">Payment Amount</th>
@@ -137,6 +138,25 @@
                                 @endphp
                                 <tr class="hover:bg-gray-50" data-row-id="{{ $row->id }}">
                                     <td class="px-4 py-3 whitespace-nowrap text-gray-500">{{ $i + 1 }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600">{{ $row->prop_id ?: '—' }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        {{-- Same cross-table timeline the PRA screen opens: either
+                                             identifier will do, so a record with no prop_id still
+                                             resolves on its file number. The count is the weighted
+                                             (deduped) record count the sibling screens badge. --}}
+                                        @php $timelineCount = $timelineCounts[$row->id] ?? 0; @endphp
+                                        @if($row->prop_id || $row->fileno)
+                                            <button type="button"
+                                                class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition {{ $timelineCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100' }}"
+                                                onclick="openPropertyTimeline('{{ $row->prop_id }}', '{{ $row->fileno }}')"
+                                                title="View the full property timeline">
+                                                <i data-lucide="history" class="h-3 w-3"></i> Timeline ({{ $timelineCount }})
+                                            </button>
+                                        @else
+                                            <span class="text-gray-300 text-xs">—</span>
+                                        @endif
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap">{{ $row->fileno ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">
                                         @if($row->registration_number)
                                             {{-- Badged in the registry's own accent, matching the
@@ -151,23 +171,6 @@
                                             </span>
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 whitespace-nowrap">
-                                        <div class="flex flex-col items-start gap-1">
-                                            <span>{{ $row->fileno }}</span>
-                                            {{-- Same cross-table timeline the PRA screen opens: either
-                                                 identifier will do, so a row with no prop_id still
-                                                 resolves on its file number. --}}
-                                            @if($row->prop_id || $row->fileno)
-                                                <button type="button"
-                                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
-                                                    onclick="openPropertyTimeline('{{ $row->prop_id }}', '{{ $row->fileno }}')"
-                                                    title="View the full property timeline">
-                                                    <i data-lucide="history" class="h-3 w-3"></i> Timeline
-                                                </button>
-                                            @endif
-                                        </div>
-                                    </td>
-                                    <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600">{{ $row->prop_id ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $row->vendor }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $row->purchaser }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap text-right">
@@ -251,7 +254,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="19" class="px-4 py-12 text-center text-gray-500">
+                                    <td colspan="20" class="px-4 py-12 text-center text-gray-500">
                                         <i data-lucide="book" class="h-8 w-8 mx-auto mb-2 text-gray-300"></i>
                                         <p>The register is empty.</p>
                                         <a href="{{ route('land-registration.capture.create') }}"
@@ -320,11 +323,11 @@
                     pageLength: 25,
                     lengthMenu: [10, 25, 50, 100],
                     columnDefs: [
-                        // S/N and Action are not meaningful to sort on. Action is
-                        // the last column, so these indices move whenever a column
-                        // is added above.
-                        { targets: [0, 18], orderable: false },
-                        { targets: [18], searchable: false },
+                        // S/N, Timeline and Action are not meaningful to sort on.
+                        // Action is the last column, so these indices move whenever
+                        // a column is added above.
+                        { targets: [0, 2, 19], orderable: false },
+                        { targets: [19], searchable: false },
                     ],
                     language: {
                         search: 'Search:',

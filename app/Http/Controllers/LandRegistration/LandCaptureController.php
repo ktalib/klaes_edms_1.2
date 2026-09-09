@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\StreetName;
 use App\Services\InstrumentCaptureService;
 use App\Services\InstrumentRegistrationService;
+use App\Services\TimelineWeightingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -119,6 +120,15 @@ class LandCaptureController extends Controller
 
         $totalCount = $rows->count();
 
+        // Timeline counts for the Timeline column, batched: one pass for the whole
+        // register rather than four queries per row.
+        $timelineCounts = app(TimelineWeightingService::class)->getWeightedCountsForMany(
+            $rows->mapWithKeys(fn ($r) => [$r->id => [
+                'fileNumber' => $r->fileno,
+                'propId' => (string) ($r->prop_id ?? ''),
+            ]])->all()
+        );
+
         $today = now()->toDateString();
         $capturedTodayCount = $rows
             ->filter(fn ($r) => $r->captured_at
@@ -131,6 +141,7 @@ class LandCaptureController extends Controller
             'records' => $rows,
             'totalCount' => $totalCount,
             'capturedTodayCount' => $capturedTodayCount,
+            'timelineCounts' => $timelineCounts,
         ]);
     }
 
