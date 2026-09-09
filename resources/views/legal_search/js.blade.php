@@ -5330,9 +5330,20 @@ const executeSearchAjax = (filters, searchData) => {
     // The comment describes the APPLICANT's title, so it is anchored to the searched
     // file's own lifecycle block — an OP sitting on a linked/successor file is that
     // file's root, not this one's.
+    // Rows reach here through groupAndSortTimeline(), which has already folded every
+    // alias into its owning file's lifecycle — a KANGIS number onto its land file, a
+    // "(T)" or SYSTEM temp number onto its base. Read that resolved owner rather than
+    // re-deriving one from the row's own columns: extractLifecycleFileNo() answers with
+    // the SEARCHED number whenever a row names it, so on a KANGIS search (KN81 →
+    // RES-2016-2818) the file's own OP came back as "KN81" while the File Commissioning
+    // row came back as "RES-2016-2818", and the OP was judged to be another file's —
+    // dropping the Root of Title onto commissioning, where the printed report (which
+    // groups first, in LegalSearchService) put it on the OP.
+    const lifecycleOf = (r) => normalizeLifecycleFileNo(r?.lifecycle_file_no || '') || extractLifecycleFileNo(r);
+
     const commIndex = rows.findIndex((r) => r && r._is_commissioning);
     let ownFileNo = commIndex !== -1
-      ? extractLifecycleFileNo(rows[commIndex])
+      ? lifecycleOf(rows[commIndex])
       : normalizeLifecycleFileNo(
           (userSelectedFileNumber && String(userSelectedFileNumber).trim())
           || window._currentFileNumber
@@ -5342,12 +5353,12 @@ const executeSearchAjax = (filters, searchData) => {
     // A KANGIS alias (e.g. "MLKN 337") is not a lifecycle of its own — the whole timeline
     // renders under the land file it resolves to, so no row carries the searched number
     // and every row would be judged "not this file". Adopt the first row's lifecycle then.
-    if (ownFileNo && !rows.some((r) => extractLifecycleFileNo(r) === ownFileNo)) {
-      ownFileNo = extractLifecycleFileNo(rows[0]) || ownFileNo;
+    if (ownFileNo && !rows.some((r) => lifecycleOf(r) === ownFileNo)) {
+      ownFileNo = lifecycleOf(rows[0]) || ownFileNo;
     }
     const belongsToOwnFile = (r) => {
       if (!ownFileNo) return true;
-      const fn = extractLifecycleFileNo(r);
+      const fn = lifecycleOf(r);
       if (!fn) return false;
       // A SYSTEM temp number ("TEMP-91442") is the placeholder an unlinked OP capture
       // sits on, not a file of its own — such a row only reaches this timeline because
@@ -5359,12 +5370,19 @@ const executeSearchAjax = (filters, searchData) => {
     };
 
     // 1. An Occupancy Permit captured on the file roots the title in that OP.
+    //    A file can carry more than one OP — a merger registers a permit per source
+    //    parcel — and they are jointly the root, so EVERY OP on the file is tagged
+    //    rather than only the earliest. With a single OP this is the old behaviour.
+    const opIndices = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r || !belongsToOwnFile(r)) continue;
       if (canonicalWeightingInstrumentType(getMappedValue(r, 'transactionType')) === 'occupancy permit') {
-        return { index: i, label: ROOT_OF_TITLE_OP };
+        opIndices.push(i);
       }
+    }
+    if (opIndices.length) {
+      return { index: opIndices[0], indices: opIndices, label: ROOT_OF_TITLE_OP };
     }
 
     // With no OP on the file the root is not an instrument at all — it is how the FILE
@@ -5472,6 +5490,11 @@ const executeSearchAjax = (filters, searchData) => {
     // Root of Title annotation — resolved once against the final, ordered row set so
     // the comment lands under the row the reader actually sees.
     const rootOfTitle = resolveRootOfTitle(transactions);
+    // The annotation can sit on several rows (a file with more than one OP); every other
+    // rule anchors on exactly one, so a bare {index} is read as a single-row set.
+    const rootOfTitleIndices = new Set(
+      rootOfTitle ? (Array.isArray(rootOfTitle.indices) ? rootOfTitle.indices : [rootOfTitle.index]) : []
+    );
     renderRootOfTitleBanner(rootOfTitle ? rootOfTitle.label : null);
 
     const timelineTotalCount = document.getElementById('timeline-total-count');
@@ -5558,7 +5581,7 @@ const executeSearchAjax = (filters, searchData) => {
       const commentsShort = comments && comments.length > 50 ? comments.slice(0, 50) + '…' : (comments || '');
       // Root of Title rides in this row's Comments cell — it IS a comment on the record,
       // not a record of its own — sitting under any existing comment on the same row.
-      const isRootOfTitleRow = !!(rootOfTitle && rootOfTitle.index === idx);
+      const isRootOfTitleRow = !!(rootOfTitle && rootOfTitleIndices.has(idx));
       const rootOfTitleHtml = isRootOfTitleRow
         ? `<div class="ls-root-of-title">${rootOfTitleText(rootOfTitle.label)}</div>` : '';
       // The Instrument/Transaction Type cell already names the record, so the marker

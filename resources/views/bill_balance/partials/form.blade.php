@@ -128,6 +128,10 @@
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 p-3 rounded-lg bg-slate-100 border border-slate-200">
           <div>
+            <label class="form-label">House No</label>
+            <input type="text" id="app_house_number" name="app_house_number" class="form-input" value="{{ old('app_house_number') }}" placeholder="e.g., 5">
+          </div>
+          <div>
             <label class="form-label">Plot Number</label>
             <input type="text" id="app_plot_number" name="app_plot_number" class="form-input" value="{{ old('app_plot_number') }}" placeholder="e.g., 12A" required>
           </div>
@@ -197,6 +201,10 @@
       <h3 class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Location & Rent</h3>
     </div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="form-label">House No</label>
+        <input type="text" id="loc_house_number" name="loc_house_number" class="form-input" value="{{ old('loc_house_number') }}" placeholder="e.g., 5">
+      </div>
       <div>
         <label class="form-label">Plot Number</label>
         <input type="text" id="loc_plot_number" name="loc_plot_number" class="form-input" value="{{ old('loc_plot_number') }}" placeholder="e.g., 12A" required>

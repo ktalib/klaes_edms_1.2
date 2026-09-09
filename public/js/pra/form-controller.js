@@ -813,6 +813,20 @@
             if (this.instrumentOldNote) {
                 this.instrumentOldNote.classList.toggle('hidden', !this.isOldCategory());
             }
+
+            // The extra registration-number rows carry their own Type, Category and OP
+            // Serial Number, rendered by instrument_section.blade.php off this same
+            // catalogue. A programmatic instrument change fires no 'change' event, so
+            // this is the only way those rows hear about one.
+            this.container.dispatchEvent(new CustomEvent('pra:instrument-fields-changed', {
+                bubbles: true,
+                detail: {
+                    transactionType: this.state.transactionType || '',
+                    types,
+                    categories,
+                    typeColumn: this.typeColumn(),
+                },
+            }));
         }
 
 

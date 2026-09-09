@@ -272,6 +272,150 @@
         const extraRegContainer = document.getElementById('extra-reg-rows-container');
         let extraRegCount = 0;
 
+        // ── Type / Category / OP Serial Number on every extra row ──────
+        // An extra registration number is a second instrument on the same file, so it
+        // needs its own answers to the same three questions the primary row asks — a
+        // second Occupancy Permit is routinely a different Type with its own OP serial.
+        // Options come from the catalogue <script> the primary fields already read, so
+        // this holds no second copy of that table.
+        const instrumentCatalog = (function () {
+            const node = document.querySelector('[data-role="instrument-catalog"]');
+            try {
+                return node ? JSON.parse(node.textContent || '[]') : [];
+            } catch (err) {
+                console.warn('Instrument catalogue did not parse', err);
+                return [];
+            }
+        })();
+
+        function normalizeInstrumentText(value) {
+            return String(value == null ? '' : value).replace(/\s+/g, ' ').trim().toLowerCase();
+        }
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        /** What the currently selected instrument asks for: matched as the PHP side matches. */
+        function instrumentContext() {
+            const select = document.getElementById('transactionType-record');
+            const needle = normalizeInstrumentText(select ? select.value : '');
+            const entry = needle
+                ? instrumentCatalog.find(function (e) { return needle.indexOf(e.key) !== -1; })
+                : null;
+
+            return {
+                types: (entry && entry.types) || [],
+                categories: (entry && entry.categories) || [],
+                // Matched the way updateTransactionContext() matches, so the OP Serial
+                // Number appears on an extra row exactly when it appears on the primary.
+                isOp: needle.indexOf('occupancy permit') !== -1
+                    || needle.indexOf('occupation permit') !== -1
+                    || needle === 'op',
+            };
+        }
+
+        function catalogOptionsHtml(options, placeholder, current) {
+            let html = '<option value="">' + escapeHtml(placeholder) + '</option>';
+            let matched = false;
+
+            options.forEach(function (o) {
+                const isCurrent = o.value === current;
+                if (isCurrent) matched = true;
+                html += '<option value="' + escapeHtml(o.value) + '"' + (isCurrent ? ' selected' : '') + '>' +
+                    escapeHtml(o.label) + '</option>';
+            });
+
+            // A value the newly selected instrument does not offer stays selectable
+            // rather than being silently dropped — the same courtesy the primary
+            // field's fillCatalogSelect() extends.
+            if (current && !matched) {
+                html += '<option value="' + escapeHtml(current) + '" selected>' +
+                    escapeHtml(current) + ' (legacy)</option>';
+            }
+
+            return html;
+        }
+
+        /** Draw (or redraw) one row's Type, Category and OP Serial Number. */
+        function renderExtraRegInstrumentFields(row) {
+            const holder = row.querySelector('[data-role="extra-reg-instrument"]');
+            if (!holder) return;
+
+            const idx = row.dataset.extraRegIdx;
+            const ctx = instrumentContext();
+
+            // Whatever the user already picked survives a redraw when the new
+            // instrument still offers it.
+            const previous = function (field) {
+                const el = holder.querySelector('[data-field="' + field + '"]');
+                return el ? el.value : '';
+            };
+            const prevType = previous('type_value');
+            const prevCategory = previous('instrument_category');
+            const prevSerial = previous('op_serial_number');
+
+            let html = '';
+
+            if (ctx.types.length || ctx.categories.length) {
+                html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">';
+                if (ctx.types.length) {
+                    html += '<div>' +
+                        '<label class="text-xs text-gray-600">Type</label>' +
+                        '<select data-field="type_value" name="extra_regs[' + idx + '][type_value]" ' +
+                            'class="form-select text-xs py-1">' +
+                            catalogOptionsHtml(ctx.types, 'Select type', prevType) +
+                        '</select>' +
+                    '</div>';
+                }
+                if (ctx.categories.length) {
+                    html += '<div>' +
+                        '<label class="text-xs text-gray-600">Category</label>' +
+                        '<select data-field="instrument_category" name="extra_regs[' + idx + '][instrument_category]" ' +
+                            'class="form-select text-xs py-1">' +
+                            catalogOptionsHtml(ctx.categories, 'Select category', prevCategory) +
+                        '</select>' +
+                    '</div>';
+                }
+                html += '</div>';
+            }
+
+            if (ctx.isOp) {
+                // Second column only, so it lands under Category exactly as it does on
+                // the primary row (whose left cell holds the hidden op_type input).
+                html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-3">' +
+                    '<div></div>' +
+                    '<div>' +
+                        '<label class="text-xs text-gray-600">OP Serial Number</label>' +
+                        '<input data-field="op_serial_number" name="extra_regs[' + idx + '][op_serial_number]" ' +
+                            'class="form-input text-xs py-1" placeholder="Enter OP serial number" type="text" ' +
+                            'autocomplete="off" value="' + escapeHtml(prevSerial) + '" ' +
+                            'oninput="this.value = this.value.replace(/[^0-9]/g, &quot;&quot;).replace(/^0+/, &quot;&quot;)">' +
+                    '</div>' +
+                '</div>';
+            }
+
+            holder.innerHTML = html;
+            // An empty holder is still a child of a space-y-3 row, so it would leave a
+            // phantom gap for an instrument that asks none of these three questions.
+            holder.classList.toggle('hidden', html === '');
+        }
+
+        function refreshExtraRegInstrumentFields() {
+            if (!extraRegContainer) return;
+            extraRegContainer.querySelectorAll('[data-extra-reg-idx]').forEach(renderExtraRegInstrumentFields);
+        }
+
+        // Both routes are needed: the event covers an instrument the controller selects
+        // itself (which fires no 'change'), the listener covers a plain user pick.
+        document.addEventListener('pra:instrument-fields-changed', refreshExtraRegInstrumentFields);
+        const instrumentTypeSelect = document.getElementById('transactionType-record');
+        if (instrumentTypeSelect) {
+            instrumentTypeSelect.addEventListener('change', refreshExtraRegInstrumentFields);
+        }
+
         if (addRegRowBtn && extraRegContainer) {
             addRegRowBtn.addEventListener('click', function () {
                 const idx = extraRegCount++;
@@ -322,7 +466,11 @@
                             '<input name="extra_regs[' + idx + '][deeds_time]" type="time" class="form-input text-xs py-1">' +
                         '</div>' +
                     '</div>' +
-                    // Row 3: Land Use / Period+Unit
+                    // Row 3: Type / Category / OP Serial Number — filled by
+                    // renderExtraRegInstrumentFields() from the shared catalogue, and
+                    // re-filled whenever the instrument type changes under the row.
+                    '<div data-role="extra-reg-instrument" class="space-y-3"></div>' +
+                    // Row 4: Land Use / Period+Unit
                     '<div class="grid grid-cols-2 gap-3">' +
                         '<div>' +
                             '<label class="text-xs text-gray-600">Land Use</label>' +
@@ -343,6 +491,7 @@
                         '</div>' +
                     '</div>';
                 extraRegContainer.appendChild(row);
+                renderExtraRegInstrumentFields(row);
             });
         }
     });

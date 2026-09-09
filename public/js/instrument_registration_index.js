@@ -1454,7 +1454,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (pageData.length === 0) {
             tableBody.innerHTML = `
                 <tr>
-                    <td colspan="16" class="px-6 py-10 text-center text-gray-500">
+                    <td colspan="17" class="px-6 py-10 text-center text-gray-500">
                         No instrument registrations found matching your criteria.
                     </td>
                 </tr>
@@ -1690,6 +1690,18 @@ document.addEventListener('DOMContentLoaded', function () {
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${app.district || '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${app.plotNumber || '-'}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${app.size || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        <div class="flex flex-col items-start gap-1">
+                            <span class="font-mono text-xs">${app.prop_id || '-'}</span>
+                            ${(app.prop_id || app.fileno) ? `
+                                <button type="button"
+                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                                    onclick="openPropertyTimeline('${app.prop_id || ''}', '${app.fileno || ''}')"
+                                    title="View the full property timeline">
+                                    <i class="fas fa-history"></i> Timeline
+                                </button>` : ''}
+                        </div>
+                    </td>
 
                     ${(() => {
                         const urlParams = new URLSearchParams(window.location.search);

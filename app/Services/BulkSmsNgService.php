@@ -53,6 +53,22 @@ class BulkSmsNgService
         '609' => 'accepted but deferred — telcos do not deliver promotional SMS overnight',
     ];
 
+    /**
+     * What one of those codes means, for anything reading the log back.
+     *
+     * The map is private because it is this class's business what a code means;
+     * this accessor exists so the SMS pages can show the vendor's own wording on
+     * a stored row without keeping a second copy of it that drifts.
+     */
+    public static function describeCode(?string $code): ?string
+    {
+        if ($code === null || $code === '') {
+            return null;
+        }
+
+        return self::STATUS_TEXT[$code] ?? null;
+    }
+
     /** Plain-language reason the last send() failed, or null if it succeeded. */
     public function lastFailureReason(): ?string
     {

@@ -122,6 +122,10 @@ class LandRecommendation extends Model
         'type',
         'application_type',
         'use_standard_template',
+        // Single-file subdivision: a child whose mother file is not indexed, so it
+        // was never captured through a batch. The mother file number itself is
+        // this record's old_file_number. See the RofO template's PLOT/PLAN No. block.
+        'use_subdivision_template',
         'is_reissuance',
         'reissuance_source',
         'reissued_from_id',
@@ -169,6 +173,7 @@ class LandRecommendation extends Model
         'application_date' => 'date',
         'date_issued' => 'date',
         'use_standard_template' => 'boolean',
+        'use_subdivision_template' => 'boolean',
         'is_reissuance' => 'boolean',
         'is_existing_recommendation' => 'boolean',
         'reissuance_original_date' => 'date',

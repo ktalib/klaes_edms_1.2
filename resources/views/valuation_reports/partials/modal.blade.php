@@ -133,6 +133,10 @@
                                                     <input type="text" x-model="formData.addr_house_no" @input="concatAddress()" placeholder="House No." class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl outline-none font-semibold text-xs text-black">
                                                 </div>
                                                 <div class="space-y-1">
+                                                    <label class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter"> Plot No.</label>
+                                                    <input type="text" x-model="formData.plot_no" placeholder="Plot No." class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl outline-none font-semibold text-xs text-black uppercase">
+                                                </div>
+                                                <div class="space-y-1">
                                                     <label class="text-[9px] font-bold text-slate-400 uppercase tracking-tighter"> Street Name (d)</label>
                                                     <input type="text" x-model="formData.addr_street" @input="concatAddress()" placeholder="Street Name" class="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl outline-none font-semibold text-xs text-black uppercase">
                                                 </div>
@@ -765,6 +769,7 @@
                 
                 // Section A
                 property_no: '',
+                plot_no: '',
                 street_name: '',
                 estate_quarters: '',
                 neighborhood_characteristics: '',
@@ -945,6 +950,7 @@
                     addr_lga: '',
                     addr_state: 'Kano',
                     property_no: '',
+                    plot_no: '',
                     street_name: '',
                     estate_quarters: '',
                     town_city: '',

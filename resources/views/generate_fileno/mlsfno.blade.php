@@ -269,6 +269,7 @@
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">File Title</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">House No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">District</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">LGA</th>
@@ -1840,6 +1841,20 @@
                                                         </div>
                                                     </template>
                                                 </div>
+                                            </div>
+
+                                            <!-- House No: what is on the building, not the survey
+                                                 parcel. Kept apart from Plot Number, which a parcel
+                                                 may carry as well as, or instead of, a house number. -->
+                                            <div>
+                                                <label for="houseNo" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    House No
+                                                </label>
+                                                <input type="text" id="houseNo" name="house_no"
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.houseNo : houseNo"
+                                                       @input="batchMode ? updateLocationEntry('houseNo', $event.target.value) : houseNo = $event.target.value"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       placeholder="Enter house number">
                                             </div>
 
                                             <!-- Plot Number: plain text input -->
@@ -3440,6 +3455,45 @@
                 </div>
                 <a id="mlsfMapModalExternal" href="#" target="_blank" rel="noopener"
                    class="font-semibold text-blue-700 hover:text-blue-900 hover:underline">Open in OpenStreetMap</a>
+            </div>
+        </div>
+    </div>
+
+    {{-- Every related file number captured for a file at commissioning. The MLS File No
+         cell shows the first one inline; a file can carry several (a merger quotes each
+         source file, an RC its original, plus anything typed under "Add Another Related
+         File"), and listing them all in the cell wrapped the column onto five lines --
+         so the full list opens here, the same card idiom as the Indexed Files table. --}}
+    <div id="mlsfRelatedFilesModal" class="fixed inset-0 z-[200] hidden">
+        <div class="absolute inset-0 bg-black/50" onclick="closeMlsfRelatedFilesModal()"></div>
+        <div class="relative mx-auto my-10 w-[92%] max-w-2xl rounded-lg bg-white shadow-xl">
+            <div class="flex items-start justify-between gap-3 border-b border-gray-200 px-5 py-3">
+                <div class="min-w-0">
+                    <h3 class="text-sm font-bold text-gray-900">Related File Numbers</h3>
+                    <p id="mlsfRelatedFilesSubtitle" class="truncate text-xs text-gray-500"></p>
+                </div>
+                <button type="button" onclick="closeMlsfRelatedFilesModal()"
+                        class="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700">
+                    <i data-lucide="x" class="h-4 w-4"></i>
+                </button>
+            </div>
+            <div class="max-h-[60vh] overflow-y-auto">
+                <table class="w-full text-sm">
+                    <thead class="sticky top-0 bg-gray-50 text-left text-[11px] font-bold uppercase tracking-wider text-gray-600">
+                        <tr>
+                            <th class="px-5 py-2.5 w-10">#</th>
+                            <th class="px-5 py-2.5">Related File Number</th>
+                            <th class="px-5 py-2.5">Relationship</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mlsfRelatedFilesBody" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
+            <div class="flex items-center justify-end border-t border-gray-200 bg-gray-50 px-5 py-2.5">
+                <button type="button" onclick="closeMlsfRelatedFilesModal()"
+                        class="rounded-md border border-gray-300 bg-white px-4 py-1.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-100">
+                    Close
+                </button>
             </div>
         </div>
     </div>

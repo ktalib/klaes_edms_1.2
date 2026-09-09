@@ -607,8 +607,13 @@ class FileNumberController extends Controller
                 Log::warning('Could not prime passports for the file-number list', ['error' => $e->getMessage()]);
             }
 
+            // Every related file number entered at commissioning, for the whole page in
+            // one query. Read from the register rather than fileNumber.related_fileno,
+            // which only ever held the primary number.
+            $relatedFilesMap = $this->relatedFileNumbersForRows($fileRows);
+
             // ── Format F rows into a map keyed by fileNumber.id ──
-            $fileMap = collect($fileRows)->map(function ($row) {
+            $fileMap = collect($fileRows)->map(function ($row) use ($relatedFilesMap) {
                 // Build primaryFileNo: first non-empty of mlsfNo, kangisFileNo, NewKANGISFileNo, st_file_no
                 $primaryFileNo = collect([
                     $row->mlsfNo ?? '',
@@ -654,6 +659,8 @@ class FileNumberController extends Controller
                     ),
                     'root_of_title_ref' => $this->rootOfTitleReference($rowFileNo, $relatedOrOld),
                     'related_old_fileno' => $relatedOrOld,
+                    // Every related number, not just the one the inline badge shows.
+                    'related_files' => $relatedFilesMap[$row->id] ?? [],
                     'primaryFileNo' => $primaryFileNo,
                     'relatedFileNo' => $relatedFileNo,
                     'mlsfNo' => trim($row->mlsfNo ?? '') ?: 'N/A',
@@ -776,6 +783,12 @@ class FileNumberController extends Controller
                         ),
                         'root_of_title_ref'           => '',
                         'related_old_fileno'          => $this->formatRelatedOrOldFileNo(null, $row->old_fileno ?? null),
+                        // A temporary number carries no commissioning related-file list.
+                        'related_files'               => array_values(array_filter([
+                            trim((string) ($row->old_fileno ?? '')) !== ''
+                                ? ['file_no' => trim((string) $row->old_fileno), 'type' => 'Old File Number']
+                                : null,
+                        ])),
                         'created_by'                  => trim($row->created_by ?? '') ?: 'System',
                         'source'                      => trim($row->source ?? '') ?: 'Temporary File',
                         'source_instrument_capture_id'=> null,
@@ -1001,6 +1014,7 @@ class FileNumberController extends Controller
                 ),
                 'root_of_title_ref'           => '',
                 'related_old_fileno'          => ['value' => 'N/A', 'kind' => 'none'],
+                'related_files'               => [],
                 'latitude'                    => $this->formatCoordinate($row->latitude ?? null),
                 'longitude'                   => $this->formatCoordinate($row->longitude ?? null),
                 'created_by'                  => trim($row->created_by ?? '') ?: 'System',
@@ -2111,6 +2125,129 @@ class FileNumberController extends Controller
                 'message' => 'Error updating record: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Every related file number recorded against this page's rows, keyed by fileNumber.id.
+     *
+     * File Commissioning writes one `related_file_number` row per link -- the typed
+     * entries from the related-files widget plus every plain one
+     * (see RelatedFileNumberRegistrar / MlsFileNoController::storeRelatedFileLinks) --
+     * so the register is the only store that holds ALL of them.
+     * `fileNumber.related_fileno` historically received the primary number only, and
+     * `mls_file_no.old_fileno` holds a single previous number, so both are merged in
+     * rather than read on their own.
+     *
+     * @param  array<int,object> $fileRows  enriched F rows, keyed by fileNumber.id
+     * @return array<int,array<int,array{file_no:string,type:string}>>
+     */
+    private function relatedFileNumbersForRows(array $fileRows): array
+    {
+        if (empty($fileRows)) {
+            return [];
+        }
+
+        $norm = fn ($v) => strtoupper(trim((string) $v));
+
+        // Every number each row may be registered under, so a file commissioned as MLS
+        // but registered under its KANGIS number is still found.
+        $numbersByRow = [];
+        $lookup = [];
+        foreach ($fileRows as $id => $row) {
+            $numbers = [];
+            foreach ([$row->mlsfNo ?? null, $row->kangisFileNo ?? null, $row->NewKANGISFileNo ?? null, $row->st_file_no ?? null] as $candidate) {
+                $clean = trim((string) $candidate);
+                if ($clean !== '' && $clean !== 'N/A') {
+                    $numbers[$norm($clean)] = $clean;
+                }
+            }
+            $numbersByRow[$id] = $numbers;
+            foreach ($numbers as $key => $clean) {
+                $lookup[$key] = $clean;
+            }
+        }
+
+        // Register rows for the whole page in one query. A page is capped at the
+        // DataTables length (20), so the IN list stays far inside SQL Server's
+        // 2,100-parameter ceiling.
+        $registered = [];
+        if (!empty($lookup)) {
+            try {
+                if (\Illuminate\Support\Facades\Schema::connection('sqlsrv')->hasTable('related_file_number')) {
+                    $rows = DB::connection('sqlsrv')
+                        ->table('related_file_number')
+                        ->whereIn('file_number', array_values($lookup))
+                        ->orderBy('id')
+                        ->get(['file_number', 'related_fileno', 'transaction_type']);
+
+                    foreach ($rows as $r) {
+                        $related = trim((string) ($r->related_fileno ?? ''));
+                        if ($related === '') {
+                            continue;
+                        }
+                        $registered[$norm($r->file_number)][] = [
+                            'file_no' => $related,
+                            'type' => trim((string) ($r->transaction_type ?? '')) ?: 'Related File',
+                        ];
+                    }
+                }
+            } catch (\Throwable $e) {
+                // The register is an enrichment: a failure here must not take the
+                // listing down, it just falls back to the columns below.
+                Log::warning('Could not read the related file number register for the file list', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        $result = [];
+        foreach ($fileRows as $id => $row) {
+            $entries = [];
+            $seen = [];
+            $ownNumbers = $numbersByRow[$id] ?? [];
+
+            $add = function (?string $fileNo, string $type) use (&$entries, &$seen, $ownNumbers, $norm) {
+                $clean = trim((string) $fileNo);
+                if ($clean === '' || $clean === 'N/A' || $clean === '[]') {
+                    return;
+                }
+                $key = $norm($clean);
+                // A file is not related to itself.
+                if (isset($ownNumbers[$key]) || isset($seen[$key])) {
+                    return;
+                }
+                $seen[$key] = true;
+                $entries[] = ['file_no' => $clean, 'type' => $type];
+            };
+
+            // Old number first: formatRelatedOrOldFileNo() has always let it win over
+            // the related list, and the cell badge takes its headline from position 1,
+            // so leading with it keeps a re-issued file reading as OLD rather than REL.
+            $add($row->derived_old_fileno ?? null, 'Old File Number');
+
+            foreach ($ownNumbers as $key => $clean) {
+                foreach ($registered[$key] ?? [] as $entry) {
+                    $add($entry['file_no'], $entry['type']);
+                }
+            }
+
+            // fileNumber.related_fileno: a JSON array on newer rows, plain
+            // comma-separated text on the ones that predate it.
+            $raw = trim((string) ($row->derived_related_fileno ?? ''));
+            if ($raw !== '') {
+                $decoded = json_decode($raw, true);
+                $parts = (json_last_error() === JSON_ERROR_NONE && is_array($decoded))
+                    ? $decoded
+                    : explode(',', $raw);
+                foreach ($parts as $part) {
+                    $add(is_scalar($part) ? (string) $part : null, 'Related File');
+                }
+            }
+
+            $result[$id] = $entries;
+        }
+
+        return $result;
     }
 
     /**

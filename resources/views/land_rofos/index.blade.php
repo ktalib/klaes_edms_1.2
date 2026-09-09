@@ -544,7 +544,7 @@
                                             <div class="py-1">
                                                 {{-- The OSS view is read-only for the record itself; only serial + print actions apply there. --}}
                                                 @if(!$ossViewOnly)
-                                                <button type="button" onclick="editRofORecord('{{ $rec->id }}', '{{ route('land-recommendations.edit', $rec->id) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
+                                                <button type="button" onclick="editRofORecord('{{ $rec->id }}', '{{ route('land-recommendations.edit', [$rec->id, 'return_to' => 'rofo', 'return_tab' => $tab]) }}')" class="flex w-full items-center px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition gap-2">
                                                     <i data-lucide="edit-3" class="h-4 w-4"></i> Edit Record
                                                 </button>
 

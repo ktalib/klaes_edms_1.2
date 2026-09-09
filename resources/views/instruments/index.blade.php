@@ -165,6 +165,12 @@
                                 </thead>
                             <tbody>
                                 @forelse($instruments as $instrument)
+                                    @php
+                                        // Occupancy Permits record an existing paper permit rather than a
+                                        // registered instrument, so they carry no solicitor of their own.
+                                        // Used by the type badge and to withhold the solicitor action below.
+                                        $isOP = stripos($instrument->instrument_type ?? '', 'Occupancy Permit') !== false;
+                                    @endphp
                                     <tr class="instrument-row" data-volume="{{ $instrument->volume_no ?? '' }}">
                                         <td class="align-top">
                                             <span class="badge bg-gray-100 text-gray-800 border border-gray-200 rounded-full px-3 py-1 whitespace-nowrap font-mono text-xs tracking-wide">
@@ -208,7 +214,6 @@
                                                         => 'bg-teal-100 text-teal-800 border-teal-200',
                                                     default => 'bg-blue-100 text-blue-800 border-blue-200',
                                                 };
-                                                $isOP = stripos($itype, 'Occupancy Permit') !== false;
                                             @endphp
                                             <div class="flex flex-col gap-1">
                                                 <span class="badge border {{ $itypeBadge }} self-start whitespace-nowrap">
@@ -373,16 +378,19 @@
                                                     </button>
                                                 </form>
 
-                                                <div class="border-t border-gray-100 my-1"></div>
-
                                                 {{-- Solicitor details are hand-keyed at capture and are the one part of
                                                      a captured instrument officers routinely have to correct afterwards.
                                                      Full Edit is disabled on this screen, so this opens a small modal
-                                                     carrying the capture card's Solicitor fields. --}}
-                                                <a href="#" onclick="showUpdateSolicitorModal('{{ $instrument->id }}'); return false;"
-                                                   class="flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:bg-indigo-50 transition" role="menuitem">
-                                                    <i data-lucide="briefcase" class="w-4 h-4"></i> Update Solicitors Details
-                                                </a>
+                                                     carrying the capture card's Solicitor fields. Every instrument type
+                                                     gets it except an OP, which has no solicitor to correct. --}}
+                                                @unless($isOP)
+                                                    <div class="border-t border-gray-100 my-1"></div>
+
+                                                    <a href="#" onclick="showUpdateSolicitorModal('{{ $instrument->id }}'); return false;"
+                                                       class="flex items-center gap-2 px-4 py-2 text-sm text-indigo-600 hover:bg-indigo-50 transition" role="menuitem">
+                                                        <i data-lucide="briefcase" class="w-4 h-4"></i> Update Solicitors Details
+                                                    </a>
+                                                @endunless
 
                                                 @if(!empty($instrument->registered_instrument_id))
                                                     <div class="border-t border-gray-100 my-1"></div>

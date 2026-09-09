@@ -18,6 +18,7 @@ class ValuationReport extends Model
         'full_name',
         'address',
         'property_no',
+        'plot_no',
         'street_name',
         'estate_quarters',
         'town_city',

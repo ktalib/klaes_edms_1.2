@@ -103,6 +103,10 @@ class LandCaptureController extends Controller
                     'receipt_no' => $row->receipt_no,
                     'deeds_date' => $row->deeds_date ?: $row->transaction_date,
                     'deeds_time' => $row->deeds_time,
+                    // When the deed itself was executed, as distinct from the
+                    // day the registry entered it. PRA keeps its own column for
+                    // this; deeds_date is the registration.
+                    'transaction_date' => $row->transaction_date,
                     'captured_at' => $row->created_at,
                     'plot_number' => $row->plot_no,
                     'size' => $row->plot_size,

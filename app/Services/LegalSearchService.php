@@ -8571,8 +8571,13 @@ class LegalSearchService
         // 1. An Occupancy Permit captured on the file roots the title in that OP.
         //    "Transfer of Title (OP)" is deliberately not a match — it moves a title
         //    that an OP already created.
+        //
+        //    A file can carry more than one OP — a merger registers a permit per source
+        //    parcel — and they are jointly the root, so EVERY OP on the file is tagged
+        //    rather than only the earliest. With a single OP this is the old behaviour.
         $targetIndex = null;
         $label = null;
+        $opIndexes = [];
         foreach ($rows as $i => $row) {
             $type = strtolower(trim((string) ($row['instrument_type'] ?? '')));
             if ($type === '' || !str_contains($type, 'occupancy permit')) {
@@ -8581,9 +8586,11 @@ class LegalSearchService
             if (!$belongsToOwnFile($row)) {
                 continue;
             }
-            $targetIndex = $i;
+            $opIndexes[] = $i;
+        }
+        if (!empty($opIndexes)) {
+            $targetIndex = $opIndexes[0];
             $label = 'Occupancy Permit (OP)';
-            break;
         }
 
         // With no OP on the file the root is not an instrument at all — it is how the FILE
@@ -8691,7 +8698,10 @@ class LegalSearchService
             return $rows;
         }
 
-        $rows[$targetIndex]['root_of_title'] = $label;
+        // Every OP row when the root is the file's OPs; otherwise the single anchor row.
+        foreach (!empty($opIndexes) ? $opIndexes : [$targetIndex] as $rowIndex) {
+            $rows[$rowIndex]['root_of_title'] = $label;
+        }
 
         return $rows;
     }

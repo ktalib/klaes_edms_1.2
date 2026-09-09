@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const locationStationInput = document.getElementById('location_station');
   const districtHiddenInput = document.getElementById('district');
 
+  const appHouseNumberInput = document.getElementById('app_house_number');
   const appPlotNumberInput = document.getElementById('app_plot_number');
   const appStreetNameInput = document.getElementById('app_street_name');
   const appStreetOtherWrapper = document.getElementById('app-street-other-wrapper');
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const appLgaInput = document.getElementById('app_lga');
   const appStateInput = document.getElementById('app_state');
 
+  const locHouseNumberInput = document.getElementById('loc_house_number');
   const locPlotNumberInput = document.getElementById('loc_plot_number');
   const locStreetNameInput = document.getElementById('loc_street_name');
   const locStreetOtherWrapper = document.getElementById('loc-street-other-wrapper');
@@ -474,6 +476,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const plotNo = (appPlotNumberInput?.value || '').trim();
     const street = selectedOrOther(appStreetNameInput, appStreetOtherInput);
     const values = [
+      // House number is the number on the building; it leads the address when given.
+      (appHouseNumberInput?.value || '').trim(),
       plotNo ? plotNo : street,
       selectedOrOther(appDistrictInput, appDistrictOtherInput),
       (appLgaInput?.value || '').trim(),
@@ -493,6 +497,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const plotNo = (locPlotNumberInput?.value || '').trim();
     const street = selectedOrOther(locStreetNameInput, locStreetOtherInput);
     const values = [
+      // House number is the number on the building; it leads the address when given.
+      (locHouseNumberInput?.value || '').trim(),
       plotNo ? plotNo : street,
       districtValue,
       (locLgaInput?.value || '').trim(),
@@ -613,13 +619,13 @@ document.addEventListener('DOMContentLoaded', () => {
   amountInput?.addEventListener('input', calculateTotal);
   amountInput?.addEventListener('change', calculateTotal);
 
-  [appPlotNumberInput, appStreetNameInput, appStreetOtherInput, appDistrictInput, appDistrictOtherInput, appLgaInput, appStateInput]
+  [appHouseNumberInput, appPlotNumberInput, appStreetNameInput, appStreetOtherInput, appDistrictInput, appDistrictOtherInput, appLgaInput, appStateInput]
     .forEach((input) => {
       input?.addEventListener('input', updateApplicantAddressOutput);
       input?.addEventListener('change', updateApplicantAddressOutput);
     });
 
-  [locPlotNumberInput, locStreetNameInput, locStreetOtherInput, locDistrictInput, locDistrictOtherInput, locLgaInput, locStateInput]
+  [locHouseNumberInput, locPlotNumberInput, locStreetNameInput, locStreetOtherInput, locDistrictInput, locDistrictOtherInput, locLgaInput, locStateInput]
     .forEach((input) => {
       input?.addEventListener('input', updateLocationAddressOutput);
       input?.addEventListener('change', updateLocationAddressOutput);
@@ -712,6 +718,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setValue('location_station', record.location_station);
 
         // Backfill applicant-address sub-fields (Plot / Street / District / LGA / State)
+        setValue('app_house_number', record.app_house_number);
         setValue('app_plot_number', record.app_plot_number);
         setValue('app_lga', record.app_lga);
         setValue('app_state', record.app_state);
@@ -731,6 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Backfill location sub-fields (Plot / Street / District / LGA / State)
+        setValue('loc_house_number', record.loc_house_number);
         setValue('loc_plot_number', record.loc_plot_number);
         setValue('loc_lga', record.loc_lga);
         setValue('loc_state', record.loc_state);
@@ -805,6 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
       'reference', 'file_number', 'applicant_name', 'applicant_address',
       'location_station', 'district', 'amount', 'prepared_at', 'date_of_expiry',
       'rent_from_year', 'rent_to_year',
+      'app_house_number', 'loc_house_number',
       'bill_balance_reciept', 'bill_balance_date',
       'Site_Plan_Fee', 'survey_fee', 'Processing_Fee',
       'Betterment_Charges', 'Land_Use_Charge', 'Penalty_Fees'
@@ -837,9 +846,11 @@ document.addEventListener('DOMContentLoaded', () => {
     applicantNameInput,
     applicantAddressInput,
     locationStationInput,
+    appHouseNumberInput,
     appPlotNumberInput,
     appStreetOtherInput,
     appDistrictOtherInput,
+    locHouseNumberInput,
     locPlotNumberInput,
     locStreetOtherInput,
     locDistrictOtherInput,

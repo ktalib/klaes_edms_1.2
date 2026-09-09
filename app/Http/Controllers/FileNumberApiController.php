@@ -550,10 +550,14 @@ class FileNumberApiController extends Controller
                 'file_name' => $row->file_title,
                 'plot_no' => $row->plot_number,
                 'tp_no' => $row->tp_no,
-                'location' => $row->district,
+                // The indexing row carries its own location; district is only the
+                // fallback for the legacy rows that never had one.
+                'location' => $this->firstFilled($row->location ?? null, $row->district ?? null),
                 'district' => $row->district,
                 'street_name' => $row->street_name ?? null,
                 'lga' => $row->lga,
+                'latitude' => $row->latitude ?? null,
+                'longitude' => $row->longitude ?? null,
                 'tracking_id' => $row->tracking_id,
                 'num_pages' => $row->pagetypings_count ?? null,
                 'in_digital_archive' => true,
@@ -1636,6 +1640,12 @@ class FileNumberApiController extends Controller
             $selects[] = 'fi.district as fi_district';
             $selects[] = 'fi.street_name as fi_street_name';
             $selects[] = 'fi.file_title as fi_file_title';
+            // Location and the map pin live only on the indexing row -- neither
+            // fileNumber nor mother_applications has them -- so a caller inheriting a
+            // property's location from a related file has nothing to read without these.
+            $selects[] = 'fi.location as fi_location';
+            $selects[] = 'fi.latitude as fi_latitude';
+            $selects[] = 'fi.longitude as fi_longitude';
             
             $selects[] = DB::raw("LTRIM(RTRIM(CONCAT(ISNULL(creator_users.first_name, ''), CASE WHEN ISNULL(creator_users.last_name, '') = '' THEN '' ELSE ' ' END, ISNULL(creator_users.last_name, '')))) as created_by_name");
         }
@@ -1678,6 +1688,11 @@ class FileNumberApiController extends Controller
             return $explicit;
         }
 
+        $indexed = trim((string) ($record['fi_location'] ?? ''));
+        if ($indexed !== '') {
+            return $indexed;
+        }
+
         $parts = array_values(array_filter([
             $record['ma_house_no'] ?? null,
             $record['ma_street_name'] ?? null,
@@ -1707,6 +1722,8 @@ class FileNumberApiController extends Controller
             'street_name' => $this->firstFilled($record['fi_street_name'] ?? null, $record['ma_street_name'] ?? null),
             'plot_no'     => $this->firstFilled($record['plot_no'] ?? null, $record['fi_plot_no'] ?? null, $record['ma_plot_no'] ?? null),
             'tp_no'    => $record['tp_no'] ?? $record['fi_tp_no'] ?? null,
+            'latitude'    => $this->firstFilled($record['fi_latitude'] ?? null),
+            'longitude'   => $this->firstFilled($record['fi_longitude'] ?? null),
             'type' => $record['type'] ?? null,
             'source' => $record['SOURCE'] ?? null,
             'tracking_id' => $record['tracking_id'] ?? null,

@@ -45,6 +45,8 @@
 
 <!-- jsPDF Library for PDF Generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js">    </script>
+{{-- Captures the File Tracking Sheet for page 2 of the commissioning sheet. --}}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.7.1/jspdf.plugin.autotable.min.js"></script>
 
 @php
@@ -1132,8 +1134,94 @@
     window.openMlsfMapModal = openMlsfMapModal;
     window.closeMlsfMapModal = closeMlsfMapModal;
 
+    // ── Related File Numbers card ────────────────────────────────────────────────
+    // The full list already travels with the row (FileNumberController reads the
+    // related_file_number register once per page), so opening the card costs no
+    // round-trip.
+    function escapeMlsfHtml(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // One reading of "what is this file related to", used by both the cell renderer
+    // and the card. The server sends related_files -- the full related_file_number
+    // register for the row -- but a row whose register read failed, or a source that
+    // has no register rows at all (temporary numbers, plot extensions), still carries
+    // the legacy related_old_fileno string, so that is the fallback rather than a
+    // silently empty list.
+    function mlsfRelatedFilesFor(row) {
+        if (!row) return [];
+
+        const list = Array.isArray(row.related_files) ? row.related_files : [];
+        if (list.length) {
+            return list.filter(e => e && String(e.file_no || '').trim() !== '');
+        }
+
+        const relOld = row.related_old_fileno;
+        if (!relOld || !relOld.kind || relOld.kind === 'none' || !relOld.value || relOld.value === 'N/A') {
+            return [];
+        }
+
+        // Written as a comma-joined string by formatRelatedOrOldFileNo().
+        const type = relOld.kind === 'old' ? 'Old File Number' : 'Related File';
+        return String(relOld.value)
+            .split(',')
+            .map(v => v.trim())
+            .filter(v => v !== '')
+            .map(v => ({ file_no: v, type: type }));
+    }
+
+    function openMlsfRelatedFilesModal(fileNumber, relatedFiles) {
+        const modal = document.getElementById('mlsfRelatedFilesModal');
+        const body = document.getElementById('mlsfRelatedFilesBody');
+        const subtitle = document.getElementById('mlsfRelatedFilesSubtitle');
+        if (!modal || !body) return;
+
+        const rows = Array.isArray(relatedFiles) ? relatedFiles : [];
+        if (subtitle) {
+            subtitle.textContent = `${String(fileNumber || '').toUpperCase()} — ${rows.length} related file number${rows.length === 1 ? '' : 's'}`;
+        }
+
+        body.innerHTML = rows.length
+            ? rows.map((entry, index) => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-5 py-2.5 text-xs text-gray-400">${index + 1}</td>
+                    <td class="px-5 py-2.5 font-mono text-sm font-bold text-sky-700">${escapeMlsfHtml(String(entry.file_no || '').toUpperCase())}</td>
+                    <td class="px-5 py-2.5">
+                        <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-[11px] font-semibold text-gray-600">
+                            ${escapeMlsfHtml(entry.type || 'Related File')}
+                        </span>
+                    </td>
+                </tr>`).join('')
+            : '<tr><td colspan="3" class="px-5 py-8 text-center text-sm italic text-gray-400">No related file numbers recorded for this file.</td></tr>';
+
+        modal.classList.remove('hidden');
+        if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            window.lucide.createIcons();
+        }
+    }
+
+    function closeMlsfRelatedFilesModal() {
+        document.getElementById('mlsfRelatedFilesModal')?.classList.add('hidden');
+    }
+
+    window.openMlsfRelatedFilesModal = openMlsfRelatedFilesModal;
+    window.closeMlsfRelatedFilesModal = closeMlsfRelatedFilesModal;
+
+    $(document).on('click', '#mlsfTable tbody .mlsf-related-files-btn', function () {
+        const rowData = table ? table.row($(this).closest('tr')).data() : null;
+        if (!rowData) return;
+        openMlsfRelatedFilesModal(rowData.mlsfNo || rowData.primaryFileNo, mlsfRelatedFilesFor(rowData));
+    });
+
     document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape') closeMlsfMapModal();
+        if (e.key === 'Escape') {
+            closeMlsfMapModal();
+            closeMlsfRelatedFilesModal();
+        }
     });
 
         table = $('#mlsfTable').DataTable({
@@ -1308,18 +1396,24 @@
                         } else {
                             html = `<div class="font-bold text-gray-900">${display}</div>`;
                         }
-                        // The related / old file number belongs to this file number, so it
-                        // sits directly beneath it. Only ever one of the two is populated —
-                        // an "Old File Number" tick on the Edit modal stores it on
-                        // mls_file_no.old_fileno, an untick on fileNumber.related_fileno —
-                        // so the badge says which rather than blurring them together.
+                        // The related / old file numbers belong to this file number, so
+                        // they sit directly beneath it. The badge says which kind it is —
+                        // amber OLD for a previous number ("Old File Number" ticked on the
+                        // Edit modal, stored on mls_file_no.old_fileno), sky REL for a
+                        // related one — rather than blurring the two together.
+                        // Every related number recorded for this file, primary first.
+                        // mlsfRelatedFilesFor() merges the register with the two legacy
+                        // columns; the click handler calls the same function, so the card
+                        // always lists exactly what the count promises.
                         const relOld = row.related_old_fileno;
-                        if (relOld && relOld.kind && relOld.kind !== 'none' && relOld.value && relOld.value !== 'N/A') {
+                        const relatedList = mlsfRelatedFilesFor(row);
+                        if (relatedList.length) {
                             // The number carries its badge's colour so the two read as one
                             // label: amber for a previous (old) number, sky for a related
                             // one. Grey text next to a coloured badge made the value look
                             // like an afterthought rather than part of the same fact.
-                            const isOld = relOld.kind === 'old';
+                            const isOld = (relOld && relOld.kind === 'old')
+                                || String(relatedList[0].type || '').toLowerCase() === 'old file number';
                             const relBadge = isOld
                                 ? '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-200 mr-1">OLD</span>'
                                 : '<span class="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-sky-100 text-sky-700 border border-sky-200 mr-1">REL</span>';
@@ -1328,13 +1422,32 @@
                             // A recertification is not its own Root of Title — the file it
                             // was raised from is — so the marker rides on this number
                             // rather than under the title. The server decides which.
-                            const rotRef = String(row.root_of_title_ref || '').trim();
-                            const carriesRoot = rotRef && rotRef.toUpperCase() === String(relOld.value).trim().toUpperCase();
-                            const rootMark = carriesRoot
+                            const rotRef = String(row.root_of_title_ref || '').trim().toUpperCase();
+
+                            // Only ONE number is printed in the cell. A file can carry many
+                            // — a merger quotes every source file, 30 is not unusual — and
+                            // printing them all pushed the column onto that many lines. When
+                            // one of them is the Root of Title that is the one worth showing;
+                            // otherwise the first.
+                            const headline = (rotRef && relatedList.find(e => String(e.file_no).trim().toUpperCase() === rotRef))
+                                || relatedList[0];
+                            const headlineNo = String(headline.file_no).trim().toUpperCase();
+                            const rootMark = (rotRef && headlineNo === rotRef)
                                 ? ' <span class="font-semibold text-violet-700" title="Root of Title">-RoT</span>'
                                 : '';
 
-                            html += `<div class="mt-1 text-[11px]">${relBadge}<span class="font-semibold ${relValueClass}">${String(relOld.value).toUpperCase().replace(/</g, '&lt;')}</span>${rootMark}</div>`;
+                            html += `<div class="mt-1 text-[11px]">${relBadge}<span class="font-semibold ${relValueClass}">${headlineNo.replace(/</g, '&lt;')}</span>${rootMark}</div>`;
+
+                            // The rest open in a card rather than in the cell — the same
+                            // idiom as the Related FileNo column on the Indexed Files table.
+                            if (relatedList.length > 1) {
+                                html += `<div class="mt-1">
+                                    <button type="button" class="mlsf-related-files-btn inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold text-sky-700 bg-sky-50 border border-sky-200 hover:bg-sky-600 hover:text-white hover:border-sky-600 transition-colors">
+                                        <i data-lucide="link" class="w-3 h-3"></i>
+                                        <span>View all ${relatedList.length} related</span>
+                                    </button>
+                                </div>`;
+                            }
                         }
 
                         if (row.batch_no && row.batch_count > 1) {
@@ -1426,6 +1539,15 @@
                     data: 'tp_no',
                     name: 'tp_no',
                     title: 'TP No',
+                    defaultContent: 'N/A',
+                    render: function (data, type, row) {
+                        return data ? data.toUpperCase() : 'N/A';
+                    }
+                },
+                {
+                    data: 'house_no',
+                    name: 'house_no',
+                    title: 'House No',
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
                         return data ? data.toUpperCase() : 'N/A';
@@ -1663,7 +1785,7 @@
             order: [[(function () {
                 const headers = Array.from(document.querySelectorAll('#mlsfTable thead th'));
                 const idx = headers.findIndex(th => th.textContent.trim() === 'Time Commissioned');
-                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 14 : 13);
+                return idx >= 0 ? idx : (window.MLSF_IS_ADMIN ? 15 : 14);
             })(), 'desc']],
             pageLength: 20,
             lengthMenu: [[10, 20, 25, 50, 100], [10, 20, 25, 50, 100]],
@@ -3709,6 +3831,7 @@
             if (currentEntry) {
                 for (let i = 0; i < alpineData.batchQuantity; i++) {
                      if (alpineData.locationEntries[i]) {
+                         alpineData.locationEntries[i].houseNo = currentEntry.houseNo;
                          alpineData.locationEntries[i].plotNo = currentEntry.plotNo;
                          alpineData.locationEntries[i].tpNo = currentEntry.tpNo;
                          alpineData.locationEntries[i].location = currentEntry.location;
@@ -5677,6 +5800,7 @@
             middlePrefix: 'KN',
             year: new Date().getFullYear(),
             serialNo: '',
+            houseNo: '',
             plotNo: '',
             tpNo: '',
             tpSearchQuery: '',
@@ -6380,6 +6504,7 @@
                 const entry = this.locationEntries[this.currentEntryIndex];
                 if (!entry) return;
                 // Plot Number
+                this.houseNo = entry.houseNo || '';
                 this.plotNo = entry.plotNo || '';
                 // TP Number (custom search). A number typed through "Other" is restored
                 // into the specify box, not the search box, or stepping back through the
@@ -6810,7 +6935,7 @@
             get filledEntriesCount() {
                 if (!this.batchMode) return 0;
                 return this.locationEntries.filter(entry =>
-                    entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district
+                    entry.houseNo || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district
                 ).length;
             },
 
@@ -7294,6 +7419,7 @@
                                     
                                     // Backfill details — use file_title from mother file only, not applicant_name
                                     self.fileName = res.data.file_title || '';
+                                    self.houseNo = res.data.house_no || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
                                     self.district = res.data.district || '';
@@ -7380,6 +7506,7 @@
                                         let entries = [];
                                         for (let i = 0; i < bQty; i++) {
                                             entries.push({
+                                                houseNo: res.data.house_no || '',
                                                 plotNo: res.data.plot_no || '',
                                                 tpNo: res.data.tp_no || '',
                                                 location: self.location,
@@ -7473,6 +7600,7 @@
                     
                     // Backfill details
                     self.fileName = data.applicant_name || data.file_title || '';
+                    self.houseNo = data.house_no || '';
                     self.plotNo = data.plot_no || '';
                     self.lga = data.lga || '';
                     self.district = data.district || '';
@@ -7573,6 +7701,7 @@
 
                                     // Backfill details — use file_title from mother file only
                                     self.fileName = res.data.file_title || '';
+                                    self.houseNo = res.data.house_no || '';
                                     self.plotNo = res.data.plot_no || '';
                                     self.lga = res.data.lga || '';
                                     self.district = res.data.district || '';
@@ -7633,6 +7762,7 @@
                                         let entries = [];
                                         for (let i = 0; i < bQty; i++) {
                                             entries.push({
+                                                houseNo: res.data.house_no || '',
                                                 plotNo: res.data.plot_no || '',
                                                 tpNo: res.data.tp_no || '',
                                                 location: self.location,
@@ -7721,6 +7851,7 @@
 
                     // Backfill details
                     this.fileName = data.applicant_name || '';
+                    this.houseNo = data.house_no || '';
                     this.plotNo = data.plot_no || '';
                     this.location = this.stripPlotFromLocation(data.location || '', this.plotNo);
                     // district / lga are only present on newer CoP records; fall back
@@ -7860,6 +7991,7 @@
                     this.isInherited = false;
                     // Reset fields that might have been inherited
                     this.fileName = '';
+                    this.houseNo = '';
                     this.plotNo = '';
                     this.clearTpNo();
                     this.location = '';
@@ -7899,6 +8031,7 @@
 
                     // Reset fields
                     this.fileName = '';
+                    this.houseNo = '';
                     this.plotNo = '';
                     this.clearTpNo();
                     this.location = '';
@@ -8109,6 +8242,7 @@
                 this.locationEntries = [];
                 for (let i = 0; i < this.batchQuantity; i++) {
                     this.locationEntries.push({
+                        houseNo: '',
                         plotNo: '',
                         tpNo: '',
                         location: '',
@@ -8141,7 +8275,7 @@
                         this.locationEntries[this.currentEntryIndex].tpIsOther = this.tpIsOther;
                     }
 
-                    if (this.applyLocationToAll && ['plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
+                    if (this.applyLocationToAll && ['houseNo', 'plotNo', 'tpNo', 'location', 'lga', 'district', 'latitude', 'longitude'].includes(field)) {
                         for (let i = 0; i < this.batchQuantity; i++) {
                             if (this.locationEntries[i]) {
                                 this.locationEntries[i][field] = value;
@@ -8177,6 +8311,7 @@
                     this.currentEntryIndex++;
                     if (!this.locationEntries[this.currentEntryIndex]) {
                         this.locationEntries[this.currentEntryIndex] = {
+                            houseNo: '',
                             plotNo: '',
                             tpNo: '',
                             location: '',
@@ -8216,7 +8351,7 @@
             isEntryFilled(index) {
                 if (!this.locationEntries[index]) return false;
                 const entry = this.locationEntries[index];
-                return entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district;
+                return entry.houseNo || entry.plotNo || entry.tpNo || entry.location || entry.lga || entry.district;
             },
 
             updateBatchPreview() {
@@ -8229,6 +8364,7 @@
                     // Add new entries
                     for (let i = currentLength; i < this.batchQuantity; i++) {
                         this.locationEntries.push({
+                            houseNo: '',
                             plotNo: '',
                             tpNo: '',
                             location: '',
@@ -8362,6 +8498,7 @@
                     .toUpperCase();
 
                 const locationData = {
+                    houseNo: currentEntry.houseNo || '',
                     plotNo: currentEntry.plotNo || '',
                     tpNo: currentEntry.tpNo || '',
                     district: currentEntry.district || '',
@@ -8710,6 +8847,7 @@
                     if (match.latitude && match.longitude && typeof alpineData.applyBackfilledCoordinates === 'function') {
                         alpineData.applyBackfilledCoordinates(match.latitude, match.longitude, 'Backfilled from selected file');
                     }
+                    if (match.house_no) alpineData.houseNo = match.house_no;
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
                     // The inherited plot must carry the extension marker (see
                     // syncExtensionPlotSuffix); it is a no-op for every other file type.
@@ -9161,6 +9299,284 @@
         doc.setTextColor(0, 0, 0);
     }
 
+    // ── Page 2: the File Tracking Sheet ──────────────────────────────────────────
+    // The sheet is built in JavaScript by printFileTrackerDetails() in
+    // create_file_tracker_page/partials/js.blade.php, and this screen draws its
+    // commissioning sheet with jsPDF, so no markup can be shared. The real sheet is
+    // therefore produced by that same function and captured as page 2 — one sheet in
+    // the codebase, no second copy to drift.
+    //
+    // It has to run on the File Tracking page itself, not on a stripped-down host: that
+    // partial's start-up code binds to the tracking page's DOM, and a throw there stops
+    // the script, leaving its top-level `const`s (OFFICE_TITLE_RE and friends) in the
+    // temporal dead zone. The functions are hoisted and look callable, but the constants
+    // they close over are not, so the sheet dies with a ReferenceError. Loading the page
+    // it was written for is what makes it initialise.
+    //
+    // URLs stay RELATIVE. route() builds absolutes from APP_URL, and an officer browsing
+    // on any other origin would get a cross-origin iframe whose contentDocument is null.
+    //
+    // Best-effort throughout: a commissioning sheet must still print when the tracking
+    // sheet cannot be built.
+    const TRACKING_PAGE_URL = "{{ route('create-file-tracker.index', [], false) }}";
+    const TRACKING_LIST_URL = "{{ route('create-file-tracker.list', [], false) }}";
+
+    function makeHiddenFrame() {
+        const frame = document.createElement('iframe');
+        // Off-screen rather than display:none — a hidden iframe lays nothing out and
+        // html2canvas would capture an empty box. Sized for the A4 landscape sheet.
+        frame.setAttribute('aria-hidden', 'true');
+        frame.style.cssText = 'position:fixed;left:-10000px;top:0;width:1160px;height:1000px;border:0;visibility:hidden;';
+        document.body.appendChild(frame);
+        return frame;
+    }
+
+    function frameDocumentOf(frame) {
+        try {
+            return frame.contentDocument || null;
+        } catch (e) {
+            // Cross-origin reads throw in some browsers rather than returning null.
+            return null;
+        }
+    }
+
+    // Resolves once the tracking page's script has defined the sheet builder.
+    function waitForTrackingPage(frame, timeoutMs = 25000) {
+        return new Promise((resolve) => {
+            const startedAt = Date.now();
+            const poll = setInterval(() => {
+                let win = null;
+                try { win = frame.contentWindow; } catch (e) { win = null; }
+
+                if (win && typeof win.printFileTrackerDetails === 'function'
+                    && typeof win.transformApiTracker === 'function') {
+                    clearInterval(poll);
+                    return resolve(win);
+                }
+
+                if (Date.now() - startedAt > timeoutMs) {
+                    clearInterval(poll);
+                    return resolve(null);
+                }
+            }, 150);
+        });
+    }
+
+    // Corrections applied ONLY to the copy being captured — never to the sheet the File
+    // Tracking page prints.
+    //
+    // .info-value carries `overflow:hidden; text-overflow:ellipsis` on an *inline* span.
+    // Browsers ignore overflow on non-replaced inline elements, so it renders fine on
+    // screen and on paper; html2canvas honours it anyway and clips each value to the
+    // line box, slicing the bottom off "IND-2026-254", "SALISU UMAR" and the rest.
+    // Making the span a block box with room to breathe restores it, and dropping the
+    // ellipsis keeps a long value whole rather than truncating it in the raster.
+    // The sheet's logos are served from app.klaes.ng, which sends no
+    // Access-Control-Allow-Origin. html2canvas requests them with crossOrigin="anonymous"
+    // (allowTaint has to stay false or the canvas cannot be exported), the browser
+    // refuses, and every one of them is dropped — which is why the footer mark below
+    // "Honorable Commissioner" came out blank. The same files ship in this app's own
+    // public/assets/logo, so the captured copy is pointed at those instead.
+    //
+    // Paths are root-relative: asset() builds from APP_URL, which is not necessarily the
+    // origin the officer is browsing, and an absolute one would just be cross-origin again.
+    const SHEET_LOCAL_IMAGES = {
+        'assets/logo/ministry1.jpg': "{{ parse_url(asset('assets/logo/ministry1.jpg'), PHP_URL_PATH) }}",
+        'assets/logo/ministry2.png': "{{ parse_url(asset('assets/logo/ministry2.png'), PHP_URL_PATH) }}",
+        'storage/upload/logo/logo.png': "{{ parse_url(asset('assets/logo/logo.png'), PHP_URL_PATH) }}",
+        'storage/upload/logo/Klase.png': "{{ parse_url(asset('assets/logo/logo.png'), PHP_URL_PATH) }}",
+    };
+
+    function localiseSheetImages(sheetDoc) {
+        sheetDoc.querySelectorAll('img').forEach(img => {
+            const src = img.getAttribute('src') || '';
+            for (const [remote, local] of Object.entries(SHEET_LOCAL_IMAGES)) {
+                if (src.includes(remote) && local) {
+                    img.setAttribute('src', local);
+                    // A local file needs no crossOrigin dance, and setting it would send
+                    // the request as CORS for no reason.
+                    img.removeAttribute('crossorigin');
+                    break;
+                }
+            }
+        });
+    }
+
+    // Resolves once every image in the sheet has loaded or failed, so nothing is
+    // captured half-drawn.
+    function waitForSheetImages(sheetDoc, timeoutMs = 8000) {
+        const images = Array.from(sheetDoc.querySelectorAll('img'));
+        const pending = images.filter(img => !img.complete);
+        if (!pending.length) return Promise.resolve();
+
+        return Promise.race([
+            Promise.all(pending.map(img => new Promise(resolve => {
+                img.addEventListener('load', resolve, { once: true });
+                img.addEventListener('error', resolve, { once: true });
+            }))),
+            new Promise(resolve => setTimeout(resolve, timeoutMs)),
+        ]);
+    }
+
+    function applyCaptureFixes(sheetDoc) {
+        try {
+            localiseSheetImages(sheetDoc);
+
+            const style = sheetDoc.createElement('style');
+            style.textContent = `
+                .info-value {
+                    display: inline-block !important;
+                    overflow: visible !important;
+                    text-overflow: clip !important;
+                    line-height: 1.6 !important;
+                    padding-bottom: 1px !important;
+                    max-width: 100% !important;
+                }
+                .info-row { align-items: start !important; }
+                /* "IN-TRANSIT DIIT" is half again as long as "IN TRANSIT"; ease the
+                   size so it still sits inside the page once rotated. */
+                .copy-watermark { font-size: 3.4rem !important; }
+            `;
+            (sheetDoc.head || sheetDoc.documentElement).appendChild(style);
+        } catch (e) {
+            console.error('Could not apply tracking sheet capture fixes:', e);
+        }
+    }
+
+    // Renders finished sheet HTML in its own frame and hands back that frame.
+    function renderSheetHtml(html) {
+        return new Promise((resolve) => {
+            const frame = makeHiddenFrame();
+            let settled = false;
+            const done = () => { if (!settled) { settled = true; resolve(frame); } };
+
+            frame.addEventListener('load', () => setTimeout(done, 150), { once: true });
+            // srcdoc keeps the frame on this origin, so its document stays readable.
+            frame.srcdoc = html;
+            setTimeout(done, 6000);
+        });
+    }
+
+    async function appendTrackingSheetPage(doc, fileNumber) {
+        const number = (fileNumber || '').toString().trim();
+        if (!number || typeof html2canvas === 'undefined') {
+            return false;
+        }
+
+        let pageFrame = null;
+        let sheetFrame = null;
+
+        try {
+            // 1. The tracking page, purely as the place its own sheet code can run.
+            pageFrame = makeHiddenFrame();
+            pageFrame.src = TRACKING_PAGE_URL;
+
+            const win = await waitForTrackingPage(pageFrame);
+            if (!win) {
+                console.warn('Tracking sheet page skipped: the File Tracking page did not '
+                    + 'initialise in its frame (check that the URL is same-origin).');
+                return false;
+            }
+
+            // 2. The tracker, from the same endpoint and the same transform the File Log
+            //    Table uses, so the sheet gets exactly the object it expects.
+            const response = await fetch(
+                `${TRACKING_LIST_URL}?per_page=25&status=all&search=${encodeURIComponent(number)}`,
+                { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' }
+            );
+            const payload = await response.json();
+            const rows = (payload && payload.success && Array.isArray(payload.data)) ? payload.data : [];
+
+            if (!rows.length) {
+                // No tracking for this file — one page is the right answer.
+                return false;
+            }
+
+            const norm = (v) => String(v || '').replace(/\s+/g, '').toUpperCase();
+            const trackers = rows.map(r => win.transformApiTracker(r)).filter(Boolean);
+            // A search can match neighbouring numbers, so prefer the exact file.
+            const tracker = trackers.find(t => norm(t.fileNo) === norm(number)) || trackers[0];
+            if (!tracker) return false;
+
+            // 3. The sheet. In-Transit copy only: the black-and-white File Copy is a
+            //    registry document and does not belong in the sheet that travels.
+            const html = win.printFileTrackerDetails(tracker, {
+                returnHtml: true,
+                copyKinds: ['transit'],
+                transitWatermark: 'IN-TRANSIT DIIT',
+            });
+            if (!html) {
+                console.warn('Tracking sheet page skipped: the sheet builder returned nothing.');
+                return false;
+            }
+
+            // 4. Render it, then let its own paginator split the movement history the
+            //    same way the tracking page does when it prints.
+            sheetFrame = await renderSheetHtml(html);
+            const sheetDoc = frameDocumentOf(sheetFrame);
+            if (!sheetDoc) {
+                console.warn('Tracking sheet page skipped: the rendered sheet could not be read.');
+                return false;
+            }
+
+            applyCaptureFixes(sheetDoc);
+
+            try {
+                sheetDoc.querySelectorAll('.print-container').forEach(root => {
+                    if (typeof win.paginateTrackingSheet === 'function') {
+                        win.paginateTrackingSheet(sheetDoc, root);
+                    }
+                });
+            } catch (e) {
+                console.error('Tracking sheet pagination failed:', e);
+            }
+
+            // 5. Each .print-container is one printed page, so each becomes one here.
+            const pages = Array.from(sheetDoc.querySelectorAll('.print-container'));
+            if (!pages.length) {
+                console.warn('Tracking sheet page skipped: the sheet rendered no pages.');
+                return false;
+            }
+
+            // The logos were re-pointed above, so they are loading again; capturing now
+            // would catch them half-drawn or not at all.
+            await waitForSheetImages(sheetDoc);
+
+            for (const page of pages) {
+                const canvas = await html2canvas(page, {
+                    scale: 2,
+                    useCORS: true,
+                    // Must stay false: a tainted canvas cannot be exported, and the sheet
+                    // pulls its ministry logo from an external host. A logo that will not
+                    // load cross-origin is dropped rather than costing the whole page.
+                    allowTaint: false,
+                    backgroundColor: '#ffffff',
+                    logging: false,
+                });
+
+                // A4 landscape, matching the sheet's own @page rule.
+                const pageW = 297;
+                const pageH = 210;
+                const margin = 5;
+                const usableW = pageW - margin * 2;
+                const imgH = Math.min((canvas.height / canvas.width) * usableW, pageH - margin * 2);
+
+                doc.addPage([pageW, pageH], 'landscape');
+                doc.addImage(canvas.toDataURL('image/png'), 'PNG', margin, margin, usableW, imgH);
+            }
+
+            return true;
+        } catch (error) {
+            // Never cost the officer page 1.
+            console.error('Could not append the tracking sheet page:', error);
+            return false;
+        } finally {
+            [sheetFrame, pageFrame].forEach(f => {
+                if (f && f.parentNode) f.parentNode.removeChild(f);
+            });
+        }
+    }
+
     async function generateCommissioningSheetPDF(formData, watermarkText = 'ORIGINAL') {
         try {
             showGlobalLoading('Generating PDF...');
@@ -9285,6 +9701,10 @@
             // the original 45x18, which stood too tall against the footer line.
             if (footerLogoBase64) doc.addImage(footerLogoBase64, 'PNG', 156.2, 278.5, 28.8, 11.5);
             drawFooterLeftLogo(doc, footerLogoLeftBase64);
+
+            // Page 2 — the File Tracking Sheet, so it travels with the file.
+            showGlobalLoading('Adding tracking sheet...');
+            await appendTrackingSheetPage(doc, formData.get('file_number'));
 
             hideGlobalLoading();
             doc.save(`commissioning-sheet-${formData.get('file_number')}.pdf`);

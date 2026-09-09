@@ -198,8 +198,12 @@
                 <th class="px-4 py-3 text-left whitespace-nowrap">File Number</th>
                 <th class="px-4 py-3 text-left whitespace-nowrap">Applicant Name</th>
                 <th class="px-4 py-3 text-left whitespace-nowrap">Applicant Address</th>
-                <th class="px-4 py-3 text-left whitespace-nowrap">Location / Station</th>
+                <th class="px-4 py-3 text-left whitespace-nowrap">House No</th>
+                <th class="px-4 py-3 text-left whitespace-nowrap">Plot No</th>
+                <th class="px-4 py-3 text-left whitespace-nowrap">Street Name</th>
                 <th class="px-4 py-3 text-left whitespace-nowrap">District</th>
+                <th class="px-4 py-3 text-left whitespace-nowrap">LGA</th>
+                <th class="px-4 py-3 text-left whitespace-nowrap">Location / Station</th>
                 <th class="px-4 py-3 text-right whitespace-nowrap">Rent Per Annum (₦)</th>
                 <th class="px-4 py-3 text-right whitespace-nowrap">Registration Fees (₦)</th>
                 <th class="px-4 py-3 text-right whitespace-nowrap">Survey Fees (₦)</th>
@@ -234,8 +238,15 @@
                   <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->file_number ? \Illuminate\Support\Str::upper((string) $record->file_number) : '—' }}</td>
                   <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->applicant_name ? \Illuminate\Support\Str::upper((string) $record->applicant_name) : '—' }}</td>
                   <td class="px-4 py-3 text-left max-w-[260px] truncate" title="{{ $record->applicant_address ? \Illuminate\Support\Str::upper((string) $record->applicant_address) : '—' }}">{{ $record->applicant_address ? \Illuminate\Support\Str::upper((string) $record->applicant_address) : '—' }}</td>
+                  {{-- Property location, broken into its parts. district falls back to the
+                       legacy `district` column: rows written before the loc_* address
+                       builder existed only ever filled that one. --}}
+                  <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->loc_house_number ? \Illuminate\Support\Str::upper((string) $record->loc_house_number) : '—' }}</td>
+                  <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->loc_plot_number ? \Illuminate\Support\Str::upper((string) $record->loc_plot_number) : '—' }}</td>
+                  <td class="px-4 py-3 text-left max-w-[200px] truncate" title="{{ $record->loc_street_name ? \Illuminate\Support\Str::upper((string) $record->loc_street_name) : '—' }}">{{ $record->loc_street_name ? \Illuminate\Support\Str::upper((string) $record->loc_street_name) : '—' }}</td>
+                  <td class="px-4 py-3 text-left whitespace-nowrap">{{ ($record->loc_district ?: $record->district) ? \Illuminate\Support\Str::upper((string) ($record->loc_district ?: $record->district)) : '—' }}</td>
+                  <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->loc_lga ? \Illuminate\Support\Str::upper((string) $record->loc_lga) : '—' }}</td>
                   <td class="px-4 py-3 text-left max-w-[260px] truncate" title="{{ $record->location_station ? \Illuminate\Support\Str::upper((string) $record->location_station) : '—' }}">{{ $record->location_station ? \Illuminate\Support\Str::upper((string) $record->location_station) : '—' }}</td>
-                  <td class="px-4 py-3 text-left whitespace-nowrap">{{ $record->district ? \Illuminate\Support\Str::upper((string) $record->district) : '—' }}</td>
                   <td class="px-4 py-3 text-right whitespace-nowrap tabular-nums">{{ number_format((float) ($record->amount ?? 0), 2) }}</td>
                   <td class="px-4 py-3 text-right whitespace-nowrap tabular-nums">{{ number_format($registrationFee, 2) }}</td>
                   <td class="px-4 py-3 text-right whitespace-nowrap tabular-nums">{{ number_format($surveyFee, 2) }}</td>
@@ -261,11 +272,13 @@
                       'date_of_expiry' => optional($record->date_of_expiry)->format('Y-m-d'),
                       'rent_from_year' => $record->rent_from_year,
                       'rent_to_year' => $record->rent_to_year,
+                      'app_house_number' => $record->app_house_number,
                       'app_plot_number' => $record->app_plot_number,
                       'app_street_name' => $record->app_street_name,
                       'app_district' => $record->app_district,
                       'app_lga' => $record->app_lga,
                       'app_state' => $record->app_state,
+                      'loc_house_number' => $record->loc_house_number,
                       'loc_plot_number' => $record->loc_plot_number,
                       'loc_street_name' => $record->loc_street_name,
                       'loc_lga' => $record->loc_lga,
@@ -320,7 +333,7 @@
                 </tr>
               @empty
                 <tr>
-                  <td colspan="20" class="px-4 py-12 text-center">
+                  <td colspan="24" class="px-4 py-12 text-center">
                     <div class="flex flex-col items-center gap-3">
                       <div class="p-3 bg-slate-100 rounded-full">
                         <i data-lucide="file-text" class="h-6 w-6 text-slate-400"></i>

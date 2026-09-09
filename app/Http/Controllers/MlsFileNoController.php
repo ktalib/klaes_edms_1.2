@@ -148,6 +148,7 @@ class MlsFileNoController extends Controller
                     'fileNumber.created_by as created_by',
                     'fileNumber.is_deleted as is_deleted',
                     DB::raw('COALESCE(mls_file_no.source, fileNumber.SOURCE) as SOURCE'),
+                    DB::raw('COALESCE(fileNumber.house_no, mls_file_no.house_no) as house_no'),
                     'fileNumber.plot_no as plot_no',
                     'fileNumber.tp_no as tp_no',
                     'fileNumber.tracking_id as tracking_id',
@@ -185,6 +186,7 @@ class MlsFileNoController extends Controller
                     'mls_file_no.created_by as created_by',
                     DB::raw('0 as is_deleted'),
                     'mls_file_no.source as SOURCE',
+                    'mls_file_no.house_no as house_no',
                     'mls_file_no.plot_no as plot_no',
                     'mls_file_no.tp_no as tp_no',
                     'mls_file_no.tracking_id as tracking_id',
@@ -231,6 +233,7 @@ class MlsFileNoController extends Controller
                     'plot_extensions.created_by as created_by',
                     DB::raw('0 as is_deleted'),
                     DB::raw("'Plot Extension' as SOURCE"),
+                    DB::raw('NULL as house_no'),
                     'plot_extensions.plot_no as plot_no',
                     'plot_extensions.tp_no as tp_no',
                     'plot_extensions.tracking_id as tracking_id',
@@ -2008,6 +2011,7 @@ class MlsFileNoController extends Controller
                 // the dropdown was built before the form was filled in.
                 'reclaimed_serial' => 'nullable|integer|min:1',
                 'file_name' => 'nullable|string|max:500',
+                'house_no' => 'nullable|string|max:100',
                 'plot_no' => 'nullable|string|max:100',
                 'tp_no' => 'nullable|string|max:100',
                 'location' => 'nullable|string',
@@ -2887,6 +2891,7 @@ class MlsFileNoController extends Controller
                     'serial_number' => $serial,
                     'full_file_number' => $fullFileNumber,
                     'file_name' => $validated['file_name'] ?? null,
+                    'house_no' => $validated['house_no'] ?? null,
                     'plot_no' => $validated['plot_no'] ?? null,
                     'tp_no' => $validated['tp_no'] ?? null,
                     'location' => $validated['location'] ?? null,
@@ -2934,6 +2939,7 @@ class MlsFileNoController extends Controller
                         'tracking_id' => $trackingId,
                         'mlsfNo' => $fullFileNumber,
                         'FileName' => $validated['file_name'] ?? null,
+                        'house_no' => $validated['house_no'] ?? null,
                         'plot_no' => $validated['plot_no'] ?? null,
                         'tp_no' => $validated['tp_no'] ?? null,
                         'location' => $validated['location'] ?? null,
@@ -3470,6 +3476,25 @@ class MlsFileNoController extends Controller
                             'related_fileno' => $relatedFileNumbers ?? ($relatedFileNo ? json_encode([$relatedFileNo]) : null),
                         ]);
                         $newFileIndexing = $fileIndexing;
+
+                        // Mirror the COMPLETE list back onto the compat row. The insert
+                        // above ran before the workflow-derived numbers (merger sources,
+                        // subdivision/extension mother) and the typed "Add Another Related
+                        // File" entries were resolved, so fileNumber.related_fileno held
+                        // the primary number alone and the file list showed 1 of N.
+                        $mirroredRelated = $fileIndexing->related_fileno ?? null;
+                        if (!empty($mirroredRelated)) {
+                            try {
+                                DB::connection('sqlsrv')->table('fileNumber')
+                                    ->where('mlsfNo', $fullFileNumber)
+                                    ->update(['related_fileno' => $mirroredRelated]);
+                            } catch (\Throwable $e) {
+                                Log::warning('Could not mirror the related file numbers onto fileNumber', [
+                                    'file_number' => $fullFileNumber,
+                                    'error' => $e->getMessage(),
+                                ]);
+                            }
+                        }
 
                         // One related_file_number row per link — the typed ones plus every
                         // plain related number that only reached the JSON column before
@@ -4297,6 +4322,7 @@ class MlsFileNoController extends Controller
                 'year' => 'required|integer|min:2020|max:2050',
                 'serial_start' => 'required|integer|min:1',
                 'location_entries' => 'required|array|min:2|max:200',
+                'location_entries.*.houseNo' => 'nullable|string|max:100',
                 'location_entries.*.plotNo' => 'nullable|string|max:100',
                 'location_entries.*.tpNo' => 'nullable|string|max:100',
                 'location_entries.*.location' => 'nullable|string',
@@ -4760,6 +4786,7 @@ class MlsFileNoController extends Controller
                         'serial_number' => $serial,
                         'full_file_number' => $fullFileNumber,
                         'file_name' => $entry['file_name'] ?? ($validated['file_name'] ?? null),
+                        'house_no' => $entry['houseNo'] ?? null,
                         'plot_no' => $entry['plotNo'] ?? null,
                         'tp_no' => $entry['tpNo'] ?? null,
                         'location' => $entry['location'] ?? null,
@@ -4788,6 +4815,7 @@ class MlsFileNoController extends Controller
                         'tracking_id' => $trackingId,
                         'mlsfNo' => $fullFileNumber,
                         'FileName' => $entry['file_name'] ?? ($validated['file_name'] ?? null),
+                        'house_no' => $entry['houseNo'] ?? null,
                         'plot_no' => $entry['plotNo'] ?? null,
                         'tp_no' => $entry['tpNo'] ?? null,
                         'location' => $entry['location'] ?? null,
@@ -4891,6 +4919,24 @@ class MlsFileNoController extends Controller
                 // on the Batch Generation Summary — same two lines as a single
                 // commissioning (File Commissioning, then the onward movement).
                 $this->startBatchCommissioningTracking($request, $generatedFiles);
+
+                // The compat rows are built before the related numbers are resolved and
+                // carry no related_fileno of their own, so mirror the batch's list onto
+                // them -- otherwise the file list has nothing to show for a batch.
+                if (!empty($batchRelatedFileNumbers) && !empty($generatedFiles)) {
+                    try {
+                        foreach (array_chunk($generatedFiles, 500) as $chunk) {
+                            DB::connection('sqlsrv')->table('fileNumber')
+                                ->whereIn('mlsfNo', $chunk)
+                                ->update(['related_fileno' => $batchRelatedFileNumbers]);
+                        }
+                    } catch (\Throwable $e) {
+                        Log::warning('Could not mirror the batch related file numbers onto fileNumber', [
+                            'count' => count($generatedFiles),
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
 
                 // Related-file links for every file in the batch: the typed entries plus each
                 // row's own plain related numbers. Re-queried rather than captured on insert

@@ -935,9 +935,28 @@
                     $layoutPlanNo  = trim((string) ($recommendation->layout_plan_no ?? ''));
                     $planNoRef     = $oldFileNumber !== '' ? $oldFileNumber : $layoutPlanNo;
 
+                    // "Use Subdivision Template": a child of a subdivision whose mother file
+                    // was never indexed or linked, so it could not be captured through a
+                    // subdivision batch and there is no mother record anywhere to read. Its
+                    // mother file number is the record's own old_file_number — the same
+                    // column a child saved through a real batch keeps it in — except that
+                    // this one was typed by hand rather than picked from the register.
+                    //
+                    // It replaces the plot / layout-plan pair in the PLOT/PLAN No. box, the
+                    // way a subdivided plot cites the file it was cut from. $planNoRef above
+                    // needs no special case: it already prefers old_file_number, so the
+                    // body's "as per plan No." line names the mother by the same rule it has
+                    // always applied.
+                    $useSubdivisionTemplate = (bool) ($recommendation->use_subdivision_template ?? false)
+                        && $oldFileNumber !== '';
+
                     // PLOT/PLAN No. always prints whatever is on the record: both parts when
                     // present, otherwise whichever one exists (blank when neither does).
-                    $plotPlanNo = implode(' / ', array_filter([$plotNo, $layoutPlanNo], fn ($v) => $v !== ''));
+                    // A record flagged for the subdivision template but carrying no mother
+                    // file number falls back to this rather than printing an empty box.
+                    $plotPlanNo = $useSubdivisionTemplate
+                        ? $oldFileNumber
+                        : implode(' / ', array_filter([$plotNo, $layoutPlanNo], fn ($v) => $v !== ''));
                 @endphp
                 <!-- REF-GRID SECTION -->
                 <div class="ref-grid">

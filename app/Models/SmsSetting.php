@@ -220,10 +220,91 @@ class SmsSetting extends Model
             ?? config('klaes_sms.messages.' . $key . '.sender');
     }
 
-    /** The two sender IDs this deployment sends under, keyed by group. */
+    /** The sender IDs this deployment sends under, keyed by group. */
     public static function senderOptions(): array
     {
         return (array) config('klaes_sms.senders', []);
+    }
+
+    /**
+     * Which sender group a URL segment names.
+     *
+     * Accepts the group key ('department') OR the sender ID as it reads in the
+     * menu ('kanomlpp'). The readable form is what the SMS Management links use;
+     * the group key is accepted as well so a bookmarked page still opens after
+     * somebody changes KLAES_SMS_SENDER_DEPARTMENT on the server.
+     *
+     * Returns null for anything else -- the caller 404s rather than quietly
+     * showing the unfiltered page.
+     */
+    public static function senderGroupForSlug(string $slug): ?string
+    {
+        $slug = strtolower(trim($slug));
+
+        foreach (self::senderOptions() as $group => $id) {
+            if ($slug === strtolower($group) || $slug === strtolower((string) $id)) {
+                return $group;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The group a message that declares no sender actually goes out under.
+     *
+     * senderFor() returns null for such a message, which tells the gateway to
+     * use the server-wide default -- so on the sender pages it has to be listed
+     * under whichever group that default names, not hidden from all of them.
+     */
+    public static function defaultSenderGroup(): ?string
+    {
+        $default = (string) config('services.bulk_sms_ng.sender', '');
+
+        foreach (self::senderOptions() as $group => $id) {
+            if ($default !== '' && strcasecmp($default, (string) $id) === 0) {
+                return $group;
+            }
+        }
+
+        return array_key_first(self::senderOptions()) ?: null;
+    }
+
+    /**
+     * The group this message is listed under on the SMS Management pages.
+     *
+     * Never null, so no message can fall off every page.
+     */
+    public static function effectiveSenderGroup(string $key): ?string
+    {
+        return self::senderGroupFor($key) ?? self::defaultSenderGroup();
+    }
+
+    /**
+     * Has Bulk-SMS.ng confirmed this group's sender ID?
+     *
+     * Display only -- see the note in config/klaes_sms.php. An unconfirmed ID is
+     * accepted and billed by the gateway and then delivered to nobody, so the
+     * page says so rather than letting the traffic look healthy.
+     */
+    public static function isRegisteredSenderGroup(string $group): bool
+    {
+        $registered = (array) config('klaes_sms.registered_senders', []);
+
+        if (empty($registered)) {
+            return true;
+        }
+
+        $id = self::senderOptions()[$group] ?? null;
+
+        foreach ($registered as $entry) {
+            if (strcasecmp((string) $entry, $group) === 0
+                || ($id !== null && strcasecmp((string) $entry, (string) $id) === 0)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /** The plainer wording tried only when the gateway refuses the first. */

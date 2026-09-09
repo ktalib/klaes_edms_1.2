@@ -98,6 +98,11 @@ class LandRegistrationController extends Controller
                         'size' => $row->size ?? '',
                         'deeds_date' => $row->deeds_date,
                         'deeds_time' => $row->deeds_time,
+                        // The date on the deed itself, kept apart from the day
+                        // the registry numbered it. deed_registrations stores it
+                        // as instrument_date.
+                        'transaction_date' => $row->instrument_date,
+                        'prop_id' => $row->prop_id ?? null,
                         // Captured falls back to the registration's own timestamp
                         // for rows written before the capture link existed.
                         'captured_at' => $row->captured_at ?? $row->created_at,
@@ -147,6 +152,8 @@ class LandRegistrationController extends Controller
                         'size' => $row->size ?? '',
                         'deeds_date' => $row->reg_date,
                         'deeds_time' => null,
+                        'transaction_date' => $row->instrument_date ?? null,
+                        'prop_id' => $row->prop_id ?? null,
                         'captured_at' => $row->created_at,
                         // This leg selects ic.*, so an environment without the
                         // receipt column simply has no such property.

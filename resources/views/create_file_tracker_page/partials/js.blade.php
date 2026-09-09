@@ -8465,7 +8465,7 @@
         // One sheet body, rendered once per requested copy identity.
         const buildSheetCopy = (copyKind) => `
                     <div class="print-container sheet-copy ${copyKind === 'file' ? 'copy-mono' : 'copy-colour'}">
-                        <div class="copy-watermark">${copyKind === 'file' ? 'FILE COPY' : 'IN TRANSIT'}</div>
+                        <div class="copy-watermark">${copyKind === 'file' ? 'FILE COPY' : transitWatermarkText}</div>
                         <div class="header">
                         <div class="header-top">
                             <div class="header-logo-wrap">
@@ -8737,7 +8737,7 @@
                                     <p class="generated-meta">Generated on ${generatedDateSafe} by ${generatedBySafe}</p>
                                 </div>
                                 <div style="text-align: center;">
-                                    <img src="http://app.klaes.ng/storage/upload/logo/Klase.png" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
+                                    <img src="http://app.klaes.ng/storage/upload/logo/logo.png" alt="Logo" style="height: 32px;" onerror="this.style.display='none'">
                                 </div>
                             </div>
                         </div>
@@ -8747,13 +8747,31 @@
         // Every print of Tracking Sheet 1 yields both copies: the In-Transit copy
         // (full colour, red IN TRANSIT watermark) travels with the file, and the
         // File Copy (black & white) follows on a fresh page for the registry folder.
-        const copyKinds = ['transit', 'file'];
+        // options.copyKinds lets a caller ask for one copy only. The File Commissioning
+        // Sheet embeds just the In-Transit copy as its second page -- the File Copy is a
+        // registry document and has no place in the sheet that travels with the file.
+        const copyKinds = Array.isArray(options.copyKinds) && options.copyKinds.length
+            ? options.copyKinds
+            : ['transit', 'file'];
+
+        // options.transitWatermark renames the In-Transit copy's watermark. The
+        // commissioning sheet stamps its second page "IN-TRANSIT DIIT", the state a
+        // newly commissioned file is in. The File Copy's mark is not configurable --
+        // it means one thing.
+        const transitWatermarkText = String(options.transitWatermark || 'IN TRANSIT');
         const printContent = sheetHead
             + copyKinds.map((kind, idx) => (idx > 0 ? '<div class="copy-break"></div>' : '') + buildSheetCopy(kind)).join('')
             + `
                 </body>
                 </html>
             `;
+
+        // options.returnHtml: hand the document back instead of opening a print window,
+        // so another screen can embed this sheet. Nothing else changes -- the sheet the
+        // caller gets is the one this function has always printed.
+        if (options.returnHtml) {
+            return printContent;
+        }
 
         const printWindow = window.open('', '_blank');
         if (!printWindow) {

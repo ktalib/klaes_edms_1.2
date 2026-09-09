@@ -32,9 +32,15 @@
                     <p class="text-slate-500 text-sm mt-1">Data entry form</p>
                 </div>
                 <div class="flex items-center gap-3">
-                    <a href="{{ route('land-recommendations.index') }}?type=ROFO" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
-                        View Records
-                    </a>
+                    @if(request('return_to') === 'rofo')
+                        <a href="{{ route('land-rofos.index', array_filter(['tab' => request('return_tab')])) }}" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
+                            Back to RofO Table
+                        </a>
+                    @else
+                        <a href="{{ route('land-recommendations.index') }}?type=ROFO" class="px-4 py-2 text-sm font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg transition border border-slate-200 shadow-sm">
+                            View Records
+                        </a>
+                    @endif
                 </div>
             </div>
 
@@ -51,6 +57,15 @@
                     @csrf
                     @if($isEdit)
                         @method('PUT')
+                    @endif
+                    {{-- Where this edit was opened from. A RofO row is edited through this
+                         same form, but its officer is working the RofO table, not the
+                         recommendation register, so the save has to land them back on the
+                         row they came from. Carried as a hidden field as well as in the
+                         URL, so a validation bounce keeps it. --}}
+                    @if(request('return_to') === 'rofo')
+                        <input type="hidden" name="return_to" value="rofo">
+                        <input type="hidden" name="return_tab" value="{{ request('return_tab') }}">
                     @endif
                 </div>
 
@@ -810,17 +825,84 @@
                     })();
                     </script>
 
+                    {{-- ── Use Subdivision Template ──────────────────────────────────
+                         A child of a subdivision that could not be captured through Batch
+                         Mode, because its mother/boundary file has never been indexed or
+                         linked and so appears in no picker. Answering Yes makes THIS ONE
+                         file print as a subdivision child; it joins no batch, and no
+                         mother record is created or required.
+
+                         `data-batch-child` is what stands the whole card down inside a
+                         batch (the .batch-mode CSS rule hides it and
+                         standDownPerChildFields() disables its inputs, so nothing here can
+                         post from a batch save). A real batch already has a mother — this
+                         option exists for the case where there is no batch at all. --}}
+                    @php
+                        $useSubdivisionTemplate = (bool) old('use_subdivision_template', $recommendation->use_subdivision_template ?? false);
+                    @endphp
+                    <div id="subdivision-template-card" data-batch-child class="col-span-2 bg-violet-50/40 border border-violet-200 rounded-xl p-6">
+                        <div class="flex items-center gap-2 mb-1">
+                            <i data-lucide="git-branch" class="h-4 w-4 text-violet-600"></i>
+                            <h3 class="text-sm font-extrabold text-violet-900 uppercase tracking-tight">Use Subdivision Template</h3>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-4">
+                            For a single file that belongs to a subdivision but was not captured through a
+                            subdivision batch &mdash; because the mother file is not indexed or linked.
+                            The R of O prints as a subdivision child. No batch is created, and the mother
+                            file does not have to exist in the register.
+                        </p>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
+                                <input type="radio" name="use_subdivision_template" value="0"
+                                    {{ $useSubdivisionTemplate ? '' : 'checked' }}
+                                    class="subdivision-template-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
+                                <span class="leading-snug">
+                                    <span class="block text-sm font-bold text-slate-900">No</span>
+                                    <span class="block text-[11px] text-slate-500">Ordinary record. The letter prints as it always has.</span>
+                                </span>
+                            </label>
+                            <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
+                                <input type="radio" name="use_subdivision_template" value="1"
+                                    {{ $useSubdivisionTemplate ? 'checked' : '' }}
+                                    class="subdivision-template-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
+                                <span class="leading-snug">
+                                    <span class="block text-sm font-bold text-slate-900">Yes</span>
+                                    <span class="block text-[11px] text-slate-500">Treat this file as though it came through a subdivision batch.</span>
+                                </span>
+                            </label>
+                        </div>
+
+                        {{-- No field of its own. Answering Yes turns the Old File Number
+                             card below into the Mother File Number and lets it be typed
+                             into — see the old-fileno script. A second box asking for the
+                             same file number is the thing this option must not become. --}}
+                        <p id="subdivision-template-note" class="{{ $useSubdivisionTemplate ? '' : 'hidden' }} mt-4 rounded-lg bg-violet-100/70 px-3 py-2 text-[11px] font-semibold text-violet-900">
+                            Set the mother file in <span class="font-black uppercase tracking-wider">Mother File Number</span> below.
+                            It does not have to be in the register &mdash; the file number selector's
+                            <span class="font-black uppercase tracking-wider">Manual</span> method builds one from its parts.
+                            It prints in the <span class="font-black uppercase tracking-wider">PLOT/PLAN No.</span> position on the R of O.
+                        </p>
+                    </div>
+
                     {{-- Old File Number — its own section for application types that derive from an existing file --}}
                     <div id="atx-old-fileno-row" class="hidden col-span-2 bg-amber-50/40 border border-amber-200 rounded-xl p-6">
                         <div class="flex items-center gap-2 mb-3">
                             <i data-lucide="folder-input" class="h-4 w-4 text-amber-600"></i>
-                            <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight">Old File Number <span class="text-red-500">*</span></h3>
+                            {{-- Under Use Subdivision Template this same field IS the mother
+                                 file number, so the heading says so rather than making the
+                                 officer know that "old file number" means "mother" here. --}}
+                            <h3 class="text-sm font-bold text-amber-900 uppercase tracking-tight"><span id="atx-old-fileno-title">Old File Number</span> <span class="text-red-500">*</span></h3>
                         </div>
                         <div class="flex gap-2 items-center" id="atx-old-fileno-manual">
+                            {{-- readonly by default: an old file number is picked from the
+                                 register. The subdivision-template script lifts it, because a
+                                 mother that is not indexed cannot be picked from anywhere. --}}
                             <input type="text" name="old_file_number" id="old_file_number" readonly
                                 value="{{ old('old_file_number', $recommendation->old_file_number ?? '') }}"
                                 placeholder="No old file number selected"
-                                class="w-64 border border-amber-200 rounded-lg px-3 py-2.5 bg-white font-mono text-sm outline-none shadow-sm">
+                                autocomplete="off"
+                                class="w-64 border border-amber-200 rounded-lg px-3 py-2.5 bg-white font-mono text-sm outline-none shadow-sm read-only:cursor-default focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition">
                             <button type="button" id="atx-old-fileno-pick"
                                 class="px-4 py-2.5 text-xs font-semibold bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition whitespace-nowrap">
                                 Select File Number
@@ -851,6 +933,13 @@
                             <span id="atx-old-fileno-help">The parent / previous file this <span id="atx-old-fileno-context">application</span> derives from.</span>
                             <span id="batch-mother-help" class="hidden">
                                 Only files that already have commissioned subdivision children are listed.
+                            </span>
+                            {{-- Shown in place of the help above while Use Subdivision Template
+                                 is on: there, the field is typed into rather than picked. --}}
+                            <span id="subdivision-mother-help" class="hidden">
+                                The mother file this plot was subdivided from. Use <span class="font-semibold">Select File Number</span> &mdash;
+                                if it is not in the register, build it there with the selector's <span class="font-semibold">Manual</span> method.
+                                It prints in the PLOT/PLAN No. position on the R of O.
                             </span>
                         </p>
                     </div>
@@ -1817,15 +1906,16 @@
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden">
         <div class="px-6 py-4 bg-gradient-to-br from-amber-500 to-amber-600 text-white flex items-center gap-3">
             <i data-lucide="folder-input" class="w-5 h-5"></i>
-            <h3 class="text-base font-bold">Old File Number Required</h3>
+            {{-- Wording is swapped by openModal(): under Use Subdivision Template this
+                 same prompt asks for the mother file instead. --}}
+            <h3 id="atx-old-fileno-modal-title" class="text-base font-bold">Old File Number Required</h3>
         </div>
         <div class="px-6 py-5 space-y-4">
             <p class="text-sm text-slate-600">
-                <span id="atx-old-fileno-modal-type" class="font-semibold text-slate-900">This application</span>
-                derives from an existing file. Select the old (parent) file number from the file number selector.
+                <span id="atx-old-fileno-modal-type" class="font-semibold text-slate-900">This application</span><span id="atx-old-fileno-modal-lead"> derives from an existing file. Select the old (parent) file number from the file number selector.</span>
             </p>
             <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Old File Number</label>
+                <label id="atx-old-fileno-modal-label" class="block text-xs font-semibold text-slate-500 uppercase mb-1.5">Old File Number</label>
                 <div class="flex gap-2">
                     <input type="text" id="atx-old-fileno-modal-value" readonly
                         placeholder="Nothing selected yet"
@@ -1938,7 +2028,24 @@ document.addEventListener('DOMContentLoaded', function () {
     var modalCancel  = document.getElementById('atx-old-fileno-modal-cancel');
     var modalConfirm = document.getElementById('atx-old-fileno-modal-confirm');
 
+    var modalTitle   = document.getElementById('atx-old-fileno-modal-title');
+    var modalLabel   = document.getElementById('atx-old-fileno-modal-label');
+    var modalLead    = document.getElementById('atx-old-fileno-modal-lead');
+    var titleLabel   = document.getElementById('atx-old-fileno-title');
+    var manualHelpEl = document.getElementById('atx-old-fileno-help');
+    var subdivHelp   = document.getElementById('subdivision-mother-help');
+    var subdivNote   = document.getElementById('subdivision-template-note');
+
     if (!row || !field || !modal) return;
+
+    // Use Subdivision Template turns this very field into the Mother File Number.
+    // The radios are [data-batch-child], so batch mode DISABLES them while leaving
+    // whatever was picked still `:checked` — the disabled test is what stops a
+    // batch inheriting a single record's answer.
+    function subdivisionTemplateOn() {
+        var picked = document.querySelector('.subdivision-template-radio:checked');
+        return !!picked && picked.value === '1' && !picked.disabled;
+    }
 
     function currentAppType() {
         var toggle  = document.getElementById('app-type-toggle');
@@ -1949,12 +2056,27 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // currentAppType() already returns '' when the Application Type toggle is off,
     // so this is false for a plain Direct / Conversion recommendation.
+    //
+    // Use Subdivision Template demands one too, under its own name: there the field
+    // carries the mother file the plot was subdivided from, and the record is
+    // pointless without it.
     function requiresOldFileNo(appType) {
-        return !!appType;
+        return !!appType || subdivisionTemplateOn();
     }
 
     function openModal(appType) {
-        if (modalType) modalType.textContent = appType;
+        // Under Use Subdivision Template the prompt is asking for the mother file,
+        // and may be doing so with no application type set at all — which would
+        // otherwise leave the sentence starting on a blank.
+        var subdivision = subdivisionTemplateOn();
+        if (modalTitle) modalTitle.textContent = subdivision ? 'Mother File Number Required' : 'Old File Number Required';
+        if (modalLabel) modalLabel.textContent = subdivision ? 'Mother File Number' : 'Old File Number';
+        if (modalLead) {
+            modalLead.textContent = subdivision
+                ? ' was subdivided from a mother file. Pick it with the file number selector — or build it there with the Manual method if it is not in the register.'
+                : ' derives from an existing file. Select the old (parent) file number from the file number selector.';
+        }
+        if (modalType) modalType.textContent = subdivision ? 'This plot' : appType;
         if (modalValue) modalValue.value = field.value || '';
         if (modalConfirm) modalConfirm.disabled = !field.value;
         modal.classList.remove('hidden');
@@ -1985,14 +2107,42 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function syncRow(appType) {
+        var subdivision = subdivisionTemplateOn();
+
         if (requiresOldFileNo(appType)) {
             row.classList.remove('hidden');
-            if (contextLabel) contextLabel.textContent = appType;
+            if (contextLabel) contextLabel.textContent = appType || 'subdivision';
         } else {
             row.classList.add('hidden');
             if (field.value) setOldFileNo('');
         }
+
+        // Batch mode owns this card outright — applyKind() swaps the whole-register
+        // picker for the mother dropdown and drives the same help span. Standing
+        // aside here is what stops the two scripts toggling it against each other;
+        // applyKind calls back into this once batch mode lets go.
+        if (batchModeOn()) return;
+
+        // The field itself is never typed into — it stays readonly like every other
+        // file number on this form. A mother that is not in the register is entered
+        // through the global file-number selector's Manual method, which constructs
+        // a number from its parts rather than searching for one, so "not indexed"
+        // costs nothing here and there is no second way in to keep in step.
+        field.placeholder = subdivision
+            ? 'No mother file selected'
+            : 'No old file number selected';
+        if (titleLabel) titleLabel.textContent = subdivision ? 'Mother File Number' : 'Old File Number';
+        if (manualHelpEl) manualHelpEl.classList.toggle('hidden', subdivision);
+        if (subdivHelp) subdivHelp.classList.toggle('hidden', !subdivision);
+        if (subdivNote) subdivNote.classList.toggle('hidden', !subdivision);
     }
+
+    // Answering Yes/No repaints the card the app-type radios share. Answering it is
+    // not yet a request to be asked for a file number, so no prompt opens here —
+    // the submit gate below still refuses a save without one.
+    document.querySelectorAll('.subdivision-template-radio').forEach(function (radio) {
+        radio.addEventListener('change', function () { syncRow(currentAppType()); });
+    });
 
     // Batch mode has its own dropdown of subdivided files sitting right in the
     // card, so the "pick a file number" modal would only be in the way.
@@ -2066,6 +2216,10 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
     }
+
+    // Leaving batch mode hands this card back, and its state is decided here —
+    // see the batchModeOn() guard in syncRow(). applyKind() calls this last.
+    window._syncOldFileNoRow = function () { syncRow(currentAppType()); };
 
     // Initial state (edit mode / validation redisplay)
     syncRow(currentAppType());
@@ -2549,6 +2703,12 @@ document.addEventListener('DOMContentLoaded', function () {
         if (manualPick) manualPick.classList.toggle('hidden', subdivision);
         if (motherHelp) motherHelp.classList.toggle('hidden', !subdivision);
         if (manualHelp) manualHelp.classList.toggle('hidden', subdivision);
+
+        // Batch mode borrows this card; on the way back out the single-record form
+        // decides it again — including whether Use Subdivision Template has turned
+        // it into the Mother File Number. Called after the toggles above so it wins
+        // on the way out and defers on the way in (it no-ops while batch mode is on).
+        if (window._syncOldFileNoRow) window._syncOldFileNoRow();
 
         if (hint) hint.classList.toggle('hidden', !subdivision);
         if (filesPicker) filesPicker.classList.toggle('hidden', !regular);

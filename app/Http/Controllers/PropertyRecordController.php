@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exceptions\PropIdAllocationException;
+use App\Services\InstrumentTypeCatalog;
 use App\Services\PropertyIdAllocationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth; // Add Auth facade for user tracking
@@ -945,6 +946,11 @@ class PropertyRecordController extends Controller
             'extra_regs.*.land_use' => 'nullable|string|max:255',
             'extra_regs.*.period' => 'nullable|numeric',
             'extra_regs.*.period_unit' => 'nullable|string|max:50',
+            // Each extra registration number is a second instrument on the same file
+            // and carries its own Type, Category and OP serial. See InstrumentTypeCatalog.
+            'extra_regs.*.type_value' => 'nullable|string|max:100',
+            'extra_regs.*.instrument_category' => 'nullable|string|max:100',
+            'extra_regs.*.op_serial_number' => 'nullable|string|max:255',
             'party_4' => 'nullable|string|max:255',
             'Mortgagor_2' => 'nullable|string|max:255',
             'Mortgagor_3' => 'nullable|string|max:255',
@@ -1463,7 +1469,9 @@ class PropertyRecordController extends Controller
                     // Skip rows with no data at all
                     $hasAnyData = $regSerial || $regPage || $regVol
                         || !empty($reg['transaction_date']) || !empty($reg['deeds_date'])
-                        || !empty($reg['land_use']) || !empty($reg['period']);
+                        || !empty($reg['land_use']) || !empty($reg['period'])
+                        || !empty($reg['type_value']) || !empty($reg['instrument_category'])
+                        || !empty($reg['op_serial_number']);
                     if (!$hasAnyData)
                         continue;
                     $extraRegNo = ($regSerial || $regPage || $regVol)
@@ -1492,6 +1500,26 @@ class PropertyRecordController extends Controller
                     }
                     if (!empty($reg['period_unit']) && array_key_exists('period_unit', $extraData)) {
                         $extraData['period_unit'] = $reg['period_unit'];
+                    }
+                    // Type / Category / OP Serial Number, asked again on every extra row:
+                    // a second Occupancy Permit on the same file is routinely a different
+                    // Type with its own serial. The Type answer goes to the column this
+                    // instrument stores it in -- op_type, cofo_type or instrument_subtype --
+                    // which is the same mapping the primary record above used.
+                    $rowTypeValue = isset($reg['type_value']) ? trim((string) $reg['type_value']) : '';
+                    if ($rowTypeValue !== '') {
+                        $rowTypeColumn = InstrumentTypeCatalog::typeColumnFor($request->transactionType);
+                        if (array_key_exists($rowTypeColumn, $extraData)) {
+                            $extraData[$rowTypeColumn] = $rowTypeValue;
+                        }
+                    }
+                    $rowCategory = isset($reg['instrument_category']) ? trim((string) $reg['instrument_category']) : '';
+                    if ($rowCategory !== '' && array_key_exists('instrument_category', $extraData)) {
+                        $extraData['instrument_category'] = $rowCategory;
+                    }
+                    $rowOpSerial = isset($reg['op_serial_number']) ? trim((string) $reg['op_serial_number']) : '';
+                    if ($rowOpSerial !== '' && array_key_exists('op_serial_number', $extraData)) {
+                        $extraData['op_serial_number'] = $rowOpSerial;
                     }
                     DB::connection('sqlsrv')->table($targetTable)->insert($extraData);
                 }

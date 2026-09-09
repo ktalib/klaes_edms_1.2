@@ -1774,12 +1774,19 @@ class InstrumentController extends Controller
     public function solicitor($id)
     {
         $record = DB::connection('sqlsrv')->table('instrument_capture')
-            ->select('id', 'solicitor_name', 'solicitor_district', 'solicitor_address')
+            ->select('id', 'instrument_type', 'solicitor_name', 'solicitor_district', 'solicitor_address')
             ->where('id', $id)
             ->first();
 
         if (!$record) {
             return response()->json(['success' => false, 'message' => 'Instrument not found.'], 404);
+        }
+
+        if ($this->isOccupancyPermit($record->instrument_type)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Occupancy Permits do not carry solicitor details.',
+            ], 422);
         }
 
         [$state, $lga] = $this->resolveSolicitorStateAndLga($record->solicitor_address);
@@ -1794,6 +1801,17 @@ class InstrumentController extends Controller
                 'address' => $record->solicitor_address,
             ],
         ]);
+    }
+
+    /**
+     * An Occupancy Permit records an existing paper permit rather than a
+     * registered instrument and carries no solicitor, so the listing withholds the
+     * "Update Solicitors Details" action on those rows. Same test here, so the
+     * endpoints refuse a hand-made request rather than trusting the hidden menu.
+     */
+    private function isOccupancyPermit(?string $instrumentType): bool
+    {
+        return stripos((string) $instrumentType, 'Occupancy Permit') !== false;
     }
 
     /**
@@ -1894,6 +1912,13 @@ class InstrumentController extends Controller
 
         if (!$record) {
             return response()->json(['success' => false, 'message' => 'Instrument not found.'], 404);
+        }
+
+        if ($this->isOccupancyPermit($record->instrument_type)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Occupancy Permits do not carry solicitor details.',
+            ], 422);
         }
 
         // An emptied box means "clear this", so blanks are stored as NULL rather

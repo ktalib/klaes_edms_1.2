@@ -1294,6 +1294,22 @@ Route::group(['middleware' => ['auth', 'XSS']], function () {
         Route::put('/messages/{key}', [App\Http\Controllers\SmsControlController::class, 'updateMessage'])->name('messages.update');
     });
 
+    /*
+     | SMS Management -- the System Admin sub-module.
+     |
+     | One page per sender ID (KLAES, KANOMLPP, KANGIS): the same control page as
+     | /sms-control, holding only the messages that go out under that name, and
+     | without the wallet balance -- one prepaid account is shared by all three,
+     | so a figure on a per-sender page would say something untrue.
+     |
+     | The segment is the sender NAME so the URL reads as the menu does, but
+     | SmsSetting::senderGroupForSlug() accepts the group key too, so a bookmark
+     | still opens after somebody renames a sender in .env.
+     */
+    Route::get('/sms-management/{sender}', [App\Http\Controllers\SmsControlController::class, 'index'])
+        ->where('sender', '[A-Za-z0-9_-]+')
+        ->name('sms-management.index');
+
     Route::get('/sms/applicant-phone', [App\Http\Controllers\SmsControlController::class, 'resolvePhone'])
         ->name('sms.applicant-phone');
 });

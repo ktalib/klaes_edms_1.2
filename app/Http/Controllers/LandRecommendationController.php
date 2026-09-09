@@ -47,6 +47,17 @@ class LandRecommendationController extends Controller
         'recommendation',
     ];
 
+    /**
+     * Under Use Subdivision Template the Old File Number field IS the Mother File
+     * Number, and the default message would name the column the officer is no
+     * longer looking at. Shared by store() and update() so the refusal reads the
+     * same wherever the record is saved from.
+     */
+    private const SUBDIVISION_TEMPLATE_MESSAGES = [
+        'old_file_number.required_if' =>
+            'Enter the Mother File Number, or set Use Subdivision Template back to No.',
+    ];
+
     public function index(Request $request)
     {
         $viewType = strtoupper(trim((string) $request->query('type', '')));
@@ -905,10 +916,36 @@ class LandRecommendationController extends Controller
                     }
                 }
             }
+
+            // A legacy RofO has no prior KLAES recommendation to replicate, but the
+            // selected file is still an authoritative source of its property details.
+            // Re-use the same resolver as batch capture so File Indexing, MLS and the
+            // file-number registry all participate in the fallback chain. Previously
+            // this path carried only the file number (and occasionally its year),
+            // forcing officers to re-key title, plot, location and land-use details.
+            $fileDetails = $fileNo === ''
+                ? null
+                : $this->hydrateBatchRows([$fileNo], null, false)->first();
+
             $recommendation = new LandRecommendation([
                 'file_number' => $fileNo,
                 'cofo_year'   => $cofoYear,
             ]);
+
+            if ($fileDetails) {
+                $recommendation->fill(collect($fileDetails)->only([
+                    'applicant_name',
+                    'applicant_address',
+                    'plot_number',
+                    'location',
+                    'district',
+                    'lga',
+                    'land_use',
+                    'land_use_id',
+                    'purpose_id',
+                    'tracking_id',
+                ])->all());
+            }
         }
 
         $purposes = [];
@@ -1029,7 +1066,10 @@ class LandRecommendationController extends Controller
 
             $validated = $request->validate([
                 'file_number' => 'required|string',
-                'old_file_number' => 'nullable|string|max:100',
+                // Under Use Subdivision Template this field IS the mother file number,
+                // so it stops being optional. It is never checked against the register:
+                // the option exists precisely for the mother that is not in it.
+                'old_file_number' => 'nullable|string|max:100|required_if:use_subdivision_template,1',
                 'is_reissuance' => 'nullable|boolean',
                 'reissuance_source' => 'nullable|string|in:klaes,legacy',
                 'reissued_from_id' => 'nullable|integer',
@@ -1075,6 +1115,9 @@ class LandRecommendationController extends Controller
                 'type' => 'nullable|string',
                 'application_type' => 'nullable|string',
                 'use_standard_template' => 'nullable|boolean',
+                // Single-file subdivision. The mother file number is carried by
+                // old_file_number above — see the required_if on that rule.
+                'use_subdivision_template' => 'nullable|boolean',
                 'page' => 'nullable|string',
                 'page_survey_report' => 'nullable|string',
                 'survey_report' => 'nullable|string',
@@ -1103,7 +1146,7 @@ class LandRecommendationController extends Controller
                 // stands in for that letter instead of generating a new one.
                 'is_existing_recommendation' => 'nullable|boolean',
                 'op_match_tot_pra_id' => 'nullable|integer',
-            ]);
+            ], self::SUBDIVISION_TEMPLATE_MESSAGES);
         } catch (ValidationException $e) {
             RecLog::warning('Single capture rejected', [
                 'file_number'   => trim((string) $request->input('file_number', '')),
@@ -1121,6 +1164,12 @@ class LandRecommendationController extends Controller
         // Unchecked checkboxes are absent from the request, so resolve the flag
         // explicitly instead of leaving a previously-saved value in place.
         $validated['use_standard_template'] = $request->boolean('use_standard_template');
+
+        // Same reason. The mother file number itself is old_file_number, which is
+        // NOT cleared when the answer goes back to No — that field means "the parent
+        // / previous file" for every application type, and only borrows the Mother
+        // File Number label while this flag is on.
+        $validated['use_subdivision_template'] = $request->boolean('use_subdivision_template');
 
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
@@ -2780,7 +2829,8 @@ class LandRecommendationController extends Controller
 
         $validated = $request->validate([
             'file_number' => 'required|string',
-            'old_file_number' => 'nullable|string|max:100',
+            // See store() — the mother file number under Use Subdivision Template.
+            'old_file_number' => 'nullable|string|max:100|required_if:use_subdivision_template,1',
             // Editable so a legacy re-issuance saved before this date was captured
             // (or keyed in wrongly) can be corrected — the letter prints from it.
             'reissuance_original_date' => 'nullable|date|before_or_equal:today',
@@ -2830,6 +2880,8 @@ class LandRecommendationController extends Controller
             'type' => 'nullable|string',
             'application_type' => 'nullable|string',
             'use_standard_template' => 'nullable|boolean',
+            // See store() — the mother file number is hand-keyed on purpose.
+            'use_subdivision_template' => 'nullable|boolean',
             'premium' => 'nullable|numeric',
             'num_plots' => 'nullable|string',
             'file_title' => 'nullable|string',
@@ -2842,7 +2894,7 @@ class LandRecommendationController extends Controller
             'page_5' => 'nullable|string',
             'purpose_description' => 'nullable|string',
             'dimensions_text' => 'nullable|string',
-        ]);
+        ], self::SUBDIVISION_TEMPLATE_MESSAGES);
 
         $validated['rofo_director_survey']  = ($request->rofo_survey_method === 'DIRECTOR') ? 'YES' : 'NO';
         $validated['rofo_licensed_surveyor'] = ($request->rofo_survey_method === 'LICENSED') ? 'YES' : 'NO';
@@ -2851,6 +2903,12 @@ class LandRecommendationController extends Controller
         // Unchecked checkboxes are absent from the request, so resolve the flag
         // explicitly instead of leaving a previously-saved value in place.
         $validated['use_standard_template'] = $request->boolean('use_standard_template');
+
+        // Same reason. The mother file number itself is old_file_number, which is
+        // NOT cleared when the answer goes back to No — that field means "the parent
+        // / previous file" for every application type, and only borrows the Mother
+        // File Number label while this flag is on.
+        $validated['use_subdivision_template'] = $request->boolean('use_subdivision_template');
 
         if ($request->filled('land_use_id')) {
             $lu = LandUse::find($request->land_use_id);
@@ -2886,6 +2944,25 @@ class LandRecommendationController extends Controller
         $this->applyExistingRecommendationMode($request, $validated);
 
         $recommendation->update($validated);
+
+        // Opened from the RofO table (Actions > Edit Record), so the save belongs
+        // back there — the officer is working the RofO list and never asked to be
+        // moved to the recommendation register. The outstanding-letter note below
+        // is still said, because the RofO table has no upload prompt to open.
+        if ($request->input('return_to') === 'rofo') {
+            $tab = $request->input('return_tab');
+            $params = in_array($tab, ['not_printed', 'printed', 'batches', 'reissuance'], true)
+                ? ['tab' => $tab]
+                : [];
+
+            $message = 'Recommendation updated successfully.';
+            if ($recommendation->is_existing_recommendation && ! $recommendation->document()->exists()) {
+                $message = 'Recommendation updated. No new recommendation is generated for '
+                    . $recommendation->file_number . ' — upload the approved one to allow approval.';
+            }
+
+            return redirect()->route('land-rofos.index', $params)->with('success', $message);
+        }
 
         // Same landing as the capture: a record standing for a letter that is not on
         // file yet goes back to the register with its upload open, rather than to a
@@ -3354,7 +3431,13 @@ class LandRecommendationController extends Controller
         // Route by Application Type first; fall back to Recommendation Type.
         // The "standard template" override keeps the application type on the record
         // (extra fields / old file number) but prints Direct / Conversion instead.
-        $primaryAppType = $recommendation->use_standard_template
+        //
+        // Use Subdivision Template stands the application type down the same way, so
+        // the file is treated exactly as a child captured through a subdivision
+        // batch: batch mode force-ticks use_standard_template for its children
+        // (form.blade.php, applyKind), so a real child prints the ordinary letter
+        // rather than the Plot Subdivision memo. This one does too.
+        $primaryAppType = ($recommendation->use_standard_template || $recommendation->use_subdivision_template)
             ? null
             : ($recommendation->application_type ?? null);
 

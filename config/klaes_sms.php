@@ -102,6 +102,10 @@ return [
     |             Letters of Grant, deed registrations, caveats. The recipient is
     |             an applicant who knows the Ministry, not the software.
     |
+    |   KANGIS    traffic about a file the applicant knows by its KANGIS number,
+    |             from the registry of that name. Added for the SMS Management
+    |             sub-module; it carries no message until one is moved onto it.
+    |
     | A SENDER ID THAT IS NOT REGISTERED WITH THE VENDOR IS ACCEPTED, BILLED AND
     | NEVER DELIVERED. That is indistinguishable from every other delivery failure
     | on this gateway, so confirm a new ID with Bulk-SMS.ng before routing real
@@ -113,7 +117,29 @@ return [
     'senders' => [
         'staff' => env('KLAES_SMS_SENDER_STAFF', 'KLAES'),
         'department' => env('KLAES_SMS_SENDER_DEPARTMENT', 'KANOMLPP'),
+        'kangis' => env('KLAES_SMS_SENDER_KANGIS', 'KANGIS'),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Which of those the vendor has actually registered
+    |--------------------------------------------------------------------------
+    |
+    | Purely so the SMS Management page can WARN. It changes no routing: an
+    | unregistered ID still sends, because the only thing that settles the
+    | question is the vendor, and a hard block here would be a second way for
+    | messages to stop arriving with no explanation.
+    |
+    | Read the header note above before adding one. On this gateway an
+    | unregistered sender is accepted, billed and delivered to nobody, and that
+    | is indistinguishable from every other delivery failure -- so a new name
+    | belongs here only once Bulk-SMS.ng has confirmed it, not when it is added
+    | to 'senders'.
+    */
+    'registered_senders' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('KLAES_SMS_REGISTERED_SENDERS', 'staff,department'))
+    ))),
 
     /*
     |--------------------------------------------------------------------------

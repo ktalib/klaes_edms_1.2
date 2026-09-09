@@ -64,10 +64,12 @@
                                 <th class="text-left font-medium px-4 py-3">S/N</th>
                                 <th class="text-left font-medium px-4 py-3">Reg Particulars</th>
                                 <th class="text-left font-medium px-4 py-3">File No</th>
+                                <th class="text-left font-medium px-4 py-3">PropID</th>
                                 <th class="text-left font-medium px-4 py-3">{{ config('land_registration.parties.first') }}</th>
                                 <th class="text-left font-medium px-4 py-3">{{ config('land_registration.parties.second') }}</th>
                                 <th class="text-right font-medium px-4 py-3">Payment Amount</th>
                                 <th class="text-left font-medium px-4 py-3">Receipt No</th>
+                                <th class="text-left font-medium px-4 py-3">Transaction Date</th>
                                 <th class="text-left font-medium px-4 py-3">Reg Time</th>
                                 <th class="text-left font-medium px-4 py-3">Reg Date</th>
                                 <th class="text-left font-medium px-4 py-3">Captured Time</th>
@@ -84,6 +86,16 @@
                                 @php
                                     $capturedAt = $row->captured_at ? \Carbon\Carbon::parse($row->captured_at) : null;
                                     $regDate = $row->deeds_date ? \Carbon\Carbon::parse($row->deeds_date) : null;
+                                    // Free text and sentinel dates reach this column on
+                                    // digitised rows, so an unparseable value shows as
+                                    // blank rather than taking the page down.
+                                    try {
+                                        $transactionDate = $row->transaction_date
+                                            ? \Carbon\Carbon::parse($row->transaction_date)
+                                            : null;
+                                    } catch (\Throwable $e) {
+                                        $transactionDate = null;
+                                    }
                                 @endphp
                                 <tr class="hover:bg-gray-50" data-row-id="{{ $row->id }}">
                                     <td class="px-4 py-3 whitespace-nowrap text-gray-500">{{ $i + 1 }}</td>
@@ -96,7 +108,23 @@
                                             <span class="text-gray-400">—</span>
                                         @endif
                                     </td>
-                                    <td class="px-4 py-3 whitespace-nowrap">{{ $row->fileno ?: '—' }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        <div class="flex flex-col items-start gap-1">
+                                            <span>{{ $row->fileno ?: '—' }}</span>
+                                            {{-- Same cross-table timeline the PRA screen opens: either
+                                                 identifier will do, so a record with no prop_id still
+                                                 resolves on its file number. --}}
+                                            @if($row->prop_id || $row->fileno)
+                                                <button type="button"
+                                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
+                                                    onclick="openPropertyTimeline('{{ $row->prop_id }}', '{{ $row->fileno }}')"
+                                                    title="View the full property timeline">
+                                                    <i data-lucide="history" class="h-3 w-3"></i> Timeline
+                                                </button>
+                                            @endif
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-600">{{ $row->prop_id ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $row->vendor ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $row->purchaser ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap text-right">
@@ -109,6 +137,9 @@
                                         @endif
                                     </td>
                                     <td class="px-4 py-3 whitespace-nowrap">{{ $row->receipt_no ?: '—' }}</td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-gray-600">
+                                        {{ $transactionDate ? $transactionDate->format('d M Y') : '—' }}
+                                    </td>
                                     <td class="px-4 py-3 whitespace-nowrap text-gray-600">{{ $row->deeds_time ?: '—' }}</td>
                                     <td class="px-4 py-3 whitespace-nowrap text-gray-600">
                                         {{ $regDate ? $regDate->format('d M Y') : '—' }}
@@ -127,7 +158,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="16" class="px-4 py-12 text-center text-gray-500">
+                                    <td colspan="18" class="px-4 py-12 text-center text-gray-500">
                                         <i data-lucide="inbox" class="h-8 w-8 mx-auto mb-2 text-gray-300"></i>
                                         <p>No Deed of Purchase has been captured through PRA yet.</p>
                                         <p class="text-xs text-gray-400 mt-1">
@@ -166,6 +197,10 @@
             font-size: 0.8125rem;
         }
     </style>
+
+    {{-- openPropertyTimeline(). The modal shell it renders into
+         (tailwind-modal.js) is already global in layouts.app. --}}
+    <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
 
     <script>
         document.addEventListener('DOMContentLoaded', function () {

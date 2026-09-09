@@ -1028,6 +1028,124 @@ class InstrumentRegistrationController extends Controller
         return implode(' ', $parts);
     }
 
+    /**
+     * Fill in prop_id on the rows that do not carry one of their own.
+     *
+     * The register is built from several sources and only two of them
+     * (instrument_capture, deed_registrations) keep a prop_id column; ST and
+     * instrument_registration rows have none. Rather than look each one up,
+     * every outstanding file number goes to PropID_Master in a handful of
+     * batched queries - at most one per file-number column, and fewer once a
+     * column has answered for everything.
+     *
+     * A file can hold more than one parcel, so a file number can match several
+     * prop_ids. The first by id wins - the value is shown as a hint and as one
+     * of the two keys the property timeline accepts, and the timeline falls
+     * back to the file number regardless.
+     *
+     * Best effort: a failure here leaves the column blank and must never take
+     * the register down with it.
+     */
+    private function attachPropIds($rows): void
+    {
+        $wanted = [];
+
+        foreach ($rows as $row) {
+            if (!isset($row->prop_id)) {
+                $row->prop_id = null;
+            }
+
+            if (!empty($row->prop_id)) {
+                continue;
+            }
+
+            // Same placeholders PropertyIdAllocationService rejects: these
+            // collide across thousands of unrelated files and would hand back a
+            // prop_id belonging to none of them.
+            $fileNo = strtoupper(trim((string) ($row->fileno ?? '')));
+            if ($fileNo !== '' && !in_array($fileNo, ['N/A', 'NA', 'NONE', 'NULL', 'NIL', '-', '.', '0', 'TBD'], true)) {
+                $wanted[$fileNo] = $fileNo;
+            }
+        }
+
+        if (empty($wanted)) {
+            return;
+        }
+
+        // Matched on the _norm columns, not the plain ones: those are the only
+        // file-number columns PropID_Master indexes, and _norm holds exactly
+        // the trimmed, upper-cased form $wanted is keyed on.
+        //
+        // The plain column is named beside each one because four of those five
+        // indexes are FILTERED on the plain column being NOT NULL. A predicate
+        // on _norm alone does not prove that filter, so SQL Server refuses the
+        // index and scans all 138k rows - 218ms a column against 62ms once the
+        // IS NOT NULL is stated.
+        $columns = [
+            'primary_file_number_norm' => 'primary_file_number',
+            'mlsFNo_norm' => 'mlsFNo',
+            'kangisFileNo_norm' => 'kangisFileNo',
+            'NewKANGISFileno_norm' => 'NewKANGISFileno',
+            'temp_fileno_norm' => 'temp_fileno',
+        ];
+
+        $map = [];
+        $remaining = array_keys($wanted);
+
+        try {
+            // One column at a time, each pass carrying only what the passes
+            // before it could not answer. OR-ing all five into a single
+            // statement costs 5 seeks per file number whatever the first one
+            // found - measured at 1,535ms against 667ms for the same 78 file
+            // numbers and the same 61 matches.
+            foreach ($columns as $column => $plainColumn) {
+                if (empty($remaining)) {
+                    break;
+                }
+
+                // Chunked so a large register cannot push the statement past
+                // the 2,100-parameter ceiling sqlsrv enforces.
+                foreach (array_chunk($remaining, 1000) as $chunk) {
+                    $matches = DB::connection('sqlsrv')->table('PropID_Master')
+                        ->whereNotNull('prop_id')
+                        ->whereNotNull($plainColumn)
+                        ->whereIn($column, $chunk)
+                        ->orderBy('id')
+                        ->get(['prop_id', $column]);
+
+                    foreach ($matches as $match) {
+                        $key = strtoupper(trim((string) ($match->$column ?? '')));
+                        if ($key !== '' && !isset($map[$key])) {
+                            $map[$key] = $match->prop_id;
+                        }
+                    }
+                }
+
+                $remaining = array_values(array_filter(
+                    $remaining,
+                    fn ($fileNo) => !isset($map[$fileNo])
+                ));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Instrument Registration: PropID lookup failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        foreach ($rows as $row) {
+            if (!empty($row->prop_id)) {
+                continue;
+            }
+
+            $key = strtoupper(trim((string) ($row->fileno ?? '')));
+            if ($key !== '' && isset($map[$key])) {
+                $row->prop_id = $map[$key];
+            }
+        }
+    }
+
     private function mapCaptureTypeToRegistry($captureType)
     {
         $mapping = [
@@ -1280,6 +1398,7 @@ class InstrumentRegistrationController extends Controller
                     'captured_date' => $instrument->created_at,
                     'reg_date' => null,
                     'reg_time' => null,
+                    'prop_id' => $instrument->prop_id ?? null,
                     'op_type' => (!empty($instrument->op_type) && !str_starts_with($instrument->op_type, 'OP ')) ? 'OP ' . $instrument->op_type : ($instrument->op_type ?? null),
                 ];
 
@@ -1752,6 +1871,7 @@ class InstrumentRegistrationController extends Controller
                     'cor_exists' => (bool) ($reg->cor_exists ?? false),
                     'rds_exists_db' => (bool) ($reg->rds_exists ?? false),
                     'cor_exists_db' => (bool) ($reg->cor_exists ?? false),
+                    'prop_id' => $reg->prop_id ?? null,
                     'op_type' => $reg->captured_op_type ?? null,
                 ];
 
@@ -1885,6 +2005,13 @@ class InstrumentRegistrationController extends Controller
 
             // Pass full dataset for JS functionality
             $fullDataForJs = $allInstrumentsSorted->values();
+
+            // PropID for every row, not just the first page: updateTable()
+            // re-renders the table client-side out of this same set, so
+            // resolving only the 50 rendered here would leave page 2 blank.
+            // Only instrument_capture and deed_registrations keep the column,
+            // so ST rows are resolved from PropID_Master in batches.
+            $this->attachPropIds($fullDataForJs);
 
             // Bulk check for RDS and CoR existence to avoid N+1 issues
             $allStmRefs = $approvedApplications->pluck('STM_Ref')->filter()->unique()->toArray();
