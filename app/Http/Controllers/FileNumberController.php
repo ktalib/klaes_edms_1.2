@@ -2247,6 +2247,91 @@ class FileNumberController extends Controller
             $result[$id] = $entries;
         }
 
+        return $this->attachRelatedFileTitles($result);
+    }
+
+    /**
+     * Fill in each related file's OWN title, in one pass for the whole page.
+     *
+     * `related_file_number.file_title` is the title of the file that OWNS the link,
+     * not of the file it points at (see RelatedFileNumberRegistrar::sync()), and the
+     * per-entry title typed on the commissioning form never reaches that table. So the
+     * name shown beside a related number has to be resolved from the file itself.
+     *
+     * @param  array<int,array<int,array{file_no:string,type:string}>> $result
+     * @return array<int,array<int,array{file_no:string,type:string,title:string}>>
+     */
+    private function attachRelatedFileTitles(array $result): array
+    {
+        $norm = fn ($v) => strtoupper(trim((string) $v));
+
+        $numbers = [];
+        foreach ($result as $entries) {
+            foreach ($entries as $entry) {
+                $numbers[$norm($entry['file_no'])] = trim((string) $entry['file_no']);
+            }
+        }
+
+        if (empty($numbers)) {
+            return $result;
+        }
+
+        $titles = [];
+
+        // Indexed files first — file_indexings is where a title is actually curated.
+        // Chunked: a page can carry hundreds of related numbers (one merger quotes 30),
+        // and SQL Server caps a statement at 2,100 parameters.
+        try {
+            foreach (array_chunk(array_values($numbers), 500) as $chunk) {
+                $rows = DB::connection('sqlsrv')
+                    ->table('file_indexings')
+                    ->whereIn('file_number', $chunk)
+                    ->orderBy('id')
+                    ->get(['file_number', 'file_title']);
+
+                foreach ($rows as $row) {
+                    $title = trim((string) ($row->file_title ?? ''));
+                    if ($title !== '') {
+                        $titles[$norm($row->file_number)] = $title;
+                    }
+                }
+            }
+
+            // Then the commissioning register, for a file issued but not yet indexed.
+            $missing = array_values(array_filter(
+                $numbers,
+                fn ($value, $key) => !isset($titles[$key]),
+                ARRAY_FILTER_USE_BOTH
+            ));
+
+            foreach (array_chunk($missing, 500) as $chunk) {
+                $rows = DB::connection('sqlsrv')
+                    ->table('mls_file_no')
+                    ->whereIn('full_file_number', $chunk)
+                    ->orderBy('id')
+                    ->get(['full_file_number', 'file_name']);
+
+                foreach ($rows as $row) {
+                    $title = trim((string) ($row->file_name ?? ''));
+                    if ($title !== '') {
+                        $titles[$norm($row->full_file_number)] = $title;
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // A title is a courtesy on the card; the numbers are the fact. Never let a
+            // lookup failure take the listing down.
+            Log::warning('Could not resolve related file titles for the file list', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        foreach ($result as $id => $entries) {
+            foreach ($entries as $i => $entry) {
+                $result[$id][$i]['title'] = $titles[$norm($entry['file_no'])] ?? '';
+            }
+        }
+
         return $result;
     }
 

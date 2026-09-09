@@ -660,6 +660,7 @@ Route::group(['middleware' => ['auth'], 'prefix' => 'instrument_registration'], 
     Route::get('check-registration-status', [InstrumentRegistrationController::class, 'checkRegistrationStatus']);
     Route::get('file-completion-status', [InstrumentRegistrationController::class, 'getFileCompletionStatus']);
     Route::get('overall-completion-status', [InstrumentRegistrationController::class, 'getOverallCompletionStatus']);
+    Route::post('timeline-counts', [InstrumentRegistrationController::class, 'timelineCounts'])->name('instrument_registration.timeline-counts');
     Route::get('view/{id}', [InstrumentRegistrationController::class, 'view'])->name('instrument_registration.view');
     Route::get('edit/{id}', [InstrumentRegistrationController::class, 'edit'])->name('instrument_registration.edit');
     Route::put('update/{id}', [InstrumentRegistrationController::class, 'update'])->name('instrument_registration.update');

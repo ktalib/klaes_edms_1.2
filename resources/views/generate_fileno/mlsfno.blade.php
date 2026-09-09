@@ -269,8 +269,8 @@
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">File Title</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Land Use</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">TP No</th>
-                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Street Name</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">House No</th>
+                                                <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Street Name</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">Plot No</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">District</th>
                                                 <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider whitespace-nowrap">LGA</th>
@@ -1844,6 +1844,20 @@
                                                 </div>
                                             </div>
 
+                                            <!-- House No: what is on the building, not the survey
+                                                 parcel. Kept apart from Plot Number, which a parcel
+                                                 may carry as well as, or instead of, a house number. -->
+                                            <div>
+                                                <label for="houseNo" class="block text-xs font-medium text-gray-600 mb-1">
+                                                    House No
+                                                </label>
+                                                <input type="text" id="houseNo" name="house_no"
+                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.houseNo : houseNo"
+                                                       @input="batchMode ? updateLocationEntry('houseNo', $event.target.value) : houseNo = $event.target.value"
+                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                       placeholder="Enter house number">
+                                            </div>
+
                                             <!-- Street Name: the street the parcel sits on. Not the
                                                  District (a whole quarter) and not the Location (the
                                                  line assembled from the parts), so it is its own field. -->
@@ -1872,20 +1886,6 @@
                                                 {{-- What is posted is the resolved name — the one picked, or the one
                                                      typed under "Other" — never the literal "Other". --}}
                                                 <input type="hidden" name="street_name" :value="streetName">
-                                            </div>
-
-                                            <!-- House No: what is on the building, not the survey
-                                                 parcel. Kept apart from Plot Number, which a parcel
-                                                 may carry as well as, or instead of, a house number. -->
-                                            <div>
-                                                <label for="houseNo" class="block text-xs font-medium text-gray-600 mb-1">
-                                                    House No
-                                                </label>
-                                                <input type="text" id="houseNo" name="house_no"
-                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.houseNo : houseNo"
-                                                       @input="batchMode ? updateLocationEntry('houseNo', $event.target.value) : houseNo = $event.target.value"
-                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       placeholder="Enter house number">
                                             </div>
 
                                             <!-- Plot Number: plain text input -->
@@ -3514,6 +3514,7 @@
                         <tr>
                             <th class="px-5 py-2.5 w-10">#</th>
                             <th class="px-5 py-2.5">Related File Number</th>
+                            <th class="px-5 py-2.5">File Title</th>
                             <th class="px-5 py-2.5">Relationship</th>
                         </tr>
                     </thead>

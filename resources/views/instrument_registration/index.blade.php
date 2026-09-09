@@ -645,11 +645,12 @@
                                                  could not be resolved still opens on its file
                                                  number. --}}
                                             @if(!empty($app->prop_id) || !empty($app->fileno))
-                                                <button type="button"
+                                                <button type="button" data-timeline-badge
+                                                    data-prop-id="{{ $app->prop_id ?? '' }}" data-file-no="{{ $app->fileno ?? '' }}"
                                                     class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100"
                                                     onclick="openPropertyTimeline('{{ $app->prop_id ?? '' }}', '{{ $app->fileno ?? '' }}')"
                                                     title="View the full property timeline">
-                                                    <i class="fas fa-history"></i> Timeline
+                                                    <i class="fas fa-history"></i> Timeline<span data-timeline-count></span>
                                                 </button>
                                             @endif
                                         </div>
@@ -936,6 +937,90 @@
     @include('instrument_registration.modals.export_preview')
 
     <script src="{{ asset('js/property-timeline-modal.js') }}"></script>
+
+    {{-- Timeline counts, fetched for the rows on screen.
+         The register re-renders client-side out of window.serverCofoData, so the
+         count cannot ride along in the page payload: it would be right on page 1
+         and blank everywhere else, and counting all 9,596 rows up front measured
+         about four and a half minutes. Each render therefore asks only about the
+         rows it just drew. --}}
+    <script>
+        (function () {
+            const ENDPOINT = "{{ route('instrument_registration.timeline-counts') }}";
+            const cache = new Map();   // "propId|fileNo" -> count, so paging back is free
+
+            function keyFor(badge) {
+                return (badge.dataset.propId || '') + '|' + (badge.dataset.fileNo || '');
+            }
+
+            function paint(badge, count) {
+                const slot = badge.querySelector('[data-timeline-count]');
+                if (slot) slot.textContent = ' (' + count + ')';
+                // A property with nothing behind it still opens; it just says so.
+                if (Number(count) === 0) {
+                    badge.classList.remove('bg-indigo-50', 'text-indigo-700', 'border-indigo-200', 'hover:bg-indigo-100');
+                    badge.classList.add('bg-gray-50', 'text-gray-400', 'border-gray-200', 'hover:bg-gray-100');
+                }
+            }
+
+            window.hydrateTimelineCounts = function () {
+                const badges = Array.from(document.querySelectorAll('[data-timeline-badge]'))
+                    .filter(b => b.dataset.timelineDone !== '1');
+                if (!badges.length) return;
+
+                const rows = {};
+                badges.forEach(badge => {
+                    badge.dataset.timelineDone = '1';
+                    const key = keyFor(badge);
+                    if (cache.has(key)) {
+                        paint(badge, cache.get(key));
+                        return;
+                    }
+                    rows[key] = { propId: badge.dataset.propId || '', fileNumber: badge.dataset.fileNo || '' };
+                });
+
+                if (!Object.keys(rows).length) return;
+
+                fetch(ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+                    },
+                    body: JSON.stringify({ rows: rows })
+                })
+                    .then(res => res.json())
+                    .then(data => {
+                        const counts = (data && data.counts) || {};
+                        Object.keys(counts).forEach(key => cache.set(key, counts[key]));
+                        document.querySelectorAll('[data-timeline-badge]').forEach(badge => {
+                            const key = keyFor(badge);
+                            if (key in counts) paint(badge, counts[key]);
+                        });
+                    })
+                    .catch(() => { /* the badge still opens the timeline; it just shows no number */ });
+            };
+
+            document.addEventListener('DOMContentLoaded', function () {
+                window.hydrateTimelineCounts();
+
+                // updateTable() replaces the tbody wholesale on every page change,
+                // search and sort, and it is defined in a script this one does not
+                // control - so the new badges are picked up by watching the body
+                // rather than by hooking that function.
+                const body = document.getElementById('cofoTableBody');
+                if (!body || !window.MutationObserver) return;
+
+                let queued = null;
+                new MutationObserver(function () {
+                    clearTimeout(queued);
+                    queued = setTimeout(window.hydrateTimelineCounts, 120);
+                }).observe(body, { childList: true });
+            });
+        })();
+    </script>
     <script src="{{ asset('js/instrument_registration_index.js') }}"></script>
     <script src="{{ asset('js/instrument_registration_batch_print.js') }}?v={{ time() }}"></script>
     <script src="{{ asset('js/instrument_capture_export.js') }}?v={{ time() }}"></script>

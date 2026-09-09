@@ -18,6 +18,59 @@ class InstrumentRegistrationController extends Controller
         $this->instrumentService = $instrumentService;
     }
 
+    /**
+     * Weighted timeline counts for the rows currently on screen.
+     *
+     * This register cannot carry the counts in its page payload the way the other
+     * listings do. It renders 50 rows server-side and re-renders every other page
+     * in the browser out of window.serverCofoData, so a count that only covered
+     * the server-rendered rows would vanish on page 2 - and counting the whole set
+     * is not an option either: 9,596 rows measured at roughly four and a half
+     * minutes, on a page that is already close to its memory ceiling.
+     *
+     * So the badge asks for what it is showing. The browser posts the identifiers
+     * of the rows it just drew, and gets back one number each.
+     */
+    public function timelineCounts(Request $request, \App\Services\TimelineWeightingService $timelineService): \Illuminate\Http\JsonResponse
+    {
+        $rows = $request->input('rows', []);
+
+        if (!is_array($rows) || empty($rows)) {
+            return response()->json(['success' => true, 'counts' => []]);
+        }
+
+        // A page of rows, never the whole register: the cost is in the number of
+        // identifiers asked about, and an unbounded post would hand a caller the
+        // same four-minute query this endpoint exists to avoid.
+        $rows = array_slice($rows, 0, 100, true);
+
+        $targets = [];
+        foreach ($rows as $key => $row) {
+            $targets[(string) $key] = [
+                'fileNumber' => trim((string) ($row['fileNumber'] ?? '')),
+                'propId' => trim((string) ($row['propId'] ?? '')),
+            ];
+        }
+
+        try {
+            return response()->json([
+                'success' => true,
+                'counts' => $timelineService->getWeightedCountsForMany($targets),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Timeline counts failed', [
+                'exception' => $e->getMessage(),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+                'rows' => count($targets),
+            ]);
+
+            // The badge is decoration on a working link - it must never break the
+            // register, so a failure comes back as "no counts" and the badges stay
+            // as they were rendered.
+            return response()->json(['success' => false, 'counts' => []]);
+        }
+    }
+
     private function generateBatchRegistrationSessionId(): string
     {
         return 'IRB-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(6));

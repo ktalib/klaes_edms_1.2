@@ -140,13 +140,19 @@
                     {{-- The file number is what the officer is actually holding, so it is
                          what the form asks for. Picking one through the global selector
                          resolves the parcel-update application behind it, which is what
-                         the clearance attaches to — see resolveSubject(). --}}
+                         the clearance attaches to — see resolveSubject().
+
+                         READ-ONLY on purpose: the global selector is the only way in.
+                         A hand-typed number resolves to no application, so the officer
+                         would get an unlinked inspection that clears nothing and looks
+                         no different while typing. Clicking the box opens the selector.
+                         `readonly`, not `disabled` — a disabled input submits nothing. --}}
                     <div>
                         <label class="block text-xs font-bold text-slate-600 mb-1.5">File Number <span class="text-red-500">*</span></label>
                         <div class="flex gap-2">
                             <input type="text" name="file_number" id="file_number" value="{{ $value('file_number') }}"
-                                placeholder="Select a file number"
-                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
+                                placeholder="Select a file number" readonly onclick="openFileSelector()"
+                                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-slate-50 text-slate-700 cursor-pointer focus:ring-2 focus:ring-red-500/20 focus:border-red-500">
                             <button type="button" onclick="openFileSelector()"
                                 class="shrink-0 px-3 py-2 bg-slate-800 text-white text-xs font-bold rounded-lg hover:bg-slate-900 transition">Select</button>
                         </div>
@@ -795,9 +801,11 @@ async function resolveSubject() {
     }
 }
 
-// A file number typed by hand, or a type chosen after the file, must re-resolve —
-// otherwise the note would still describe the previous answer.
-document.getElementById('file_number').addEventListener('change', resolveSubject);
+// No `change` listener on file_number: the box is read-only, so the only thing
+// that ever writes to it is the global selector's callback — and that calls
+// resolveSubject() itself. A listener here would never fire (setting .value from
+// script raises no change event), so it would read as the thing keeping the note
+// in step when it is not.
 
 /* ------------------------------------------------------------------- submit */
 document.getElementById('masterJsiForm').addEventListener('submit', async (e) => {

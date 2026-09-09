@@ -1190,13 +1190,18 @@
                 <tr class="hover:bg-gray-50">
                     <td class="px-5 py-2.5 text-xs text-gray-400">${index + 1}</td>
                     <td class="px-5 py-2.5 font-mono text-sm font-bold text-sky-700">${escapeMlsfHtml(String(entry.file_no || '').toUpperCase())}</td>
+                    <td class="px-5 py-2.5 text-sm text-gray-700">${
+                        entry.title
+                            ? escapeMlsfHtml(String(entry.title).toUpperCase())
+                            : '<span class="text-gray-300">&mdash;</span>'
+                    }</td>
                     <td class="px-5 py-2.5">
                         <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2.5 py-0.5 text-[11px] font-semibold text-gray-600">
                             ${escapeMlsfHtml(entry.type || 'Related File')}
                         </span>
                     </td>
                 </tr>`).join('')
-            : '<tr><td colspan="3" class="px-5 py-8 text-center text-sm italic text-gray-400">No related file numbers recorded for this file.</td></tr>';
+            : '<tr><td colspan="4" class="px-5 py-8 text-center text-sm italic text-gray-400">No related file numbers recorded for this file.</td></tr>';
 
         modal.classList.remove('hidden');
         if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -1545,18 +1550,18 @@
                     }
                 },
                 {
-                    data: 'street_name',
-                    name: 'street_name',
-                    title: 'Street Name',
+                    data: 'house_no',
+                    name: 'house_no',
+                    title: 'House No',
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
                         return data ? data.toUpperCase() : 'N/A';
                     }
                 },
                 {
-                    data: 'house_no',
-                    name: 'house_no',
-                    title: 'House No',
+                    data: 'street_name',
+                    name: 'street_name',
+                    title: 'Street Name',
                     defaultContent: 'N/A',
                     render: function (data, type, row) {
                         return data ? data.toUpperCase() : 'N/A';
