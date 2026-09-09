@@ -148,7 +148,6 @@
                                     <tr>
                                         <th class="text-left whitespace-nowrap">S/N</th>
                                         <th class="text-left whitespace-nowrap">PropID</th>
-                                        <th class="text-left whitespace-nowrap">Timeline</th>
                                         <th class="text-left whitespace-nowrap">File No</th>
                                         <th class="text-left whitespace-nowrap">Reg Particulars</th>
                                         <th class="text-left whitespace-nowrap">Instrument Type</th>
@@ -187,28 +186,26 @@
                                         <td class="align-top whitespace-nowrap">
                                             <span class="font-mono text-xs text-gray-700">{{ $instrument->prop_id ?: '—' }}</span>
                                         </td>
-                                        <td class="align-top whitespace-nowrap">
-                                            {{-- The same cross-table timeline the PRA and Instrument
-                                                 Registration screens open. Either identifier will do, so
-                                                 a row whose prop_id was never allocated still opens on
-                                                 its file number. The count is the weighted (deduped)
-                                                 record count the sibling screens badge. --}}
-                                            @php $timelineCount = $timelineCounts[$instrument->id] ?? 0; @endphp
-                                            @if(!empty($instrument->prop_id) || !empty($rowFileNo))
-                                                <button type="button"
-                                                    class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition {{ $timelineCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100' }}"
-                                                    onclick="openPropertyTimeline('{{ $instrument->prop_id ?? '' }}', '{{ $rowFileNo }}')"
-                                                    title="View the full property timeline">
-                                                    <i data-lucide="history" class="w-3 h-3"></i> Timeline ({{ $timelineCount }})
-                                                </button>
-                                            @else
-                                                <span class="text-gray-300 text-xs">—</span>
-                                            @endif
-                                        </td>
                                         <td class="align-top">
-                                            <span class="badge bg-gray-100 text-gray-800 border border-gray-200 rounded-full px-3 py-1 whitespace-nowrap font-mono text-xs tracking-wide">
-                                                {{ $rowFileNo }}
-                                            </span>
+                                            <div class="flex flex-col items-start gap-1">
+                                                <span class="badge bg-gray-100 text-gray-800 border border-gray-200 rounded-full px-3 py-1 whitespace-nowrap font-mono text-xs tracking-wide">
+                                                    {{ $rowFileNo }}
+                                                </span>
+                                                {{-- The same cross-table timeline the PRA and Instrument
+                                                     Registration screens open. Either identifier will do,
+                                                     so a row whose prop_id was never allocated still opens
+                                                     on its file number. The count is the weighted
+                                                     (deduped) record count the sibling screens badge. --}}
+                                                @php $timelineCount = $timelineCounts[$instrument->id] ?? 0; @endphp
+                                                @if(!empty($instrument->prop_id) || !empty($rowFileNo))
+                                                    <button type="button"
+                                                        class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition {{ $timelineCount > 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100' }}"
+                                                        onclick="openPropertyTimeline('{{ $instrument->prop_id ?? '' }}', '{{ $rowFileNo }}')"
+                                                        title="View the full property timeline">
+                                                        <i data-lucide="history" class="w-3 h-3"></i> Timeline ({{ $timelineCount }})
+                                                    </button>
+                                                @endif
+                                            </div>
                                         </td>
                                         <td class="align-top whitespace-nowrap text-sm">
                                             @if($instrument->registered_instrument_id)
@@ -524,7 +521,7 @@
                                     </tr>
                                 @empty
                                     <tr>
-                                        <td colspan="16" class="text-center py-4">No instruments found</td>
+                                        <td colspan="15" class="text-center py-4">No instruments found</td>
                                     </tr>
                                 @endforelse
                             </tbody>
@@ -670,9 +667,9 @@
                 paging: false,
                 info: false,
                 lengthChange: false,
-                order: [[11, 'desc']], // Reg Time/Date descending by default (S/N, PropID, Timeline, File No occupy 0-3)
+                order: [[10, 'desc']], // Reg Time/Date descending by default (S/N, PropID, File No occupy 0-2)
                 columnDefs: [
-                    { orderable: false, targets: [0, 2, -1] }  // S/N, Timeline and Actions are not sortable
+                    { orderable: false, targets: [0, -1] }  // S/N and Actions are not sortable
                 ],
                 // Move the native DT search & export buttons into our header bar
                 initComplete: function () {
@@ -735,7 +732,7 @@
                     if (settings.nTable.id !== 'instrumentsTable') return true;
                     
                     var row = table.row(dataIndex).node();
-                    var typeContent = $(row).find('td:eq(5)').text().trim(); // Instrument Type: index 5 behind S/N, PropID, File No, Timeline
+                    var typeContent = $(row).find('td:eq(4)').text().trim(); // Instrument Type: index 4 behind S/N, PropID, File No
                     var rowVolume = $(row).data('volume') ? String($(row).data('volume')) : '';
                     
                     // Matches if type matches OR if it's an OP sub-type
