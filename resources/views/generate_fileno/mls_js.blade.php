@@ -6070,6 +6070,7 @@
             lga: '',
             district: '',
             districtIsOther: false,
+            streetNameIsOther: false,
             latitude: '',
             longitude: '',
             mapCoordSource: '',
@@ -6180,7 +6181,7 @@
                     this.serialNo = '';
 
                     // Make the District dropdown searchable (Select2)
-                    this.$nextTick(() => this.initDistrictSelect2());
+                    this.$nextTick(() => { this.initDistrictSelect2(); this.initStreetNameSelect2(); });
 
                     this.$watch('applicationType', (value) => {
                         console.log('applicationType watched change:', value);
@@ -6685,6 +6686,97 @@
                 this.setMapPin(normLat, normLng, true, sourceLabel);
             },
 
+            // Street Name mirrors District: a picked value, or "Other" revealing a
+            // specify box. `streetName` always holds the resolved name — the hidden
+            // input posts that, so the backend never receives the literal "Other".
+            onStreetNameChange(val) {
+                if (val === 'Other') {
+                    this.streetNameIsOther = true;
+                    this.streetName = '';
+                    if (this.batchMode) this.updateLocationEntry('streetName', '');
+                } else {
+                    this.streetNameIsOther = false;
+                    this.streetName = val;
+                    if (this.batchMode) this.updateLocationEntry('streetName', val);
+                }
+            },
+
+            onStreetNameOtherInput(val) {
+                this.streetName = val;
+                if (this.batchMode) this.updateLocationEntry('streetName', val);
+            },
+
+            // Put a stored value back on screen: an exact option is selected, anything
+            // else (a street typed under "Other", or one since removed from the
+            // register) reopens the specify box carrying it.
+            loadStreetNameField(streetVal) {
+                const sel = document.getElementById('generator_street_name');
+                if (!sel) return;
+
+                const otherInput = document.getElementById('generator_street_name_other');
+                const optionValues = Array.from(sel.options).map(o => o.value);
+
+                if (!streetVal) {
+                    sel.value = '';
+                    this.streetNameIsOther = false;
+                    if (otherInput) otherInput.value = '';
+                } else if (optionValues.includes(streetVal)) {
+                    sel.value = streetVal;
+                    this.streetNameIsOther = false;
+                    if (otherInput) otherInput.value = '';
+                } else {
+                    sel.value = 'Other';
+                    this.streetNameIsOther = true;
+                    if (otherInput) otherInput.value = streetVal;
+                }
+
+                this.streetName = streetVal || '';
+
+                if (window.jQuery && $(sel).hasClass('select2-hidden-accessible')) {
+                    $(sel).trigger('change.select2');
+                }
+            },
+
+            initStreetNameSelect2() {
+                try {
+                    if (!window.jQuery || typeof $.fn.select2 === 'undefined') return;
+                    const $select = $('#generator_street_name');
+                    if ($select.length === 0) return;
+
+                    if ($select.hasClass('select2-hidden-accessible')) {
+                        $select.select2('destroy');
+                    }
+
+                    // 800+ streets: searchable, and anchored to the field's own
+                    // wrapper so the panel opens under it inside the scrolling modal.
+                    const parent = document.getElementById('generatorStreetNameWrap')
+                        || document.getElementById('generateModal');
+
+                    $select.select2({
+                        placeholder: 'Search or select street name',
+                        allowClear: true,
+                        dropdownParent: $(parent),
+                        width: '100%'
+                    });
+
+                    $select.on('select2:open', () => {
+                        setTimeout(() => {
+                            const searchField = document.querySelector('.select2-search__field');
+                            if (searchField) searchField.focus();
+                        }, 100);
+                    });
+
+                    // Select2 fires change through jQuery, which Alpine's @change does
+                    // not hear — bridge it, or picking "Other" never opens the box.
+                    const self = this;
+                    $select.on('change', function () {
+                        self.onStreetNameChange(this.value);
+                    });
+                } catch (e) {
+                    console.error('Error in initStreetNameSelect2():', e);
+                }
+            },
+
             loadDistrictField(districtVal) {
                 const sel = document.getElementById('generator_district');
                 if (!sel) return;
@@ -6756,7 +6848,7 @@
                 if (!entry) return;
                 // Plot Number
                 this.houseNo = entry.houseNo || '';
-                this.streetName = entry.streetName || '';
+                this.loadStreetNameField(entry.streetName || '');
                 this.plotNo = entry.plotNo || '';
                 // TP Number (custom search). A number typed through "Other" is restored
                 // into the specify box, not the search box, or stepping back through the
@@ -6791,6 +6883,10 @@
                 // District: loadDistrictField handles the native select, the
                 // "Other" specify input and the Select2 display in one place.
                 this.loadDistrictField(this.district || '');
+
+                // Street Name works the same way, and needs the same treatment after
+                // a backfill — assigning this.streetName alone moves no widget.
+                this.loadStreetNameField(this.streetName || '');
 
                 // LGA: plain native select — set its value if the option exists.
                 const lgaSel = document.getElementById('generator_lga');
@@ -9112,7 +9208,12 @@
                         alpineData.applyBackfilledCoordinates(match.latitude, match.longitude, 'Backfilled from selected file');
                     }
                     if (match.house_no) alpineData.houseNo = match.house_no;
-                    if (match.street_name) alpineData.streetName = match.street_name;
+                    // syncLocationSelects() already ran above, so a bare assignment here
+                    // would set the value without moving the select. loadStreetNameField()
+                    // does both, and reopens the specify box for a street not in the list.
+                    if (match.street_name && typeof alpineData.loadStreetNameField === 'function') {
+                        alpineData.loadStreetNameField(match.street_name);
+                    }
                     if (match.plot_no) alpineData.plotNo = match.plot_no;
                     // The inherited plot must carry the extension marker (see
                     // syncExtensionPlotSuffix); it is a no-op for every other file type.

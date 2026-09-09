@@ -1847,15 +1847,31 @@
                                             <!-- Street Name: the street the parcel sits on. Not the
                                                  District (a whole quarter) and not the Location (the
                                                  line assembled from the parts), so it is its own field. -->
-                                            <div>
-                                                <label for="streetName" class="block text-xs font-medium text-gray-600 mb-1">
+                                            <div id="generatorStreetNameWrap" class="relative">
+                                                <label for="generator_street_name" class="block text-xs font-medium text-gray-600 mb-1">
                                                     Street Name
                                                 </label>
-                                                <input type="text" id="streetName" name="street_name" maxlength="255"
-                                                       :value="batchMode ? locationEntries[currentEntryIndex]?.streetName : streetName"
-                                                       @input="batchMode ? updateLocationEntry('streetName', $event.target.value) : streetName = $event.target.value"
-                                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                       placeholder="Enter street name">
+                                                <select id="generator_street_name"
+                                                        @change="onStreetNameChange($event.target.value)"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                                                    <option value="">Select Street Name</option>
+                                                    @foreach($streetNames as $street)
+                                                        <option value="{{ $street->name }}">{{ $street->name }}</option>
+                                                    @endforeach
+                                                    {{-- Explicit, rather than relying on an "Other" row existing in
+                                                         street_names: the escape hatch has to be there for a street
+                                                         the register has never seen. --}}
+                                                    <option value="Other">Other (specify)</option>
+                                                </select>
+                                                <input type="text" id="generator_street_name_other" maxlength="255"
+                                                       x-show="streetNameIsOther"
+                                                       x-cloak
+                                                       @input="onStreetNameOtherInput($event.target.value)"
+                                                       placeholder="Please specify street name..."
+                                                       class="w-full mt-2 px-3 py-2 border border-blue-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                                {{-- What is posted is the resolved name — the one picked, or the one
+                                                     typed under "Other" — never the literal "Other". --}}
+                                                <input type="hidden" name="street_name" :value="streetName">
                                             </div>
 
                                             <!-- House No: what is on the building, not the survey
