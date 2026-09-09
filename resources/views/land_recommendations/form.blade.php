@@ -852,16 +852,10 @@
                             file does not have to exist in the register.
                         </p>
 
+                        {{-- Yes first: it is the answer this card exists to collect, and the
+                             one that changes anything. No is the default the record already
+                             has, so it reads as the way back rather than the opening offer. --}}
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
-                                <input type="radio" name="use_subdivision_template" value="0"
-                                    {{ $useSubdivisionTemplate ? '' : 'checked' }}
-                                    class="subdivision-template-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
-                                <span class="leading-snug">
-                                    <span class="block text-sm font-bold text-slate-900">No</span>
-                                    <span class="block text-[11px] text-slate-500">Ordinary record. The letter prints as it always has.</span>
-                                </span>
-                            </label>
                             <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
                                 <input type="radio" name="use_subdivision_template" value="1"
                                     {{ $useSubdivisionTemplate ? 'checked' : '' }}
@@ -871,12 +865,21 @@
                                     <span class="block text-[11px] text-slate-500">Treat this file as though it came through a subdivision batch.</span>
                                 </span>
                             </label>
+                            <label class="flex items-start gap-3 cursor-pointer p-3.5 bg-white border-2 border-slate-200 rounded-xl hover:border-violet-400 transition shadow-sm has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50/60">
+                                <input type="radio" name="use_subdivision_template" value="0"
+                                    {{ $useSubdivisionTemplate ? '' : 'checked' }}
+                                    class="subdivision-template-radio mt-0.5 w-4 h-4 text-violet-600 focus:ring-violet-500 border-slate-300">
+                                <span class="leading-snug">
+                                    <span class="block text-sm font-bold text-slate-900">No</span>
+                                    <span class="block text-[11px] text-slate-500">Ordinary record. The letter prints as it always has.</span>
+                                </span>
+                            </label>
                         </div>
 
-                        {{-- No field of its own. Answering Yes turns the Old File Number
-                             card below into the Mother File Number and lets it be typed
-                             into — see the old-fileno script. A second box asking for the
-                             same file number is the thing this option must not become. --}}
+                        {{-- No field of its own. Answering Yes relabels the Old File Number
+                             card below to Mother File Number — see the old-fileno script.
+                             A second box asking for the same file number is the thing this
+                             option must not become. --}}
                         <p id="subdivision-template-note" class="{{ $useSubdivisionTemplate ? '' : 'hidden' }} mt-4 rounded-lg bg-violet-100/70 px-3 py-2 text-[11px] font-semibold text-violet-900">
                             Set the mother file in <span class="font-black uppercase tracking-wider">Mother File Number</span> below.
                             It does not have to be in the register &mdash; the file number selector's
