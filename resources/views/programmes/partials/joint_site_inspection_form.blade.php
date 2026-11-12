@@ -637,7 +637,12 @@
                             <option value="{{ $type->name }}">{{ $type->name }}</option>
                         @endforeach
                     @endif
+                    <option value="OTHER">OTHER</option>
                 </select>
+                <div id="jointInspectionPrevailingLandUseOtherWrapper" class="hidden mt-2">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Specify Other Prevailing Land Use <span class="text-red-500">*</span></label>
+                    <input type="text" id="jointInspectionPrevailingLandUseOther" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-green-500" placeholder="Specify Other Prevailing Land Use" maxlength="255">
+                </div>
             </div>
             <div>
                 <label class="block text-xs font-medium text-gray-700 mb-1">Applied Land Use <span class="text-red-500">*</span></label>
@@ -653,7 +658,12 @@
                         <option value="Industrial">Industrial</option>
                         <option value="Mixed Use">Mixed Use</option>
                     @endif
+                    <option value="OTHER">OTHER</option>
                 </select>
+                <div id="jointInspectionAppliedLandUseOtherWrapper" class="hidden mt-2">
+                    <label class="block text-xs font-medium text-gray-700 mb-1">Specify Other Applied Land Use <span class="text-red-500">*</span></label>
+                    <input type="text" id="jointInspectionAppliedLandUseOther" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-green-500" placeholder="Specify Other Applied Land Use" maxlength="255">
+                </div>
             </div>
         </div>
 

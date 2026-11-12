@@ -451,6 +451,76 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Generic "OTHER + specify" support for land-use dropdowns.
+    // Each select <id> has an OTHER option, a wrapper <id>OtherWrapper and an input <id>Other.
+    const LAND_USE_OTHER_SELECT_IDS = ['jointInspectionPrevailingLandUse', 'jointInspectionAppliedLandUse'];
+
+    function isOtherOptionValue(value) {
+        return String(value || '').trim().toUpperCase() === 'OTHER';
+    }
+
+    function ensureSelectOtherOption(select) {
+        if (!select) {
+            return;
+        }
+        const hasOther = Array.from(select.options || []).some(option => isOtherOptionValue(option.value));
+        if (!hasOther) {
+            const option = document.createElement('option');
+            option.value = 'OTHER';
+            option.textContent = 'OTHER';
+            select.appendChild(option);
+        }
+    }
+
+    function syncSelectOtherVisibility(selectId) {
+        const select = document.getElementById(selectId);
+        const wrapper = document.getElementById(selectId + 'OtherWrapper');
+        const otherField = document.getElementById(selectId + 'Other');
+        if (!select || !wrapper) {
+            return;
+        }
+        const showOther = isOtherOptionValue(select.value);
+        wrapper.classList.toggle('hidden', !showOther);
+        if (!showOther && otherField) {
+            otherField.value = '';
+        }
+    }
+
+    function getSelectValueWithOther(selectId) {
+        const select = document.getElementById(selectId);
+        const otherField = document.getElementById(selectId + 'Other');
+        const selected = select ? String(select.value || '').trim() : '';
+        if (isOtherOptionValue(selected)) {
+            return otherField ? String(otherField.value || '').trim() : '';
+        }
+        return selected;
+    }
+
+    function setSelectValueWithOther(selectId, rawValue) {
+        const select = document.getElementById(selectId);
+        const otherField = document.getElementById(selectId + 'Other');
+        const value = String(rawValue || '').trim();
+        if (!select) {
+            return;
+        }
+        ensureSelectOtherOption(select);
+        const matched = Array.from(select.options || []).find(option =>
+            String(option.value || '').trim().toLowerCase() === value.toLowerCase()
+        );
+        if (value === '' || (matched && !isOtherOptionValue(value))) {
+            select.value = matched ? matched.value : '';
+            if (otherField) {
+                otherField.value = '';
+            }
+        } else {
+            select.value = 'OTHER';
+            if (otherField) {
+                otherField.value = isOtherOptionValue(value) ? '' : value;
+            }
+        }
+        syncSelectOtherVisibility(selectId);
+    }
+
     function syncRecommendedReservationOtherVisibility() {
         const reservationSelect = document.getElementById('conversionRecommendedReservation');
         const otherWrapper = document.getElementById('conversionRecommendedReservationOtherWrapper');
@@ -848,7 +918,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 value: String(option && option.value ? option.value : '').trim(),
                 label: String(option && option.textContent ? option.textContent : '').trim()
             }))
-            .filter(option => option.value !== '');
+            .filter(option => option.value !== '' && !isOtherOptionValue(option.value));
 
         window.__jsiAppliedLandUseOptions = source;
         return source;
@@ -861,7 +931,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const selectedValue = String(prevailingSelect.value || '').trim();
-        if (!selectedValue) {
+        if (!selectedValue || isOtherOptionValue(selectedValue)) {
             return '';
         }
 
@@ -882,9 +952,17 @@ document.addEventListener('DOMContentLoaded', function() {
             markup.push(`<option value="${option.value}"${selectedAttr}>${option.label}</option>`);
         });
 
+        markup.push('<option value="OTHER">OTHER</option>');
         appliedSelect.innerHTML = markup.join('');
 
         if (!preservedValue) {
+            syncSelectOtherVisibility('jointInspectionAppliedLandUse');
+            return;
+        }
+
+        if (isOtherOptionValue(preservedValue)) {
+            appliedSelect.value = 'OTHER';
+            syncSelectOtherVisibility('jointInspectionAppliedLandUse');
             return;
         }
 
@@ -895,6 +973,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const fallback = filteredOptions.find(option => normalizeLandUseKey(option.value || option.label) === normalizeLandUseKey(preservedValue));
         appliedSelect.value = fallback ? fallback.value : '';
+        syncSelectOtherVisibility('jointInspectionAppliedLandUse');
     }
 
     function getSelectedPrevailingDetailedLandUseId() {
@@ -2462,11 +2541,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const prevailingSelect = document.getElementById('jointInspectionPrevailingLandUse');
         if (prevailingSelect && prevailingSelect.value.trim() === '') {
             pushError(prevailingSelect, 'Select the prevailing land use.');
+        } else if (prevailingSelect && isOtherOptionValue(prevailingSelect.value) && getSelectValueWithOther('jointInspectionPrevailingLandUse') === '') {
+            pushError(document.getElementById('jointInspectionPrevailingLandUseOther'), 'Please specify the other prevailing land use.');
         }
 
         const appliedSelect = document.getElementById('jointInspectionAppliedLandUse');
         if (appliedSelect && appliedSelect.value.trim() === '') {
             pushError(appliedSelect, 'Select the applied land use.');
+        } else if (appliedSelect && isOtherOptionValue(appliedSelect.value) && getSelectValueWithOther('jointInspectionAppliedLandUse') === '') {
+            pushError(document.getElementById('jointInspectionAppliedLandUseOther'), 'Please specify the other applied land use.');
         }
 
         const complianceSelect = document.getElementById('jointInspectionCompliance');
@@ -3362,6 +3445,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 value = toTitleCase(value);
             }
 
+            if (LAND_USE_OTHER_SELECT_IDS.includes(fieldId)) {
+                setSelectValueWithOther(fieldId, value);
+                return;
+            }
+
             field.value = value;
         });
 
@@ -3711,6 +3799,13 @@ document.addEventListener('DOMContentLoaded', function() {
         prevailingLandUseSelect.addEventListener('change', populateAppliedLandUseByDetailedLandUse);
     }
 
+    LAND_USE_OTHER_SELECT_IDS.forEach(selectId => {
+        const select = document.getElementById(selectId);
+        if (select) {
+            select.addEventListener('change', () => syncSelectOtherVisibility(selectId));
+        }
+    });
+
     const conversionPurposeLutSelect = document.getElementById('conversionPurposeLut');
     if (conversionPurposeLutSelect) {
         conversionPurposeLutSelect.addEventListener('change', syncConversionPurposeOtherVisibility);
@@ -3821,6 +3916,12 @@ document.addEventListener('DOMContentLoaded', function() {
         syncAllSiteMeasurementFields();
 
         const formData = new FormData(jointInspectionForm);
+        if (isOtherOptionValue(formData.get('prevailing_land_use'))) {
+            formData.set('prevailing_land_use', getSelectValueWithOther('jointInspectionPrevailingLandUse'));
+        }
+        if (isOtherOptionValue(formData.get('applied_land_use'))) {
+            formData.set('applied_land_use', getSelectValueWithOther('jointInspectionAppliedLandUse'));
+        }
         const csrfTokenInput = jointInspectionForm.querySelector('input[name="_token"]');
 
         if (!csrfTokenInput) {
