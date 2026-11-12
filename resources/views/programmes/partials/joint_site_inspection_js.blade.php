@@ -451,6 +451,68 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    function syncRecommendedReservationOtherVisibility() {
+        const reservationSelect = document.getElementById('conversionRecommendedReservation');
+        const otherWrapper = document.getElementById('conversionRecommendedReservationOtherWrapper');
+        const otherField = document.getElementById('conversionRecommendedReservationOther');
+
+        if (!reservationSelect || !otherWrapper) {
+            return;
+        }
+
+        const showOther = String(reservationSelect.value || '').trim().toUpperCase() === 'OTHER';
+        otherWrapper.classList.toggle('hidden', !showOther);
+
+        if (!showOther && otherField) {
+            otherField.value = '';
+        }
+    }
+
+    function getRecommendedReservationValue() {
+        const reservationSelect = document.getElementById('conversionRecommendedReservation');
+        const otherField = document.getElementById('conversionRecommendedReservationOther');
+        const selected = reservationSelect ? String(reservationSelect.value || '').trim() : '';
+
+        if (selected.toUpperCase() === 'OTHER') {
+            return otherField ? String(otherField.value || '').trim() : '';
+        }
+
+        return selected;
+    }
+
+    function setRecommendedReservationValue(rawValue) {
+        const reservationSelect = document.getElementById('conversionRecommendedReservation');
+        const otherField = document.getElementById('conversionRecommendedReservationOther');
+        const value = String(rawValue || '').trim();
+
+        if (!reservationSelect) {
+            return;
+        }
+
+        const matched = Array.from(reservationSelect.options || []).find(option =>
+            String(option.value || '').trim().toLowerCase() === value.toLowerCase()
+        );
+
+        if (value === '') {
+            reservationSelect.value = '';
+            if (otherField) {
+                otherField.value = '';
+            }
+        } else if (matched && value.toUpperCase() !== 'OTHER') {
+            reservationSelect.value = matched.value;
+            if (otherField) {
+                otherField.value = '';
+            }
+        } else {
+            reservationSelect.value = 'OTHER';
+            if (otherField) {
+                otherField.value = value.toUpperCase() === 'OTHER' ? '' : value;
+            }
+        }
+
+        syncRecommendedReservationOtherVisibility();
+    }
+
     function syncRoadCategoryOtherVisibility() {
         const roadCategorySelect = document.getElementById('conversionRoadCategory');
         const otherWrapper = document.getElementById('conversionRoadCategoryOtherWrapper');
@@ -623,7 +685,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const observedRoadCategory = roadCategoryOtherField ? String(roadCategoryOtherField.value || '').trim() : '';
         const roadCategory = observedRoadCategory || roadCategoryOption;
         const existingReservation = existingReservationField ? String(existingReservationField.value || '').trim() : '';
-        const recommendedReservation = recommendedReservationField ? String(recommendedReservationField.value || '').trim() : '';
+        const recommendedReservation = recommendedReservationField ? getRecommendedReservationValue() : '';
         const recommendedCommentStatus = recommendedCommentStatusField ? String(recommendedCommentStatusField.value || '').trim() : '';
         const howManyMeters = howManyMetersField ? String(howManyMetersField.value || '').trim() : '';
 
@@ -1082,9 +1144,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (recommendedReservationField) {
-            recommendedReservationField.value = detail.recommended_reservation
+            setRecommendedReservationValue(detail.recommended_reservation
                 ? String(detail.recommended_reservation)
-                : (detail.right_of_way_other ? String(detail.right_of_way_other) : '');
+                : (detail.right_of_way_other ? String(detail.right_of_way_other) : ''));
         }
 
         if (recommendedCommentStatusField) {
@@ -1157,17 +1219,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (existingReservationField) {
-            const matchedExisting = Array.from(existingReservationField.options || []).find(option =>
-                String(option.value || '').trim().toLowerCase() === existingReservation.toLowerCase()
-            );
-            existingReservationField.value = matchedExisting ? matchedExisting.value : '';
+            existingReservationField.value = existingReservation;
         }
 
         if (recommendedReservationField) {
-            const matchedRecommended = Array.from(recommendedReservationField.options || []).find(option =>
-                String(option.value || '').trim().toLowerCase() === recommendedReservation.toLowerCase()
-            );
-            recommendedReservationField.value = matchedRecommended ? matchedRecommended.value : '';
+            setRecommendedReservationValue(recommendedReservation);
         }
 
         if (recommendedCommentStatusField) {
@@ -2566,6 +2622,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
                 if (recommendedReservationField && recommendedReservationField.value.trim() === '') {
                     pushError(recommendedReservationField, 'Recommended reservation is required when reservation is Yes.');
+                } else if (recommendedReservationField && recommendedReservationField.value.trim().toUpperCase() === 'OTHER') {
+                    const recommendedReservationOtherField = document.getElementById('conversionRecommendedReservationOther');
+                    if (recommendedReservationOtherField && recommendedReservationOtherField.value.trim() === '') {
+                        pushError(recommendedReservationOtherField, 'Please specify the other recommended reservation.');
+                    }
                 }
 
                 if (recommendedReservationField && ['Recommended', 'Comment', 'Recommended Comment'].includes(String(recommendedReservationField.value || '').trim())) {
@@ -3674,6 +3735,11 @@ document.addEventListener('DOMContentLoaded', function() {
         radio.addEventListener('change', syncNonConversionReservationVisibility);
     });
 
+    const conversionRecommendedReservationSelect = document.getElementById('conversionRecommendedReservation');
+    if (conversionRecommendedReservationSelect) {
+        conversionRecommendedReservationSelect.addEventListener('change', syncRecommendedReservationOtherVisibility);
+    }
+
     const recommendedCommentStatusSelect = document.getElementById('recommendedCommentStatus');
     if (recommendedCommentStatusSelect) {
         recommendedCommentStatusSelect.addEventListener('change', syncRightOfWayOtherVisibility);
@@ -3692,6 +3758,7 @@ document.addEventListener('DOMContentLoaded', function() {
     syncExistingStructureDimensionsVisibility();
     syncReservationVisibility();
     syncRoadCategoryOtherVisibility();
+    syncRecommendedReservationOtherVisibility();
     syncRightOfWayOtherVisibility();
     populateAppliedLandUseByDetailedLandUse();
     syncNonConversionReservationVisibility();

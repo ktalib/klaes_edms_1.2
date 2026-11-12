@@ -12,7 +12,7 @@ use Illuminate\Support\Facades\Log;
  *
  * Default rate table (configurable via pp_betterment_rates):
  *   Industrial            100 m²   ₦35,000
- *   Commercial            100 m²   ₦25,000
+ *   Commercial            100 m²   ₦35,000
  *   Petrol Filling Station 100 m²  ₦50,000
  *   Agricultural         5,000 m²  ₦25,000
  *   Residential           100 m²   ₦15,000

@@ -422,12 +422,7 @@
                 <div id="reservationDetailsWrapper" class="hidden grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                         <label class="block text-xs font-medium text-gray-700 mb-1">Existing Reservation <span class="text-red-500">*</span></label>
-                        <select id="conversionRightOfWay" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500" data-jsi-validate>
-                            <option value="">Select existing reservation</option>
-                            @foreach($jsiReservations as $reservation)
-                                <option value="{{ $reservation->name }}">{{ $reservation->name }}</option>
-                            @endforeach
-                        </select>
+                        <input type="text" id="conversionRightOfWay" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500" placeholder="Enter existing reservation (e.g. 15m R.O.W)" maxlength="255" data-jsi-validate>
                     </div>
 
                     <div>
@@ -435,9 +430,15 @@
                         <select id="conversionRecommendedReservation" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500" data-jsi-validate>
                             <option value="">Select recommended</option>
                             @foreach($jsiReservations as $reservation)
+                                @continue(strtoupper(trim($reservation->name)) === 'OTHER')
                                 <option value="{{ $reservation->name }}">{{ $reservation->name }}</option>
                             @endforeach
+                            <option value="OTHER">OTHER</option>
                         </select>
+                        <div id="conversionRecommendedReservationOtherWrapper" class="hidden mt-2">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Specify Other Reservation <span class="text-red-500">*</span></label>
+                            <input type="text" id="conversionRecommendedReservationOther" class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-2 focus:ring-purple-500" placeholder="Enter recommended reservation" maxlength="255">
+                        </div>
                     </div>
 
                     <div>
